@@ -4,3 +4,57 @@ target/
 .env
 *.class
 .DS_Store
+# Environment & secrets
+.env
+.env.*
+!.env.example
+firebase-service-account.json
+google-services.json
+
+# Build artifacts
+node_modules/
+target/
+build/
+dist/
+.expo/
+
+# OSM/OSRM data (large binaries, regeneratable)
+infrastructure_1/osrm-data/*.osm.pbf
+infrastructure_1/osrm-data/*.osrm*
+
+# Database volumes
+pg_data/
+postgres-data/
+
+# IDE
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+@'
+# OSM/OSRM data (large binaries, regeneratable via documented commands)
+infrastructure_1/osrm-data/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+firebase-service-account.json
+google-services.json
+
+# Build artifacts
+node_modules/
+target/
+build/
+dist/
+.expo/
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+'@ | Out-File -FilePath .gitignore -Encoding ascii -Append
