@@ -1,0 +1,1 @@
+-- gps_pings + idx_gps_trip_time

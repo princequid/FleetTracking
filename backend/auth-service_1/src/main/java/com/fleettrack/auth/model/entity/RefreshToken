@@ -1,0 +1,5 @@
+package com.fleettrack.auth/model/entity;
+
+// tokenHash, familyId, revoked
+public class RefreshToken {
+}

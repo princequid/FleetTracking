@@ -1,0 +1,10 @@
+# all 12 backend modules + Postgres/RabbitMQ/Redis/MinIO
+services:
+  osrm:
+    image: osrm/osrm-backend
+    command: osrm-routed --algorithm mld /data/ghana-latest.osrm
+    volumes:
+      - ./osrm-data:/data
+    ports:
+      - "5000:5000"
+    restart: unless-stopped

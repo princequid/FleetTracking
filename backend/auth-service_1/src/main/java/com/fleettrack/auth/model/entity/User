@@ -1,0 +1,5 @@
+package com.fleettrack.auth/model/entity;
+
+// + mfaEnabled, mfaSecret, mfaBackupCodes
+public class User {
+}

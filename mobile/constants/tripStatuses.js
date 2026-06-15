@@ -1,0 +1,1 @@
+// Trip status constants

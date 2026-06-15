@@ -1,0 +1,5 @@
+package com.fleettrack.gateway/filter;
+
+// calls /auth/validate
+public class JwtAuthFilter {
+}

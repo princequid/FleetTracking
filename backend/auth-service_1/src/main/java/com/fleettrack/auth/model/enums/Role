@@ -1,0 +1,5 @@
+package com.fleettrack.auth/model/enums;
+
+// DRIVER, DISPATCHER, ADMIN, SUPER_ADMIN
+public class Role {
+}

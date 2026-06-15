@@ -1,0 +1,1 @@
+# mvn test + npm test + docker build on PR
