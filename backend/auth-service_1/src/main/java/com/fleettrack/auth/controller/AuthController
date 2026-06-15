@@ -1,0 +1,5 @@
+package com.fleettrack.auth/controller;
+
+// /register /login /refresh /logout /validate /mfa/* /password-reset/*
+public class AuthController {
+}

@@ -1,0 +1,5 @@
+package com.fleettrack.auth/config;
+
+// token blacklist + rate limits
+public class RedisConfig {
+}

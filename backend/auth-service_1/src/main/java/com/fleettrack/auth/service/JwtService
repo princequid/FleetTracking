@@ -1,0 +1,5 @@
+package com.fleettrack.auth/service;
+
+// RS256 signing
+public class JwtService {
+}

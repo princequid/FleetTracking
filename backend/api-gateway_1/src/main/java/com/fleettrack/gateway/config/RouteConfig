@@ -1,0 +1,5 @@
+package com.fleettrack.gateway/config;
+
+// routes for all 9 services, v1/v2
+public class RouteConfig {
+}

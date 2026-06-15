@@ -1,0 +1,5 @@
+package com.fleettrack.auth/exception;
+
+// 
+public class AccountLockedException {
+}

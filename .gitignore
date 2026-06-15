@@ -1,0 +1,6 @@
+# Dependencies
+node_modules/
+target/
+.env
+*.class
+.DS_Store
