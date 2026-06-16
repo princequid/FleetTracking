@@ -1,5 +1,18 @@
 # all 12 backend modules + Postgres/RabbitMQ/Redis/MinIO
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fleettrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
+      POSTGRES_DB: ${POSTGRES_DB:-fleettrack}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
   osrm:
     image: osrm/osrm-backend
     command: osrm-routed --algorithm mld /data/ghana-latest.osrm
@@ -8,3 +21,6 @@ services:
     ports:
       - "5000:5000"
     restart: unless-stopped
+
+volumes:
+  postgres-data:
