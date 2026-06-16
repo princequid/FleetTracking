@@ -1,5 +1,18 @@
-package com.fleettrack.auth/model/enums;
+package com.fleettrack.auth.model.enums;
 
-// DRIVER, DISPATCHER, ADMIN, SUPER_ADMIN
-public class Role {
+/**
+ * The four roles in FleetTrack Pro's permission model.
+ *
+ *  DRIVER       - mobile app only, sees/acts on own trips only
+ *  DISPATCHER   - admin portal, creates/assigns trips, no user management
+ *  ADMIN        - admin portal, full operational access + user management
+ *                 for DRIVER/DISPATCHER accounts, MFA required
+ *  SUPER_ADMIN  - everything ADMIN can do, plus can create other ADMIN
+ *                 accounts and access audit logs, MFA required
+ */
+public enum Role {
+    DRIVER,
+    DISPATCHER,
+    ADMIN,
+    SUPER_ADMIN
 }

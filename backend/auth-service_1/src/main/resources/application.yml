@@ -1,2 +1,50 @@
 server:
   port: 8081
+
+spring:
+  application:
+    name: auth-service
+
+  # ─────────────────────────────────────────────────────────────
+  # Local PostgreSQL (Docker Compose) — matches infrastructure_1/docker-compose.yml
+  # POSTGRES_USER=fleettrack, POSTGRES_PASSWORD=fleettrack, POSTGRES_DB=fleettrack
+  # ─────────────────────────────────────────────────────────────
+  datasource:
+    url: jdbc:postgresql://localhost:5433/fleettrack
+    username: fleettrack
+    password: fleettrack
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # Flyway owns schema changes — Hibernate must not auto-create/alter tables
+    properties:
+      hibernate:
+        default_schema: fleettrack_auth
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    schemas: fleettrack_auth
+    default-schema: fleettrack_auth
+    baseline-on-migrate: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# JWT configuration — used in later sub-steps (3b/3c)
+jwt:
+  secret: ${JWT_SECRET:dev-only-change-this-to-a-long-random-string-before-prod}
+  access-token-expiry-minutes: 60 # 1hr for dev, 15min recommended for prod
+  refresh-token-expiry-days: 7
+
+logging:
+  level:
+    com.fleettrack.auth: DEBUG
+    org.hibernate.SQL: WARN
