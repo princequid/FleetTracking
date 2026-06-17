@@ -1,2 +1,32 @@
 server:
   port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: false  # routes defined in RouteConfig.java
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+jwt:
+  secret: ${JWT_SECRET:dev-only-change-this-to-a-long-random-string-before-prod}
+
+gateway:
+  public-paths:
+    - /auth/login
+    - /auth/register
+    - /auth/refresh
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    com.fleettrack.gateway: DEBUG
