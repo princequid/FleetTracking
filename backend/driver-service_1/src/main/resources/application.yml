@@ -1,2 +1,40 @@
 server:
   port: 8082
+
+spring:
+  application:
+    name: driver-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/fleettrack
+    username: fleettrack
+    password: fleettrack
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: driver
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    schemas: driver
+    default-schema: driver
+    baseline-on-migrate: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    com.fleettrack.driver: DEBUG
+    org.hibernate.SQL: WARN
