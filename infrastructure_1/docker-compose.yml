@@ -27,7 +27,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fleettrack -d fleettrack"]
       interval: 10s
@@ -100,17 +100,22 @@ services:
 
   auth-service:
     build:
-      context: ../backend/auth-service_1
-      dockerfile: Dockerfile
+      context: ../backend
+      dockerfile: auth-service_1/Dockerfile
     ports:
       - "8081:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
       SPRING_DATASOURCE_USERNAME: fleettrack
       SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: fleettrack
+      SPRING_RABBITMQ_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       eureka-server:
         condition: service_started
