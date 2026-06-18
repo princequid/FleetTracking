@@ -88,6 +88,17 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- RabbitMQ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fleettrack</groupId>
+            <artifactId>shared-events</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+
         <!-- Eureka client -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
