@@ -21,6 +21,8 @@ public class TripController {
 
     private static final List<String> ALL_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN", "DRIVER");
     private static final List<String> WRITE_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
+    private static final List<String> TRANSITION_ROLES = List.of("DRIVER", "ADMIN", "SUPER_ADMIN");
+    private static final List<String> CANCEL_ROLES = List.of("ADMIN", "SUPER_ADMIN");
 
     @PostMapping
     public ResponseEntity<TripResponse> createTrip(
@@ -48,6 +50,39 @@ public class TripController {
     public ResponseEntity<TripResponse> getTripById(@PathVariable Long id, HttpServletRequest httpRequest) {
         requireRole(httpRequest, ALL_ROLES);
         return ResponseEntity.ok(tripService.getTripById(id));
+    }
+
+    @PutMapping("/{id}/start")
+    public ResponseEntity<TripResponse> startTrip(@PathVariable Long id, HttpServletRequest httpRequest) {
+        requireRole(httpRequest, TRANSITION_ROLES);
+        Long userId = extractUserId(httpRequest);
+        return ResponseEntity.ok(tripService.startTrip(id, userId));
+    }
+
+    @PutMapping("/{id}/arrive")
+    public ResponseEntity<TripResponse> markArrived(@PathVariable Long id, HttpServletRequest httpRequest) {
+        requireRole(httpRequest, TRANSITION_ROLES);
+        Long userId = extractUserId(httpRequest);
+        return ResponseEntity.ok(tripService.markArrived(id, userId));
+    }
+
+    @PutMapping("/{id}/complete")
+    public ResponseEntity<TripResponse> completeTrip(@PathVariable Long id, HttpServletRequest httpRequest) {
+        requireRole(httpRequest, TRANSITION_ROLES);
+        Long userId = extractUserId(httpRequest);
+        return ResponseEntity.ok(tripService.completeTrip(id, userId));
+    }
+
+    @PutMapping("/{id}/cancel")
+    public ResponseEntity<TripResponse> cancelTrip(@PathVariable Long id, HttpServletRequest httpRequest) {
+        requireRole(httpRequest, CANCEL_ROLES);
+        Long userId = extractUserId(httpRequest);
+        return ResponseEntity.ok(tripService.cancelTrip(id, userId));
+    }
+
+    private Long extractUserId(HttpServletRequest request) {
+        String header = request.getHeader("X-User-Id");
+        return header != null ? Long.parseLong(header) : null;
     }
 
     private void requireRole(HttpServletRequest request, List<String> allowedRoles) {
