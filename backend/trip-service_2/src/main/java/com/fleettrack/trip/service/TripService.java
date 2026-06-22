@@ -1,16 +1,22 @@
 package com.fleettrack.trip.service;
 
+import com.fleettrack.events.TripCompletedEvent;
 import com.fleettrack.trip.client.DriverServiceClient;
+import com.fleettrack.trip.client.MediaServiceClient;
 import com.fleettrack.trip.client.VehicleServiceClient;
+import com.fleettrack.trip.event.TripEventPublisher;
 import com.fleettrack.trip.model.dto.*;
 import com.fleettrack.trip.model.entity.Trip;
+import com.fleettrack.trip.model.entity.TripStatusHistory;
 import com.fleettrack.trip.model.enums.TripStatus;
 import com.fleettrack.trip.repository.TripRepository;
+import com.fleettrack.trip.repository.TripStatusHistoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -18,8 +24,11 @@ import java.util.List;
 public class TripService {
 
     private final TripRepository tripRepository;
+    private final TripStatusHistoryRepository statusHistoryRepository;
     private final DriverServiceClient driverServiceClient;
     private final VehicleServiceClient vehicleServiceClient;
+    private final MediaServiceClient mediaServiceClient;
+    private final TripEventPublisher eventPublisher;
 
     @Transactional
     public TripResponse createTrip(CreateTripRequest request) {
@@ -47,7 +56,98 @@ public class TripService {
                 .destLng(toBigDecimal(request.getDestLng()))
                 .build();
 
-        return mapToResponse(tripRepository.save(trip));
+        trip = tripRepository.save(trip);
+        recordStatusChange(trip.getId(), null, TripStatus.ASSIGNED, null);
+        return mapToResponse(trip);
+    }
+
+    @Transactional
+    public TripResponse startTrip(Long tripId, Long userId) {
+        Trip trip = findTrip(tripId);
+        validateStatus(trip, TripStatus.ASSIGNED, "start");
+
+        TripStatus oldStatus = trip.getStatus();
+        trip.setStatus(TripStatus.STARTED);
+        trip.setStartedAt(Instant.now());
+        trip = tripRepository.save(trip);
+
+        recordStatusChange(tripId, oldStatus, TripStatus.STARTED, userId);
+        return mapToResponse(trip);
+    }
+
+    @Transactional
+    public TripResponse markArrived(Long tripId, Long userId) {
+        Trip trip = findTrip(tripId);
+        if (trip.getStatus() != TripStatus.STARTED && trip.getStatus() != TripStatus.EN_ROUTE) {
+            throw new RuntimeException("Trip must be STARTED or EN_ROUTE to mark as arrived (current: " + trip.getStatus() + ")");
+        }
+
+        TripStatus oldStatus = trip.getStatus();
+        trip.setStatus(TripStatus.ARRIVED);
+        trip.setArrivedAt(Instant.now());
+        trip = tripRepository.save(trip);
+
+        recordStatusChange(tripId, oldStatus, TripStatus.ARRIVED, userId);
+        return mapToResponse(trip);
+    }
+
+    @Transactional
+    public TripResponse completeTrip(Long tripId, Long userId) {
+        Trip trip = findTrip(tripId);
+        validateStatus(trip, TripStatus.ARRIVED, "complete");
+
+        try {
+            boolean hasPod = mediaServiceClient.hasPodPhoto(tripId);
+            if (!hasPod) {
+                throw new RuntimeException("POD photo required before completing trip");
+            }
+        } catch (RuntimeException e) {
+            if (e.getMessage().contains("POD photo required")) {
+                throw e;
+            }
+            throw new RuntimeException("POD photo required before completing trip (media-service unavailable)");
+        }
+
+        TripStatus oldStatus = trip.getStatus();
+        trip.setStatus(TripStatus.DELIVERED);
+        trip.setCompletedAt(Instant.now());
+        trip = tripRepository.save(trip);
+
+        recordStatusChange(tripId, oldStatus, TripStatus.DELIVERED, userId);
+
+        try {
+            TripCompletedEvent event = new TripCompletedEvent(
+                    "trip-service", trip.getId(), trip.getDriverId(),
+                    trip.getVehicleId(), trip.getCompletedAt(), true);
+            eventPublisher.publishEvent(event, "trip.completed");
+        } catch (Exception e) {
+            // Event will be retried via outbox pattern
+        }
+
+        return mapToResponse(trip);
+    }
+
+    @Transactional
+    public TripResponse cancelTrip(Long tripId, Long userId) {
+        Trip trip = findTrip(tripId);
+        if (trip.getStatus() == TripStatus.DELIVERED) {
+            throw new RuntimeException("Cannot cancel a delivered trip");
+        }
+
+        TripStatus oldStatus = trip.getStatus();
+        trip.setStatus(TripStatus.CANCELLED);
+        trip.setCancelledAt(Instant.now());
+        trip = tripRepository.save(trip);
+
+        recordStatusChange(tripId, oldStatus, TripStatus.CANCELLED, userId);
+
+        try {
+            vehicleServiceClient.updateVehicleStatus(trip.getVehicleId(), "AVAILABLE");
+        } catch (Exception e) {
+            // Vehicle service might be down — logged, will reconcile later
+        }
+
+        return mapToResponse(trip);
     }
 
     public List<TripResponse> getAllTrips(String status) {
@@ -74,6 +174,27 @@ public class TripService {
         return tripRepository.findById(id)
                 .map(this::mapToResponse)
                 .orElseThrow(() -> new RuntimeException("Trip not found"));
+    }
+
+    private Trip findTrip(Long tripId) {
+        return tripRepository.findById(tripId)
+                .orElseThrow(() -> new RuntimeException("Trip not found"));
+    }
+
+    private void validateStatus(Trip trip, TripStatus expected, String action) {
+        if (trip.getStatus() != expected) {
+            throw new RuntimeException("Trip must be " + expected + " to " + action + " (current: " + trip.getStatus() + ")");
+        }
+    }
+
+    private void recordStatusChange(Long tripId, TripStatus oldStatus, TripStatus newStatus, Long userId) {
+        TripStatusHistory history = TripStatusHistory.builder()
+                .tripId(tripId)
+                .oldStatus(oldStatus != null ? oldStatus.name() : null)
+                .newStatus(newStatus.name())
+                .changedBy(userId)
+                .build();
+        statusHistoryRepository.save(history);
     }
 
     private TripResponse mapToResponse(Trip trip) {
