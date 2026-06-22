@@ -1,2 +1,46 @@
 server:
   port: 8084
+
+spring:
+  application:
+    name: trip-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/fleettrack
+    username: fleettrack
+    password: fleettrack
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: trip
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    schemas: trip
+    default-schema: trip
+    baseline-on-migrate: true
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: fleettrack
+    password: fleettrack
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    com.fleettrack.trip: DEBUG
+    org.hibernate.SQL: WARN
