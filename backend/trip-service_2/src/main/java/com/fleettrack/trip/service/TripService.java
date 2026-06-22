@@ -29,6 +29,7 @@ public class TripService {
     private final VehicleServiceClient vehicleServiceClient;
     private final MediaServiceClient mediaServiceClient;
     private final TripEventPublisher eventPublisher;
+    private final OutboxPublisherService outboxPublisherService;
 
     @Transactional
     public TripResponse createTrip(CreateTripRequest request) {
@@ -115,14 +116,10 @@ public class TripService {
 
         recordStatusChange(tripId, oldStatus, TripStatus.DELIVERED, userId);
 
-        try {
-            TripCompletedEvent event = new TripCompletedEvent(
-                    "trip-service", trip.getId(), trip.getDriverId(),
-                    trip.getVehicleId(), trip.getCompletedAt(), true);
-            eventPublisher.publishEvent(event, "trip.completed");
-        } catch (Exception e) {
-            // Event will be retried via outbox pattern
-        }
+        TripCompletedEvent event = new TripCompletedEvent(
+                "trip-service", trip.getId(), trip.getDriverId(),
+                trip.getVehicleId(), trip.getCompletedAt(), true);
+        outboxPublisherService.saveToOutbox("trip.completed", event);
 
         return mapToResponse(trip);
     }
