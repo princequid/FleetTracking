@@ -158,6 +158,50 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  trip-service:
+    build:
+      context: ../backend
+      dockerfile: trip-service_2/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: fleettrack
+      SPRING_RABBITMQ_PASSWORD: fleettrack
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    restart: unless-stopped
+
+  gps-service:
+    build:
+      context: ../backend/gps-service_2
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATA_REDIS_HOST: redis
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   minio-data:
