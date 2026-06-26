@@ -15,4 +15,3 @@ CREATE TABLE gps_pings (
 );
 
 CREATE INDEX idx_gps_trip_time ON gps_pings(trip_id, recorded_at ASC);
-CREATE INDEX idx_gps_driver_id ON gps_pings(driver_id);

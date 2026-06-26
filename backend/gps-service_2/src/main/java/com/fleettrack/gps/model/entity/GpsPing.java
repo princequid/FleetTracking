@@ -45,7 +45,7 @@ public class GpsPing {
     @Column(name = "received_at")
     private Instant receivedAt;
 
-    @Column(name = "is_offline_ping", nullable = false)
+    @Column(name = "is_offline_ping")
     @Builder.Default
     private Boolean isOfflinePing = false;
 
