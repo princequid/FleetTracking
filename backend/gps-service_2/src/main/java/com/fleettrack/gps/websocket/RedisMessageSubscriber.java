@@ -19,10 +19,6 @@ public class RedisMessageSubscriber implements MessageListener {
         String channel = new String(message.getChannel());
         String body = new String(message.getBody());
 
-<<<<<<< gps-service
-        // channel format: "trips:{tripId}:location"
-=======
->>>>>>> main
         String[] parts = channel.split(":");
         if (parts.length >= 2) {
             String tripId = parts[1];
