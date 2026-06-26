@@ -1,8 +1,7 @@
-export default function ReportsPage() {
+export default function IncidentsPage() {
   return (
     <section className="page-shell">
-      <h1>Reports</h1>
+      <h1>Incidents</h1>
     </section>
   );
 }
-
