@@ -14,6 +14,10 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 @RestController
+<<<<<<< gps-service
+@RequestMapping("/gps")
+=======
+>>>>>>> main
 @RequiredArgsConstructor
 public class GpsController {
 
