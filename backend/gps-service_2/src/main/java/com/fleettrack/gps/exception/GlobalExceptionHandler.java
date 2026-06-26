@@ -24,10 +24,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleException(Exception ex) {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-<<<<<<< gps-service
-                .body(Map.of("error", "An unexpected error occurred"));
-=======
                 .body(Map.of("error", ex.getClass().getSimpleName() + ": " + ex.getMessage()));
->>>>>>> main
     }
 }
