@@ -1,16 +1,19 @@
 package com.fleettrack.incident.service;
 
+import com.fleettrack.incident.event.IncidentEventPublisher;
 import com.fleettrack.incident.model.dto.CreateIncidentRequest;
 import com.fleettrack.incident.model.dto.IncidentResponse;
-import com.fleettrack.incident.model.dto.UpdateStatusRequest;
+import com.fleettrack.incident.model.dto.UpdateIncidentStatusRequest;
 import com.fleettrack.incident.model.entity.Incident;
 import com.fleettrack.incident.model.enums.IncidentStatus;
 import com.fleettrack.incident.repository.IncidentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -18,63 +21,74 @@ import java.util.List;
 public class IncidentService {
 
     private final IncidentRepository incidentRepository;
+    private final IncidentEventPublisher incidentEventPublisher;
 
     @Transactional
-    public IncidentResponse createIncident(CreateIncidentRequest request) {
+    public IncidentResponse reportIncident(CreateIncidentRequest request, Long driverId) {
         Incident incident = new Incident();
         incident.setTripId(request.getTripId());
-        incident.setDriverId(request.getDriverId());
+        incident.setDriverId(driverId);
         incident.setIncidentType(request.getIncidentType());
         incident.setSeverity(request.getSeverity());
         incident.setDescription(request.getDescription());
         incident.setStatus(IncidentStatus.OPEN);
-        return mapToResponse(incidentRepository.save(incident));
+
+        Incident saved = incidentRepository.save(incident);
+        incidentEventPublisher.publishIncidentReported(saved);
+        return toResponse(saved);
     }
 
-    public List<IncidentResponse> getAllIncidents() {
-        return incidentRepository.findAll().stream()
-                .map(this::mapToResponse)
-                .toList();
+    public List<IncidentResponse> getAllIncidents(IncidentStatus status) {
+        if (status == null) {
+            return incidentRepository.findAll().stream().map(this::toResponse).toList();
+        }
+        return incidentRepository.findByStatus(status).stream().map(this::toResponse).toList();
     }
 
-    public List<IncidentResponse> getIncidentsByTripId(Long tripId) {
-        return incidentRepository.findByTripId(tripId).stream()
-                .map(this::mapToResponse)
-                .toList();
-    }
-
-    public List<IncidentResponse> getIncidentsByStatus(IncidentStatus status) {
-        return incidentRepository.findByStatus(status).stream()
-                .map(this::mapToResponse)
-                .toList();
+    public List<IncidentResponse> getIncidentsByTrip(Long tripId) {
+        return incidentRepository.findByTripId(tripId).stream().map(this::toResponse).toList();
     }
 
     public IncidentResponse getIncidentById(Long id) {
         return incidentRepository.findById(id)
-                .map(this::mapToResponse)
-                .orElseThrow(() -> new RuntimeException("Incident not found"));
+                .map(this::toResponse)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Incident not found"));
     }
 
     @Transactional
-    public IncidentResponse updateStatus(Long id, UpdateStatusRequest request, Long reviewerId) {
+    public IncidentResponse updateStatus(Long id, UpdateIncidentStatusRequest request, Long adminUserId) {
         Incident incident = incidentRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Incident not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Incident not found"));
 
-        incident.setStatus(request.getStatus());
-        incident.setReviewedBy(reviewerId);
-
-        if (request.getResolutionNotes() != null) {
-            incident.setResolutionNotes(request.getResolutionNotes());
+        if (incident.getStatus() == IncidentStatus.RESOLVED || incident.getStatus() == IncidentStatus.DISMISSED) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Incident is already closed");
         }
 
-        if (request.getStatus() == IncidentStatus.RESOLVED || request.getStatus() == IncidentStatus.DISMISSED) {
-            incident.setResolvedAt(OffsetDateTime.now());
+        IncidentStatus newStatus = request.getStatus();
+        if (!isValidTransition(incident.getStatus(), newStatus)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status transition");
         }
 
-        return mapToResponse(incidentRepository.save(incident));
+        incident.setStatus(newStatus);
+        incident.setReviewedBy(adminUserId);
+        incident.setResolutionNotes(request.getResolutionNotes());
+
+        if (newStatus == IncidentStatus.RESOLVED || newStatus == IncidentStatus.DISMISSED) {
+            incident.setResolvedAt(Instant.now());
+        }
+
+        return toResponse(incidentRepository.save(incident));
     }
 
-    private IncidentResponse mapToResponse(Incident incident) {
+    private boolean isValidTransition(IncidentStatus current, IncidentStatus next) {
+        return switch (current) {
+            case OPEN -> next == IncidentStatus.UNDER_REVIEW;
+            case UNDER_REVIEW -> next == IncidentStatus.RESOLVED || next == IncidentStatus.DISMISSED;
+            case RESOLVED, DISMISSED -> false;
+        };
+    }
+
+    private IncidentResponse toResponse(Incident incident) {
         return IncidentResponse.builder()
                 .id(incident.getId())
                 .tripId(incident.getTripId())
