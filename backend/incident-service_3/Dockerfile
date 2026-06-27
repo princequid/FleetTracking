@@ -5,17 +5,17 @@ COPY shared-events_5/pom.xml .
 COPY shared-events_5/src ./src
 RUN mvn clean install -DskipTests -q
 
-# Stage 2: Build gps-service
+# Stage 2: Build incident-service
 FROM shared-events-build AS build
 WORKDIR /app
-COPY gps-service_2/pom.xml .
+COPY incident-service_3/pom.xml .
 RUN mvn dependency:go-offline -q
-COPY gps-service_2/src ./src
+COPY incident-service_3/src ./src
 RUN mvn clean package -DskipTests -q
 
 # Stage 3: Runtime
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8085
+EXPOSE 8087
 ENTRYPOINT ["java", "-jar", "app.jar"]
