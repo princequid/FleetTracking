@@ -1,1 +1,50 @@
-// [M1] Auth service
+import * as SecureStore from 'expo-secure-store';
+import api from './api_1';
+
+const TOKEN_KEYS = {
+  ACCESS: 'ft_access_token',
+  REFRESH: 'ft_refresh_token',
+};
+
+export const authService = {
+  async login(email, password) {
+    try {
+      const response = await api.post('/auth/login', { email, password });
+      const { accessToken, refreshToken, userId, role } = response.data;
+
+      await SecureStore.setItemAsync(TOKEN_KEYS.ACCESS, accessToken);
+      await SecureStore.setItemAsync(TOKEN_KEYS.REFRESH, refreshToken);
+
+      return { userId, role };
+    } catch (error) {
+      console.error('Login failed:', error);
+      throw error;
+    }
+  },
+
+  async logout() {
+    try {
+      await api.post('/auth/logout');
+    } catch (error) {
+      console.error('Logout API call failed:', error);
+    } finally {
+      await SecureStore.deleteItemAsync(TOKEN_KEYS.ACCESS);
+      await SecureStore.deleteItemAsync(TOKEN_KEYS.REFRESH);
+    }
+  },
+
+  async getAccessToken() {
+    return await SecureStore.getItemAsync(TOKEN_KEYS.ACCESS);
+  },
+
+  async getRefreshToken() {
+    return await SecureStore.getItemAsync(TOKEN_KEYS.REFRESH);
+  },
+
+  async isAuthenticated() {
+    const token = await this.getAccessToken();
+    return !!token;
+  },
+};
+
+export default authService;
