@@ -1,8 +1,7 @@
-export default function ReportsPage() {
+export default function DispatchPage() {
   return (
     <section className="page-shell">
-      <h1>Reports</h1>
+      <h1>Dispatch</h1>
     </section>
   );
 }
-
