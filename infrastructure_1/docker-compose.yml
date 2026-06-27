@@ -228,6 +228,29 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  media-service:
+    build:
+      context: ../backend/media-service_3
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: fleettrack
+      MINIO_SECRET_KEY: fleettrack123
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   minio-data:
