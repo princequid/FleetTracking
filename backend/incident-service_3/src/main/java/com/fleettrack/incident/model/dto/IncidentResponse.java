@@ -4,11 +4,11 @@ import com.fleettrack.incident.model.enums.IncidentSeverity;
 import com.fleettrack.incident.model.enums.IncidentStatus;
 import com.fleettrack.incident.model.enums.IncidentType;
 import lombok.Builder;
-import lombok.Getter;
+import lombok.Data;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
-@Getter
+@Data
 @Builder
 public class IncidentResponse {
     private Long id;
@@ -20,6 +20,6 @@ public class IncidentResponse {
     private IncidentStatus status;
     private Long reviewedBy;
     private String resolutionNotes;
-    private OffsetDateTime resolvedAt;
-    private OffsetDateTime createdAt;
+    private Instant resolvedAt;
+    private Instant createdAt;
 }
