@@ -2,7 +2,7 @@ package com.fleettrack.incident.controller;
 
 import com.fleettrack.incident.model.dto.CreateIncidentRequest;
 import com.fleettrack.incident.model.dto.IncidentResponse;
-import com.fleettrack.incident.model.dto.UpdateIncidentStatusRequest;
+import com.fleettrack.incident.model.dto.UpdateStatusRequest;
 import com.fleettrack.incident.model.enums.IncidentStatus;
 import com.fleettrack.incident.service.IncidentService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,58 +17,58 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/incidents")
 public class IncidentController {
 
     private final IncidentService incidentService;
 
-    private static final List<String> CREATE_ROLES = List.of("DRIVER", "ADMIN", "SUPER_ADMIN");
-    private static final List<String> LIST_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
-    private static final List<String> STATUS_ROLES = List.of("ADMIN", "SUPER_ADMIN");
+    private static final List<String> ALL_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN", "DRIVER");
+    private static final List<String> WRITE_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN", "DRIVER");
+    private static final List<String> REVIEW_ROLES = List.of("ADMIN", "SUPER_ADMIN");
 
     @PostMapping
     public ResponseEntity<IncidentResponse> createIncident(
-            @Valid @RequestBody CreateIncidentRequest request,
-            HttpServletRequest httpRequest) {
-        requireRole(httpRequest, CREATE_ROLES);
-        Long driverId = extractUserId(httpRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(incidentService.reportIncident(request, driverId));
+            @Valid @RequestBody CreateIncidentRequest request, HttpServletRequest httpRequest) {
+        requireRole(httpRequest, WRITE_ROLES);
+        return ResponseEntity.status(HttpStatus.CREATED).body(incidentService.createIncident(request));
     }
 
     @GetMapping
     public ResponseEntity<List<IncidentResponse>> getIncidents(
-            @RequestParam(required = false) IncidentStatus status,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Long tripId,
             HttpServletRequest httpRequest) {
-        requireRole(httpRequest, LIST_ROLES);
-        return ResponseEntity.ok(incidentService.getAllIncidents(status));
+        requireRole(httpRequest, ALL_ROLES);
+
+        if (tripId != null) {
+            return ResponseEntity.ok(incidentService.getIncidentsByTripId(tripId));
+        }
+        if (status != null) {
+            return ResponseEntity.ok(incidentService.getIncidentsByStatus(
+                    IncidentStatus.valueOf(status.toUpperCase())));
+        }
+        return ResponseEntity.ok(incidentService.getAllIncidents());
     }
 
-    @GetMapping("/trips/{tripId}")
-    public ResponseEntity<List<IncidentResponse>> getIncidentsByTrip(@PathVariable Long tripId, HttpServletRequest httpRequest) {
-        requireRole(httpRequest, LIST_ROLES);
-        return ResponseEntity.ok(incidentService.getIncidentsByTrip(tripId));
+    @GetMapping("/{id}")
+    public ResponseEntity<IncidentResponse> getIncidentById(
+            @PathVariable Long id, HttpServletRequest httpRequest) {
+        requireRole(httpRequest, ALL_ROLES);
+        return ResponseEntity.ok(incidentService.getIncidentById(id));
     }
 
     @PutMapping("/{id}/status")
     public ResponseEntity<IncidentResponse> updateStatus(
             @PathVariable Long id,
-            @Valid @RequestBody UpdateIncidentStatusRequest request,
+            @Valid @RequestBody UpdateStatusRequest request,
             HttpServletRequest httpRequest) {
-        requireRole(httpRequest, STATUS_ROLES);
-        Long adminUserId = extractUserId(httpRequest);
-        return ResponseEntity.ok(incidentService.updateStatus(id, request, adminUserId));
+        requireRole(httpRequest, REVIEW_ROLES);
+        Long reviewerId = extractUserId(httpRequest);
+        return ResponseEntity.ok(incidentService.updateStatus(id, request, reviewerId));
     }
 
     private Long extractUserId(HttpServletRequest request) {
         String header = request.getHeader("X-User-Id");
-        if (header == null || header.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "X-User-Id header required");
-        }
-        try {
-            return Long.parseLong(header.trim());
-        } catch (NumberFormatException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "X-User-Id header must be numeric");
-        }
+        return header != null ? Long.parseLong(header) : null;
     }
 
     private void requireRole(HttpServletRequest request, List<String> allowedRoles) {
