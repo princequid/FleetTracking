@@ -1,0 +1,46 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: audit-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5433/fleettrack
+    username: fleettrack
+    password: fleettrack
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: audit
+        format_sql: true
+    show-sql: false
+
+  flyway:
+    enabled: true
+    schemas: audit
+    default-schema: audit
+    baseline-on-migrate: true
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: fleettrack
+    password: fleettrack
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    com.fleettrack.audit: DEBUG
+    org.hibernate.SQL: WARN
