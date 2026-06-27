@@ -23,6 +23,8 @@ public class GpsService {
     private final GpsPingRepository gpsPingRepository;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final PlausibilityCheckService plausibilityCheckService;
+    private final DeviationDetectionService deviationDetectionService;
 
     @Transactional
     public GpsPingResponse savePing(Long tripId, GpsPingRequest request, Long driverId) {
@@ -41,9 +43,22 @@ public class GpsService {
                 .recordedAt(request.getRecordedAt())
                 .build();
 
-        ping = gpsPingRepository.save(ping);
-        GpsPingResponse response = mapToResponse(ping);
+        GpsPing savedPing = gpsPingRepository.save(ping);
 
+        gpsPingRepository.findFirstByTripIdAndRecordedAtBeforeOrderByRecordedAtDesc(tripId, savedPing.getRecordedAt())
+                .ifPresent(previousPing -> {
+                    String flag = plausibilityCheckService.checkPing(savedPing, previousPing);
+                    if (flag != null) {
+                        savedPing.setValidationFlag(flag);
+                        gpsPingRepository.save(savedPing);
+                        log.warn("Ping {} flagged: {}", savedPing.getId(), flag);
+                    }
+                });
+
+        deviationDetectionService.checkDeviation(tripId, driverId,
+                request.getLat(), request.getLng());
+
+        GpsPingResponse response = mapToResponse(savedPing);
         publishToRedis(tripId, response);
         return response;
     }
