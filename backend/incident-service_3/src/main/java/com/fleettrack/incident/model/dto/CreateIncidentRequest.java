@@ -3,14 +3,19 @@ package com.fleettrack.incident.model.dto;
 import com.fleettrack.incident.model.enums.IncidentSeverity;
 import com.fleettrack.incident.model.enums.IncidentType;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
-import lombok.Data;
+import lombok.*;
 
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 public class CreateIncidentRequest {
 
     @NotNull
     private Long tripId;
+
+    @NotNull
+    private Long driverId;
 
     @NotNull
     private IncidentType incidentType;
@@ -18,6 +23,5 @@ public class CreateIncidentRequest {
     @NotNull
     private IncidentSeverity severity;
 
-    @Size(max = 1000)
     private String description;
 }
