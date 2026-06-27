@@ -158,6 +158,24 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  vehicle-service:
+    build:
+      context: ../backend/vehicle-service_1
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    restart: unless-stopped
+
   trip-service:
     build:
       context: ../backend
