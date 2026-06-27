@@ -57,6 +57,8 @@ public class RabbitMQConfig {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(messageConverter);
+        factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
+        factory.setDefaultRequeueRejected(false);
         return factory;
     }
 }
