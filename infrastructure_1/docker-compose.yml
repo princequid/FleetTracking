@@ -33,6 +33,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
     restart: unless-stopped
 
   rabbitmq:
@@ -48,6 +53,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
     restart: unless-stopped
 
   redis:
@@ -59,6 +69,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.25"
     restart: unless-stopped
 
   minio:
@@ -72,6 +87,11 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
     restart: unless-stopped
 
   osrm:
@@ -81,6 +101,11 @@ services:
       - ./osrm-data:/data
     ports:
       - "5000:5000"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.25"
     restart: unless-stopped
 
   # ── Eureka Server ──────────────────────────────────────────────────────
@@ -91,9 +116,16 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8761:8761"
+    environment:
+      JAVA_OPTS: "-Xmx256m -Xms128m"
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: "0.5"
     restart: unless-stopped
 
   # ── Auth Service ───────────────────────────────────────────────────────
@@ -112,6 +144,7 @@ services:
       SPRING_RABBITMQ_USERNAME: fleettrack
       SPRING_RABBITMQ_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,6 +152,11 @@ services:
         condition: service_healthy
       eureka-server:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
     restart: unless-stopped
 
   # ── API Gateway ────────────────────────────────────────────────────────
@@ -131,11 +169,17 @@ services:
       - "8080:8080"
     environment:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx256m -Xms128m"
     depends_on:
       eureka-server:
         condition: service_started
       auth-service:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: "0.5"
     restart: unless-stopped
 
   # ── Business Services ──────────────────────────────────────────────────
@@ -151,11 +195,41 @@ services:
       SPRING_DATASOURCE_USERNAME: fleettrack
       SPRING_DATASOURCE_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
         condition: service_healthy
       eureka-server:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    restart: unless-stopped
+
+  vehicle-service:
+    build:
+      context: ../backend/vehicle-service_1
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
     restart: unless-stopped
 
   trip-service:
@@ -172,6 +246,7 @@ services:
       SPRING_RABBITMQ_USERNAME: fleettrack
       SPRING_RABBITMQ_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
         condition: service_healthy
@@ -179,6 +254,11 @@ services:
         condition: service_healthy
       eureka-server:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
     restart: unless-stopped
 
   gps-service:
@@ -196,6 +276,7 @@ services:
       SPRING_RABBITMQ_USERNAME: fleettrack
       SPRING_RABBITMQ_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
         condition: service_healthy
@@ -203,6 +284,11 @@ services:
         condition: service_healthy
       eureka-server:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
     restart: unless-stopped
 
   incident-service:
@@ -219,6 +305,7 @@ services:
       SPRING_RABBITMQ_USERNAME: fleettrack
       SPRING_RABBITMQ_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
         condition: service_healthy
@@ -226,6 +313,69 @@ services:
         condition: service_healthy
       eureka-server:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    restart: unless-stopped
+
+  media-service:
+    build:
+      context: ../backend/media-service_3
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: fleettrack
+      MINIO_SECRET_KEY: fleettrack123
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      eureka-server:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    restart: unless-stopped
+
+  audit-service:
+    build:
+      context: ../backend
+      dockerfile: audit-service/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: fleettrack
+      SPRING_RABBITMQ_PASSWORD: fleettrack
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
     restart: unless-stopped
 
 volumes:
