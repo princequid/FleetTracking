@@ -4,12 +4,12 @@ CREATE TABLE IF NOT EXISTS incident.incidents (
     id BIGSERIAL PRIMARY KEY,
     trip_id BIGINT NOT NULL,
     driver_id BIGINT NOT NULL,
-    incident_type VARCHAR(30) NOT NULL CHECK (incident_type IN ('CARGO_DAMAGE','MISSING_ITEM','ACCIDENT','VEHICLE_BREAKDOWN','REFUSED_DELIVERY','OTHER')),
-    severity VARCHAR(10) NOT NULL CHECK (severity IN ('LOW','MEDIUM','HIGH','CRITICAL')),
-    description TEXT,
-    status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN','UNDER_REVIEW','RESOLVED','DISMISSED')),
+    incident_type VARCHAR(50) NOT NULL,
+    severity VARCHAR(20) NOT NULL,
+    description VARCHAR(1000),
+    status VARCHAR(20) NOT NULL,
     reviewed_by BIGINT,
-    resolution_notes TEXT,
-    resolved_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT now()
+    resolution_notes VARCHAR(1000),
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
