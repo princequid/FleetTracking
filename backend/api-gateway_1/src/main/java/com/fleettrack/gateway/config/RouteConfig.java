@@ -57,6 +57,11 @@ public class RouteConfig {
                         .path("/analytics/**")
                         .filters(f -> f.stripPrefix(1))
                         .uri("lb://analytics-service"))
+
+                // WebSocket — proxied to gps-service /ws
+                .route("gps-ws", r -> r
+                        .path("/ws/**")
+                        .uri("lb://gps-service"))
                 .build();
     }
 }
