@@ -22,7 +22,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
 
     private static final List<String> PUBLIC_PATHS = List.of(
-            "/auth/login", "/auth/register", "/auth/refresh"
+            "/auth/login", "/auth/register", "/auth/refresh", "/ws"
     );
 
     private final WebClient webClient;
