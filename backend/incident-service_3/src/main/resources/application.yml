@@ -9,8 +9,6 @@ spring:
     url: jdbc:postgresql://localhost:5433/fleettrack
     username: fleettrack
     password: fleettrack
-    hikari:
-      maximum-pool-size: 5
 
   jpa:
     hibernate:
@@ -48,8 +46,3 @@ management:
   endpoint:
     health:
       show-details: always
-
-logging:
-  level:
-    com.fleettrack.incident: DEBUG
-    org.hibernate.SQL: WARN
