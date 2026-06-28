@@ -1,5 +1,8 @@
 package com.fleettrack.incident.model.enums;
 
-// 
-public class IncidentStatus {
+public enum IncidentStatus {
+    OPEN,
+    UNDER_REVIEW,
+    RESOLVED,
+    DISMISSED
 }
