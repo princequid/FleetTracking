@@ -1,3 +1,4 @@
+import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { authStore, useAuthStore } from "../../store/authStore";
 
@@ -13,17 +14,14 @@ const navItems = [
 
 export default function Sidebar() {
   const auth = useAuthStore();
-  const navigate = useNavigate();
   const role = auth.role || "";
+  const navigate = useNavigate();
 
   async function handleLogout() {
     try {
-      await fetch("/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
-    } catch (error) {
-      console.warn("Logout failed", error);
+      await fetch("/auth/logout", { method: "POST", credentials: "include" });
+    } catch {
+      // ignore
     }
     authStore.clearAuth();
     navigate("/login");
@@ -31,9 +29,7 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
-        <span className="brand">FleetTrack</span>
-      </div>
+      <div className="sidebar-header">FleetTrack</div>
       <nav className="sidebar-nav">
         {navItems
           .filter((item) => !item.hideFor?.includes(role))
@@ -41,9 +37,7 @@ export default function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) =>
-                `sidebar-link ${isActive ? "active" : ""}`
-              }
+              className={({ isActive }) => `sidebar-link ${isActive ? "active" : ""}`}
             >
               {item.label}
             </NavLink>
