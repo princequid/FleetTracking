@@ -8,31 +8,38 @@ import com.fleettrack.media.model.enums.PhotoType;
 import com.fleettrack.media.repository.PhotoRepository;
 import io.minio.*;
 import io.minio.http.Method;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class MediaService {
 
     private final MinioClient minioClient;
+    private final MinioClient presignMinioClient;
     private final PhotoRepository photoRepository;
 
     @Value("${minio.bucket:fleettrack-media}")
     private String bucketName;
+
+    public MediaService(MinioClient minioClient,
+                        @Qualifier("presignMinioClient") MinioClient presignMinioClient,
+                        PhotoRepository photoRepository) {
+        this.minioClient = minioClient;
+        this.presignMinioClient = presignMinioClient;
+        this.photoRepository = photoRepository;
+    }
 
     public PresignResponse generatePresignedUrl(PresignRequest request, Long driverId) {
         String photoKey = String.format("trips/%d/%s/%s.jpg",
@@ -44,7 +51,7 @@ public class MediaService {
             Duration duration = Duration.ofMinutes(15);
             java.util.concurrent.TimeUnit timeUnit = java.util.concurrent.TimeUnit.SECONDS;
 
-            String uploadUrl = minioClient.getPresignedObjectUrl(
+            String uploadUrl = presignMinioClient.getPresignedObjectUrl(
                     GetPresignedObjectUrlArgs.builder()
                             .method(Method.PUT)
                             .bucket(bucketName)
