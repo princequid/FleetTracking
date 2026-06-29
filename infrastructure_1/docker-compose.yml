@@ -331,6 +331,7 @@ services:
       SPRING_DATASOURCE_USERNAME: fleettrack
       SPRING_DATASOURCE_PASSWORD: fleettrack
       MINIO_ENDPOINT: http://minio:9000
+      MINIO_EXTERNAL_ENDPOINT: http://localhost:9000
       MINIO_ACCESS_KEY: fleettrack
       MINIO_SECRET_KEY: fleettrack123
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
