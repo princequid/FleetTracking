@@ -8,10 +8,10 @@ import Layout from "./pages/Layout";
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
 import TripsPage from "./pages/TripsPage";
+import TripDetailPage from "./pages/TripDetailPage";
 import DispatchPage from "./pages/DispatchPage";
 import DriversPage from "./pages/DriversPage";
 import VehiclesPage from "./pages/VehiclesPage";
-import IncidentsPage from "./pages/IncidentsPage";
 import ReportsPage from "./pages/ReportsPage";
 
 const root = createRoot(document.getElementById("root"));
@@ -31,10 +31,10 @@ root.render(
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="trips" element={<TripsPage />} />
+        <Route path="trips/:id" element={<TripDetailPage />} />
         <Route path="dispatch" element={<DispatchPage />} />
         <Route path="drivers" element={<DriversPage />} />
         <Route path="vehicles" element={<VehiclesPage />} />
-        <Route path="incidents" element={<IncidentsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>

@@ -1,3 +1,4 @@
+import React from "react";
 import { useAuthStore } from "../../store/authStore";
 import NotificationBell from "./NotificationBell";
 
@@ -10,8 +11,8 @@ export default function Navbar() {
       <div className="navbar-actions">
         <NotificationBell />
         <div className="user-info">
-          <span className="user-role">{auth.role || "Guest"}</span>
-          <span className="user-email">{auth.email || "no-email@example.com"}</span>
+          <div className="user-role">{auth.role || "Guest"}</div>
+          <div className="user-email">{auth.email || "no-email@example.com"}</div>
         </div>
       </div>
     </header>

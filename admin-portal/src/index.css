@@ -1,7 +1,9 @@
+/* ── FleetTrack Pro  Design System ──────────────────────────────── */
+
 :root {
   --color-navy: #1B3A6B;
   --color-navy-dark: #0F2347;
-  --color-navy-hover: #2E5090;
+  --color-navy-light: #2E5090;
   --color-teal: #0D9488;
   --color-teal-light: #14B8A6;
   --color-teal-pale: #CCFBF1;
@@ -12,6 +14,7 @@
   --color-text-1: #111827;
   --color-text-2: #374151;
   --color-text-3: #6B7280;
+  --color-text-4: #9CA3AF;
   --color-bg: #F9FAFB;
   --color-surface: #F3F4F6;
   --color-border: #E5E7EB;
@@ -19,49 +22,142 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-  --shadow-md: 0 4px 12px rgba(27,58,107,0.10);
-  --shadow-lg: 0 8px 24px rgba(27,58,107,0.14);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(27, 58, 107, 0.10);
+  --shadow-lg: 0 8px 24px rgba(27, 58, 107, 0.14);
+  --shadow-xl: 0 12px 40px rgba(27, 58, 107, 0.18);
   --sidebar-width: 260px;
   --navbar-height: 64px;
-  --transition-fast: 150ms cubic-bezier(0.4,0,0.2,1);
-  --transition-base: 250ms cubic-bezier(0.4,0,0.2,1);
-  --transition-slow: 400ms cubic-bezier(0.4,0,0.2,1);
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-* {
+*, *::before, *::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  font-family: 'Inter', system-ui, sans-serif;
 }
+
+html { height: 100%; }
 
 body {
+  min-height: 100%;
   background: var(--color-bg);
   color: var(--color-text-1);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-#root {
-  min-height: 100vh;
-}
+#root { min-height: 100vh; }
 
 button {
   cursor: pointer;
   border: none;
   outline: none;
+  font: inherit;
+  background: none;
 }
 
-input {
+input, textarea, select {
   font: inherit;
   outline: none;
 }
 
+a { text-decoration: none; color: inherit; }
+
+/* ── Animations ──────────────────────────────────────────────── */
+
 @keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.3); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+@keyframes slowZoom {
+  0%   { transform: scale(1); }
+  100% { transform: scale(1.12); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 .page-enter {
   animation: fadeSlideUp var(--transition-slow) both;
+}
+
+.fade-in {
+  animation: fadeIn var(--transition-base) both;
+}
+
+/* ── Login-specific ──────────────────────────────────────────── */
+
+.login-bg-image {
+  animation: slowZoom 25s ease-in-out infinite alternate;
+}
+
+.login-input {
+  width: 100%;
+  padding: 13px 16px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-1);
+  background: var(--color-white);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.login-input::placeholder {
+  color: var(--color-text-4);
+}
+
+.login-input:focus {
+  border-color: var(--color-navy);
+  box-shadow: 0 0 0 3px rgba(27, 58, 107, 0.10);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-white);
+  background: var(--color-navy);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-base), transform var(--transition-fast), box-shadow var(--transition-base);
+}
+
+.login-btn:hover {
+  background: var(--color-navy-light);
+  box-shadow: 0 4px 16px rgba(27, 58, 107, 0.25);
+  transform: translateY(-1px);
+}
+
+.login-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.login-btn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+  transform: none;
 }

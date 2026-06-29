@@ -1,5 +1,6 @@
 package com.fleettrack.auth.service;
 
+import com.fleettrack.auth.event.AuthEventPublisher;
 import com.fleettrack.auth.exception.AccountLockedException;
 import com.fleettrack.auth.model.dto.*;
 import com.fleettrack.auth.model.entity.RefreshToken;
@@ -7,6 +8,7 @@ import com.fleettrack.auth.model.entity.User;
 import com.fleettrack.auth.model.enums.Role;
 import com.fleettrack.auth.repository.RefreshTokenRepository;
 import com.fleettrack.auth.repository.UserRepository;
+import com.fleettrack.events.BaseEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,6 +32,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AuthEventPublisher authEventPublisher;
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final int LOCK_DURATION_MINUTES = 15;
@@ -80,12 +83,19 @@ public class AuthService {
                 .build();
         refreshTokenRepository.save(refreshToken);
 
-        return LoginResponse.builder()
+        LoginResponse response = LoginResponse.builder()
                 .accessToken(jwtService.generateAccessToken(user))
                 .refreshToken(rawRefreshToken)
                 .role(user.getRole())
                 .userId(user.getId())
                 .build();
+
+        try {
+            authEventPublisher.publishEvent(
+                    new BaseEvent("user.login", "auth-service"), "user.login");
+        } catch (Exception ignored) {}
+
+        return response;
     }
 
     @Transactional
