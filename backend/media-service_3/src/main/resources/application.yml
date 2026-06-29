@@ -41,6 +41,7 @@ logging:
 
 minio:
   endpoint: http://localhost:9000
+  external-endpoint: http://localhost:9000
   accessKey: fleettrack
   secretKey: fleettrack123
   bucket: fleettrack-media
