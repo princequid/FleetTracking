@@ -4,9 +4,10 @@ import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
 
 const features = [
-  { icon: '📍', text: 'Real-time Fleet Tracking' },
-  { icon: '🛡️', text: 'Cargo Safety & Incident Management' },
-  { icon: '📊', text: 'Analytics & Performance Reports' },
+  { text: 'Real-time GPS Fleet Tracking' },
+  { text: 'Cargo Safety & Incident Management' },
+  { text: 'Analytics & Performance Reports' },
+  { text: 'Automated Route Monitoring' },
 ];
 
 export function LoginPage() {
@@ -47,7 +48,9 @@ export function LoginPage() {
     setLoading(true);
     try {
       const res = await api.post('/auth/mfa/verify', {
-        code, email, loginId: loginResponse?.loginId,
+        code,
+        email,
+        loginId: loginResponse?.loginId,
       });
       setAuth(res.data);
       navigate('/');
@@ -59,157 +62,193 @@ export function LoginPage() {
   };
 
   return (
-    <div style={styles.container}>
-      {/* Left Panel */}
-      <div style={styles.leftPanel}>
-        <div className="login-bg-image" style={styles.bgImage} />
-        <div style={styles.bgOverlay} />
-        <div style={styles.leftContent}>
-          <div style={styles.logoRow}>
-            <div style={styles.logoIcon}>
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                <rect width="32" height="32" rx="8" fill="#14B8A6" />
-                <path d="M8 16L14 22L24 10" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <span style={styles.logoText}>FleetTrack Pro</span>
-          </div>
-          <p style={styles.subtitle}>Fleet Management Platform</p>
+    <div style={s.container}>
+      {/* ── Left  Panel ── */}
+      <div style={s.left}>
+        <div className="login-bg-image" style={s.bgImage} />
+        <div style={s.overlay} />
 
-          <div style={styles.featureList}>
+        <div style={s.leftContent} className="fade-in">
+          {/* Logo */}
+          <div style={s.logoRow}>
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+              <rect width="40" height="40" rx="10" fill="#14B8A6" />
+              <path d="M10 20L17 27L30 13" stroke="white" strokeWidth="3.5"
+                    strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span style={s.logoText}>FleetTrack Pro</span>
+          </div>
+
+          <h2 style={s.tagline}>Intelligent Fleet Management Platform</h2>
+          <p style={s.taglineSub}>
+            Monitor your entire fleet in real-time. Track deliveries, manage
+            drivers, and ensure cargo safety — all from one dashboard.
+          </p>
+
+          {/* Feature list */}
+          <div style={s.features}>
             {features.map((f, i) => (
-              <div key={i} style={styles.featureItem}>
-                <div style={styles.featureCheck}>
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                    <circle cx="9" cy="9" r="9" fill="#14B8A6" opacity="0.2" />
-                    <path d="M5 9L8 12L13 6" stroke="#14B8A6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-                <span style={styles.featureText}>{f.text}</span>
+              <div key={i} style={s.featureRow}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="10" fill="rgba(20,184,166,0.15)" />
+                  <path d="M6 10L9 13L14 7" stroke="#14B8A6" strokeWidth="2"
+                        strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span style={s.featureLabel}>{f.text}</span>
               </div>
             ))}
           </div>
 
-          <p style={styles.copyright}>© 2026 FleetTrack Pro. All rights reserved.</p>
+          {/* Trust bar */}
+          <div style={s.trustBar}>
+            <div style={s.trustItem}>
+              <span style={s.trustNumber}>99.9%</span>
+              <span style={s.trustLabel}>Uptime</span>
+            </div>
+            <div style={s.trustDivider} />
+            <div style={s.trustItem}>
+              <span style={s.trustNumber}>50k+</span>
+              <span style={s.trustLabel}>Deliveries</span>
+            </div>
+            <div style={s.trustDivider} />
+            <div style={s.trustItem}>
+              <span style={s.trustNumber}>500+</span>
+              <span style={s.trustLabel}>Vehicles</span>
+            </div>
+          </div>
+
+          <p style={s.copyright}>&copy; 2026 FleetTrack Pro. All rights reserved.</p>
         </div>
       </div>
 
-      {/* Right Panel */}
-      <div style={styles.rightPanel}>
-        <div style={styles.formCard} className="page-enter">
-          <h1 style={styles.heading}>Welcome back</h1>
-          <p style={styles.subheading}>Sign in to your account</p>
+      {/* ── Right Panel ── */}
+      <div style={s.right}>
+        <div style={s.formWrapper} className="page-enter">
+          <h1 style={s.heading}>Welcome back</h1>
+          <p style={s.subheading}>Sign in to your admin account to continue</p>
 
-          <form onSubmit={mfaRequired ? handleMfaVerify : handleLogin} style={styles.form}>
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Email address</label>
+          <form
+            onSubmit={mfaRequired ? handleMfaVerify : handleLogin}
+            style={s.form}
+          >
+            {/* Email */}
+            <div style={s.field}>
+              <label style={s.label}>Email address</label>
               <input
+                className="login-input"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@fleettrack.com"
                 required
-                style={styles.input}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#1B3A6B';
-                  e.target.style.boxShadow = '0 0 0 3px rgba(27,58,107,0.12)';
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#E5E7EB';
-                  e.target.style.boxShadow = 'none';
-                }}
+                autoComplete="email"
               />
             </div>
 
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Password</label>
+            {/* Password */}
+            <div style={s.field}>
+              <div style={s.labelRow}>
+                <label style={s.label}>Password</label>
+                <span style={s.forgotLink}>Forgot password?</span>
+              </div>
               <input
+                className="login-input"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
                 required
-                style={styles.input}
-                onFocus={(e) => {
-                  e.target.style.borderColor = '#1B3A6B';
-                  e.target.style.boxShadow = '0 0 0 3px rgba(27,58,107,0.12)';
-                }}
-                onBlur={(e) => {
-                  e.target.style.borderColor = '#E5E7EB';
-                  e.target.style.boxShadow = 'none';
-                }}
+                autoComplete="current-password"
               />
             </div>
 
             {/* MFA slide-in */}
-            <div style={{
-              ...styles.mfaWrapper,
-              maxHeight: mfaRequired ? 80 : 0,
-              opacity: mfaRequired ? 1 : 0,
-              marginTop: mfaRequired ? 4 : 0,
-            }}>
-              <label style={styles.label}>6-digit MFA code</label>
+            <div
+              style={{
+                overflow: 'hidden',
+                transition:
+                  'max-height 350ms cubic-bezier(0.4,0,0.2,1), opacity 300ms, margin-top 300ms',
+                maxHeight: mfaRequired ? 90 : 0,
+                opacity: mfaRequired ? 1 : 0,
+                marginTop: mfaRequired ? 4 : 0,
+              }}
+            >
+              <label style={s.label}>6-digit MFA code</label>
               <input
+                className="login-input"
                 type="text"
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(e) =>
+                  setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
+                }
                 placeholder="000000"
                 maxLength={6}
-                style={{ ...styles.input, letterSpacing: 8, textAlign: 'center', fontWeight: 600 }}
+                style={{ letterSpacing: 10, textAlign: 'center', fontWeight: 600 }}
               />
             </div>
 
-            <button type="submit" disabled={loading} style={{
-              ...styles.button,
-              opacity: loading ? 0.8 : 1,
-              transform: loading ? 'scale(0.98)' : 'scale(1)',
-            }}>
+            {/* Submit */}
+            <button
+              className="login-btn"
+              type="submit"
+              disabled={loading}
+              style={{ marginTop: 4 }}
+            >
               {loading ? (
-                <span style={styles.spinner}>
-                  <span style={styles.dot} /><span style={{ ...styles.dot, animationDelay: '0.15s' }} /><span style={{ ...styles.dot, animationDelay: '0.3s' }} />
+                <span style={s.spinner}>
+                  <span style={s.dot} />
+                  <span style={{ ...s.dot, animationDelay: '0.15s' }} />
+                  <span style={{ ...s.dot, animationDelay: '0.3s' }} />
                 </span>
-              ) : mfaRequired ? 'Verify MFA' : 'Sign in'}
+              ) : mfaRequired ? (
+                'Verify MFA'
+              ) : (
+                'Sign in'
+              )}
             </button>
           </form>
 
+          {/* Error pill */}
           {error && (
-            <div style={styles.errorPill} className="page-enter">
-              {error}
+            <div style={s.errorPill} className="page-enter">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                   style={{ flexShrink: 0 }}>
+                <circle cx="8" cy="8" r="8" fill="#FEE2E2" />
+                <path d="M8 5v3M8 10.5h.01" stroke="#DC2626" strokeWidth="1.5"
+                      strokeLinecap="round" />
+              </svg>
+              <span>{error}</span>
             </div>
           )}
+
+          {/* Footer */}
+          <p style={s.formFooter}>
+            Secure login powered by JWT authentication
+          </p>
         </div>
       </div>
-
-      <style>{`
-        @keyframes bounce {
-          0%, 80%, 100% { transform: scale(0.3); opacity: 0.4; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes slowZoom {
-          0% { transform: scale(1); }
-          100% { transform: scale(1.1); }
-        }
-        .login-bg-image {
-          animation: slowZoom 20s ease-in-out infinite alternate;
-        }
-      `}</style>
     </div>
   );
 }
 
-const styles = {
+/* ── Inline styles ─────────────────────────────────────────────── */
+
+const s = {
   container: {
     display: 'flex',
-    minHeight: '100vh',
+    height: '100vh',
+    overflow: 'hidden',
   },
-  leftPanel: {
+
+  /* Left panel */
+  left: {
     width: '55%',
     position: 'relative',
     overflow: 'hidden',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 48,
+    padding: '48px 56px',
   },
   bgImage: {
     position: 'absolute',
@@ -218,65 +257,110 @@ const styles = {
     backgroundSize: 'cover',
     backgroundPosition: 'center',
   },
-  bgOverlay: {
+  overlay: {
     position: 'absolute',
     inset: 0,
-    background: 'linear-gradient(160deg, rgba(15,35,71,0.88) 0%, rgba(27,58,107,0.82) 100%)',
+    background:
+      'linear-gradient(160deg, rgba(15,35,71,0.92) 0%, rgba(27,58,107,0.85) 50%, rgba(13,148,136,0.75) 100%)',
   },
   leftContent: {
     position: 'relative',
     zIndex: 1,
-    maxWidth: 420,
+    maxWidth: 440,
   },
   logoRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 8,
+    gap: 14,
+    marginBottom: 32,
   },
-  logoIcon: {},
   logoText: {
     color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: 700,
+    fontSize: 30,
+    fontWeight: 800,
     letterSpacing: -0.5,
   },
-  subtitle: {
-    color: '#AED6F1',
-    fontSize: 14,
-    fontWeight: 400,
-    marginBottom: 48,
+  tagline: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: 600,
+    lineHeight: 1.35,
+    marginBottom: 12,
   },
-  featureList: {
+  taglineSub: {
+    color: 'rgba(174, 214, 241, 0.85)',
+    fontSize: 14.5,
+    lineHeight: 1.65,
+    marginBottom: 40,
+  },
+
+  /* Features */
+  features: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 20,
-    marginBottom: 64,
+    gap: 16,
+    marginBottom: 48,
   },
-  featureItem: {
+  featureRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 14,
   },
-  featureCheck: {},
-  featureText: {
+  featureLabel: {
     color: '#E2E8F0',
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: 400,
   },
+
+  /* Trust bar */
+  trustBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 28,
+    padding: '20px 0',
+    borderTop: '1px solid rgba(255,255,255,0.12)',
+    borderBottom: '1px solid rgba(255,255,255,0.12)',
+    marginBottom: 32,
+  },
+  trustItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  },
+  trustNumber: {
+    color: '#14B8A6',
+    fontSize: 20,
+    fontWeight: 700,
+  },
+  trustLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: 500,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  trustDivider: {
+    width: 1,
+    height: 36,
+    background: 'rgba(255,255,255,0.12)',
+  },
+
   copyright: {
-    color: 'rgba(255,255,255,0.3)',
+    color: 'rgba(255,255,255,0.25)',
     fontSize: 12,
   },
-  rightPanel: {
+
+  /* Right panel */
+  right: {
     width: '45%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 48,
+    padding: '48px 56px',
     background: '#FFFFFF',
+    overflow: 'hidden',
   },
-  formCard: {
+  formWrapper: {
     width: '100%',
     maxWidth: 400,
   },
@@ -285,54 +369,42 @@ const styles = {
     fontWeight: 700,
     color: '#111827',
     marginBottom: 6,
+    letterSpacing: -0.3,
   },
   subheading: {
     fontSize: 14,
     color: '#6B7280',
     marginBottom: 32,
+    lineHeight: 1.5,
   },
   form: {
     display: 'flex',
     flexDirection: 'column',
     gap: 20,
   },
-  fieldGroup: {
+  field: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 6,
+    gap: 7,
+  },
+  labelRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   label: {
     fontSize: 13,
     fontWeight: 500,
     color: '#374151',
   },
-  input: {
-    width: '100%',
-    padding: '12px 16px',
-    fontSize: 14,
-    border: '1px solid #E5E7EB',
-    borderRadius: 10,
-    color: '#111827',
-    background: '#FFFFFF',
-    transition: 'border-color 250ms, box-shadow 250ms',
-  },
-  mfaWrapper: {
-    overflow: 'hidden',
-    transition: 'max-height 350ms cubic-bezier(0.4,0,0.2,1), opacity 300ms, margin-top 300ms',
-  },
-  button: {
-    width: '100%',
-    padding: 14,
-    fontSize: 15,
-    fontWeight: 600,
-    color: '#FFFFFF',
-    background: '#1B3A6B',
-    borderRadius: 10,
-    border: 'none',
+  forgotLink: {
+    fontSize: 12.5,
+    fontWeight: 500,
+    color: '#1B3A6B',
     cursor: 'pointer',
-    transition: 'background 250ms, transform 150ms',
-    marginTop: 4,
   },
+
+  /* Loading dots */
   spinner: {
     display: 'inline-flex',
     gap: 6,
@@ -347,13 +419,26 @@ const styles = {
     background: '#FFFFFF',
     animation: 'bounce 0.6s infinite',
   },
+
+  /* Error */
   errorPill: {
-    marginTop: 16,
-    padding: '10px 14px',
+    marginTop: 20,
+    padding: '11px 16px',
     fontSize: 13,
+    fontWeight: 500,
     color: '#DC2626',
     background: '#FEF2F2',
     border: '1px solid #FECACA',
-    borderRadius: 8,
+    borderRadius: 10,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+  },
+
+  formFooter: {
+    marginTop: 32,
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
   },
 };
