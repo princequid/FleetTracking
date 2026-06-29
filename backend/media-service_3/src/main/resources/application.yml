@@ -38,3 +38,10 @@ logging:
   level:
     com.fleettrack.media: DEBUG
     org.hibernate.SQL: WARN
+
+minio:
+  endpoint: http://localhost:9000
+  external-endpoint: http://localhost:9000
+  accessKey: fleettrack
+  secretKey: fleettrack123
+  bucket: fleettrack-media
