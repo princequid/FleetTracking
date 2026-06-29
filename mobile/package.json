@@ -6,6 +6,9 @@
     "react-native-maps": "^1.27.2",
     "expo-secure-store": "*",
     "axios": "^1.6.0",
-    "zustand": "^4.4.0"
+    "zustand": "^4.4.0",
+    "expo-camera": "*",
+    "expo-file-system": "*",
+    "expo-location": "*"
   }
 }
