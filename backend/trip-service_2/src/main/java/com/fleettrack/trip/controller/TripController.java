@@ -1,7 +1,10 @@
 package com.fleettrack.trip.controller;
 
+import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.model.dto.CreateTripRequest;
+import com.fleettrack.trip.model.dto.DriverResponse;
 import com.fleettrack.trip.model.dto.TripResponse;
+import com.fleettrack.trip.model.dto.TripStatusHistoryResponse;
 import com.fleettrack.trip.service.TripService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -18,6 +21,7 @@ import java.util.List;
 public class TripController {
 
     private final TripService tripService;
+    private final DriverServiceClient driverServiceClient;
 
     private static final List<String> ALL_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN", "DRIVER");
     private static final List<String> WRITE_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
@@ -41,7 +45,12 @@ public class TripController {
         String userId = httpRequest.getHeader("X-User-Id");
 
         if ("DRIVER".equals(role) && userId != null) {
-            return ResponseEntity.ok(tripService.getTripsByDriver(Long.parseLong(userId), status));
+            // userId is the auth-service ID; trips are keyed by driver-profile ID
+            DriverResponse driverProfile = driverServiceClient.getDriverByUserId(Long.parseLong(userId));
+            if (driverProfile == null) {
+                return ResponseEntity.ok(List.of());
+            }
+            return ResponseEntity.ok(tripService.getTripsByDriver(driverProfile.getId(), status));
         }
         return ResponseEntity.ok(tripService.getAllTrips(status));
     }
@@ -50,6 +59,13 @@ public class TripController {
     public ResponseEntity<TripResponse> getTripById(@PathVariable Long id, HttpServletRequest httpRequest) {
         requireRole(httpRequest, ALL_ROLES);
         return ResponseEntity.ok(tripService.getTripById(id));
+    }
+
+    @GetMapping("/{id}/history")
+    public ResponseEntity<List<TripStatusHistoryResponse>> getTripHistory(
+            @PathVariable Long id, HttpServletRequest httpRequest) {
+        requireRole(httpRequest, ALL_ROLES);
+        return ResponseEntity.ok(tripService.getTripStatusHistory(id));
     }
 
     @PutMapping("/{id}/start")

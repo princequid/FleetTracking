@@ -11,8 +11,11 @@ import TripsPage from "./pages/TripsPage";
 import TripDetailPage from "./pages/TripDetailPage";
 import DispatchPage from "./pages/DispatchPage";
 import DriversPage from "./pages/DriversPage";
+import DriverDetailPage from "./pages/DriverDetailPage";
 import VehiclesPage from "./pages/VehiclesPage";
 import ReportsPage from "./pages/ReportsPage";
+import IncidentsPage from "./pages/IncidentsPage";
+import LiveMapPage from "./pages/LiveMapPage";
 
 const root = createRoot(document.getElementById("root"));
 
@@ -34,8 +37,11 @@ root.render(
         <Route path="trips/:id" element={<TripDetailPage />} />
         <Route path="dispatch" element={<DispatchPage />} />
         <Route path="drivers" element={<DriversPage />} />
+        <Route path="drivers/:id" element={<DriverDetailPage />} />
         <Route path="vehicles" element={<VehiclesPage />} />
+        <Route path="incidents" element={<IncidentsPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="map" element={<LiveMapPage />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
     </Routes>

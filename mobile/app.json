@@ -1,1 +1,11 @@
-{}
+{
+  "expo": {
+    "name": "FleetTrack Pro",
+    "slug": "fleettrack-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "fleettrack",
+    "platforms": ["ios", "android"],
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}
