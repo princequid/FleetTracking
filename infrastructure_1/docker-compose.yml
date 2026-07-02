@@ -49,10 +49,11 @@ services:
       - "5672:5672"
       - "15672:15672"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -135,7 +136,7 @@ services:
       context: ../backend
       dockerfile: auth-service_1/Dockerfile
     ports:
-      - "8081:8081"
+      - "8091:8081"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
       SPRING_DATASOURCE_USERNAME: fleettrack
@@ -195,6 +196,7 @@ services:
       SPRING_DATASOURCE_USERNAME: fleettrack
       SPRING_DATASOURCE_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      INTERNAL_SERVICE_SECRET: fleettrack-internal-dev-secret
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
@@ -246,6 +248,7 @@ services:
       SPRING_RABBITMQ_USERNAME: fleettrack
       SPRING_RABBITMQ_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      INTERNAL_SERVICE_SECRET: fleettrack-internal-dev-secret
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:

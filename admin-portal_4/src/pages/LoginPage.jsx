@@ -1,92 +1,152 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authStore, useAuthStore } from "../store/authStore";
+import { useAuthStore } from "../store/authStore";
+import api from "../services/api";
+
+const FEATURES = ["Fleet Tracking", "Cargo Safety", "Real-time Analytics"];
+
+function CheckIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
 
 export default function LoginPage() {
-  const auth = useAuthStore();
   const navigate = useNavigate();
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const setAuth = useAuthStore((state) => state.setAuth);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("ADMIN");
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (auth.authenticated) {
+    if (isLoggedIn) {
       navigate("/dashboard", { replace: true });
     }
-  }, [auth.authenticated, navigate]);
+  }, [isLoggedIn, navigate]);
 
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
-      const response = await fetch("/auth/login", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      const payload = { email, password };
+      if (mfaRequired) payload.mfaCode = mfaCode;
 
-      if (!response.ok) {
-        throw new Error("Login failed");
+      const { data } = await api.post("/auth/login", payload);
+
+      if (data.mfaRequired) {
+        setMfaRequired(true);
+        setLoading(false);
+        return;
       }
 
-      const data = await response.json();
-      authStore.setAuth({
+      setAuth({
+        userId: data.userId,
         email: data.email || email,
-        role: data.role || role,
-        token: data.token || "",
-        authenticated: true,
+        role: data.role,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
       });
       navigate("/dashboard", { replace: true });
-    } catch {
-      authStore.setAuth({ email, role, token: "", authenticated: true });
-      navigate("/dashboard", { replace: true });
+    } catch (err) {
+      setError(
+        err.response?.data?.error ||
+          err.response?.data?.message ||
+          "Invalid email or password."
+      );
+      setLoading(false);
     }
   }
 
   return (
-    <div className="login-page">
-      <section className="login-card">
-        <h1>Login</h1>
-        <form className="login-form" onSubmit={handleSubmit}>
-          <label>
-            Email
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              placeholder="user@example.com"
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="Password"
-            />
-          </label>
-          <label>
-            Role
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="ADMIN">ADMIN</option>
-              <option value="DISPATCHER">DISPATCHER</option>
-            </select>
-          </label>
-          {error && <div className="login-error">{error}</div>}
-          <button type="submit" className="primary-button">
-            Sign in
-          </button>
-        </form>
+    <div className="login-split">
+      <section className="login-left">
+        <div className="login-wordmark">FleetTrack Pro</div>
+        <div className="login-subtitle">Fleet Management Platform</div>
+        <ul className="login-features">
+          {FEATURES.map((feature) => (
+            <li className="login-feature-item" key={feature}>
+              <span className="login-feature-check">
+                <CheckIcon />
+              </span>
+              <span>{feature}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="login-right">
+        <div className="login-card">
+          <h1 className="login-heading">Welcome back</h1>
+          <p className="login-subtext">Sign in to your account</p>
+
+          <form className="login-form" onSubmit={handleSubmit}>
+            <div className="login-field">
+              <label className="login-label" htmlFor="login-email">
+                Email
+              </label>
+              <input
+                id="login-email"
+                className="login-input"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@fleettrack.com"
+                autoComplete="username"
+                required
+              />
+            </div>
+
+            <div className="login-field">
+              <label className="login-label" htmlFor="login-password">
+                Password
+              </label>
+              <input
+                id="login-password"
+                className="login-input"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            <div className={`login-mfa-wrapper ${mfaRequired ? "login-mfa-visible" : ""}`}>
+              <div className="login-field">
+                <label className="login-label" htmlFor="login-mfa">
+                  6-digit code
+                </label>
+                <input
+                  id="login-mfa"
+                  className="login-input"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  placeholder="000000"
+                />
+              </div>
+            </div>
+
+            <button className="login-button" type="submit" disabled={loading}>
+              {loading ? <span className="login-spinner" /> : "Sign in"}
+            </button>
+
+            {error && <div className="login-error">{error}</div>}
+          </form>
+        </div>
       </section>
     </div>
   );
 }
-
