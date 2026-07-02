@@ -4,10 +4,11 @@ export const useAuthStore = create((set) => ({
   isLoggedIn: false,
   userId: null,
   role: null,
+  email: null,
 
-  setLoggedIn: (userId, role) => set({ isLoggedIn: true, userId, role }),
+  setLoggedIn: (userId, role, email) => set({ isLoggedIn: true, userId, role, email }),
 
-  clearAuth: () => set({ isLoggedIn: false, userId: null, role: null }),
+  clearAuth: () => set({ isLoggedIn: false, userId: null, role: null, email: null }),
 }));
 
 export default useAuthStore;

@@ -1,18 +1,46 @@
-import React from "react";
-import { Outlet } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/common/Sidebar";
 import Navbar from "../components/common/Navbar";
+import { ToastProvider } from "../components/common/Toast";
+
+const DOC_TITLES = {
+  "/dashboard": "Dashboard",
+  "/map": "Live Map",
+  "/dispatch": "Dispatch",
+  "/trips": "Manage Trips",
+  "/drivers": "Drivers",
+  "/vehicles": "Vehicles",
+  "/incidents": "Incidents",
+  "/reports": "Reports & Analytics",
+};
 
 export default function Layout() {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    const base = "/" + location.pathname.split("/")[1];
+    const page = DOC_TITLES[location.pathname] || DOC_TITLES[base] || "FleetTrack";
+    document.title = `FleetTrack Pro — ${page}`;
+  }, [location.pathname]);
+
   return (
-    <div className="app-shell">
-      <Sidebar />
-      <div className="app-main">
-        <Navbar />
-        <main className="page-content">
-          <Outlet />
-        </main>
+    <ToastProvider>
+      <div className="app-shell">
+        <Sidebar mobileOpen={mobileSidebarOpen} onNavigate={() => setMobileSidebarOpen(false)} />
+        {mobileSidebarOpen && (
+          <div className="sidebar-backdrop" onClick={() => setMobileSidebarOpen(false)} />
+        )}
+        <div className="app-main">
+          <Navbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} />
+          <main className="page-content">
+            <div key={location.pathname} className="page-enter">
+              <Outlet />
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }
