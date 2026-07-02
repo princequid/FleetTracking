@@ -1,208 +1,335 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Button, StyleSheet, Alert } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Dimensions, SafeAreaView, Animated, Easing,
+} from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import * as Location from 'expo-location';
+import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import api from '../../../services/api_1';
 import { useTripStore } from '../../../store/tripStore_2';
+import { C } from '../../../constants/colors';
 
-export default function TripScreen() {
-  const router = useRouter();
-  const { id } = useLocalSearchParams();
-  const podUploaded = useTripStore((state) => state.podUploaded);
-  const activeTrip = useTripStore((state) => state.activeTrip);
+const { width } = Dimensions.get('window');
 
-  const [trip, setTrip] = useState(null);
-  const [currentLocation, setCurrentLocation] = useState(null);
-  const [distanceToDestination, setDistanceToDestination] = useState(null);
-  const [loading, setLoading] = useState(false);
+const STEPS = [
+  { key: 'pre_dispatch', label: 'Pre-dispatch photo', icon: 'camera' },
+  { key: 'started',      label: 'Trip started',       icon: 'play-circle' },
+  { key: 'arrived',      label: 'Mark arrived',       icon: 'map-pin' },
+  { key: 'pod',          label: 'Capture POD',        icon: 'image' },
+  { key: 'complete',     label: 'Complete trip',      icon: 'check-circle' },
+];
 
-  // Haversine formula to calculate distance between two coordinates in meters
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+function statusToStep(status) {
+  if (!status) return 0;
+  if (status === 'ASSIGNED') return 0;
+  if (status === 'STARTED' || status === 'EN_ROUTE') return 1;
+  if (status === 'ARRIVED') return 2;
+  return 4;
+}
 
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  };
+function PulsingRing({ color = C.teal }) {
+  const scale   = useRef(new Animated.Value(0.7)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    loadTrip();
-    startLocationTracking();
+    const anim = Animated.loop(
+      Animated.parallel([
+        Animated.timing(scale,   { toValue: 1.6, duration: 2000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0,   duration: 2000, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
   }, []);
 
-  const loadTrip = async () => {
-    try {
-      const response = await api.get(`/trips/${id}`);
-      setTrip(response.data);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to load trip details');
+  return (
+    <Animated.View
+      style={[styles.pulseRing, { borderColor: color, transform: [{ scale }], opacity }]}
+    />
+  );
+}
+
+function StepCard({ step, index, activeIndex }) {
+  const isDone   = index < activeIndex;
+  const isActive = index === activeIndex;
+  const breathe  = useRef(new Animated.Value(1)).current;
+  const loopRef  = useRef(null);
+
+  useEffect(() => {
+    if (isActive) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(breathe, { toValue: 1.02, duration: 1000, useNativeDriver: true }),
+          Animated.timing(breathe, { toValue: 1,    duration: 1000, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      loopRef.current = loop;
+      return () => loop.stop();
+    } else {
+      if (loopRef.current) loopRef.current.stop();
+      breathe.stopAnimation();
+      Animated.timing(breathe, { toValue: 1, duration: 200, useNativeDriver: true }).start();
     }
-  };
+  }, [isActive]);
 
-  const startLocationTracking = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status === 'granted') {
-      const location = await Location.getCurrentPositionAsync({});
-      setCurrentLocation(location.coords);
-
-      if (trip?.destinationLat && trip?.destinationLng) {
-        const distance = calculateDistance(
-          location.coords.latitude,
-          location.coords.longitude,
-          trip.destinationLat,
-          trip.destinationLng
-        );
-        setDistanceToDestination(distance);
-      }
-    }
-  };
-
-  const handleMarkStarted = async () => {
-    setLoading(true);
-    try {
-      await api.put(`/trips/${id}/start`);
-      Alert.alert('Success', 'Trip started');
-      loadTrip();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to start trip');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMarkArrived = async () => {
-    setLoading(true);
-    try {
-      await api.put(`/trips/${id}/arrive`);
-      Alert.alert('Success', 'Trip arrived');
-      loadTrip();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to mark as arrived');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCompleteTrip = async () => {
-    if (!podUploaded) {
-      Alert.alert('Error', 'POD must be uploaded before completing trip');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await api.put(`/trips/${id}/complete`);
-      Alert.alert('Success', 'Trip completed');
-      router.replace('/driver/dashboard');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to complete trip');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const isNearDestination = distanceToDestination !== null && distanceToDestination < 200;
-
-  if (!trip) {
-    return (
-      <View style={styles.container}>
-        <Text>Loading trip...</Text>
-      </View>
-    );
-  }
+  const bg = isDone ? '#F0FDF4' : isActive ? '#EEF3FB' : C.bg;
+  const opacity = !isDone && !isActive ? 0.4 : 1;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Trip Details</Text>
-      <Text style={styles.subtitle}>Trip ID: {id}</Text>
+    <Animated.View style={[styles.stepCard, { backgroundColor: bg, opacity, transform: [{ scale: breathe }] }]}>
+      <View style={[
+        styles.stepBadge,
+        isDone   ? styles.stepBadgeDone   :
+        isActive ? styles.stepBadgeActive : styles.stepBadgeLocked,
+      ]}>
+        {isDone
+          ? <Feather name="check" size={14} color="#fff" />
+          : <Text style={styles.stepNum}>{index + 1}</Text>
+        }
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.stepLabel, { color: isDone ? C.green : isActive ? C.navyPrimary : C.text3 }]}>
+          {step.label}
+        </Text>
+        {isDone   && <Text style={styles.stepDoneText}>Completed</Text>}
+        {isActive && <Text style={styles.stepActiveText}>Current step</Text>}
+      </View>
+      <Feather name={step.icon} size={18} color={isDone ? C.green : isActive ? C.navyPrimary : C.border} />
+    </Animated.View>
+  );
+}
 
-      <View style={styles.infoContainer}>
-        <Text style={styles.label}>Origin:</Text>
-        <Text style={styles.value}>{trip.originAddress || 'Loading...'}</Text>
+export default function TripDetailScreen() {
+  const router = useRouter();
+  const { id } = useLocalSearchParams();
+  const tripId = String(id).replace('_2', '');
 
-        <Text style={styles.label}>Destination:</Text>
-        <Text style={styles.value}>{trip.destinationAddress || 'Loading...'}</Text>
+  const { podUploaded } = useTripStore();
+  const [trip, setTrip]           = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-        <Text style={styles.label}>ETA:</Text>
-        <Text style={styles.value}>{trip.eta || 'Calculating...'}</Text>
+  useEffect(() => {
+    api.get(`/trips/${tripId}`)
+      .then((r) => setTrip(r.data))
+      .catch(() => {});
+  }, [tripId]);
 
-        {distanceToDestination !== null && (
-          <>
-            <Text style={styles.label}>Distance to Destination:</Text>
-            <Text style={styles.value}>{Math.round(distanceToDestination)}m</Text>
-          </>
+  const activeStep = trip ? statusToStep(trip.status) : 0;
+
+  const handleAction = async (action) => {
+    if (actionLoading) return;
+    setActionLoading(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      if (action === 'start')   await api.put(`/trips/${tripId}/start`);
+      if (action === 'arrive')  await api.put(`/trips/${tripId}/arrive`);
+      if (action === 'complete') {
+        if (!podUploaded) return;
+        await api.put(`/trips/${tripId}/complete`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.push(`/(driver)/trip/${tripId}/complete`);
+        return;
+      }
+      const r = await api.get(`/trips/${tripId}`);
+      setTrip(r.data);
+    } catch (_) {}
+    finally { setActionLoading(false); }
+  };
+
+  const actionLabel = (() => {
+    if (!trip) return '–';
+    if (trip.status === 'ASSIGNED') return 'Start trip';
+    if (trip.status === 'STARTED' || trip.status === 'EN_ROUTE') return 'Mark arrived';
+    if (trip.status === 'ARRIVED') return podUploaded ? 'Complete trip' : 'Capture POD first';
+    return 'View summary';
+  })();
+
+  const canAct = trip && !['DELIVERED', 'CANCELLED'].includes(trip.status);
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.navyDark }}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Feather name="chevron-left" size={20} color="#fff" />
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
+
+        <View style={styles.headerMid}>
+          <Text style={styles.headerTripId}>Trip #{tripId}</Text>
+          {trip && (
+            <View style={styles.headerBadge}>
+              <View style={[styles.badgeDot, { backgroundColor: C.amber }]} />
+              <Text style={[styles.badgeText, { color: C.amber }]}>{trip.status}</Text>
+            </View>
+          )}
+        </View>
+
+        <Text style={styles.headerRoute}>
+          {trip?.origin || '–'}{'\n'}
+          <Text style={{ color: C.tealLight }}>  ↓{'\n'}</Text>
+          {trip?.destination || '–'}
+        </Text>
+
+        <View style={styles.statRow}>
+          {[
+            { label: 'ETA',      val: trip?.eta ? new Date(trip.eta).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '–' },
+            { label: 'Distance', val: '–– km' },
+            { label: 'Speed',    val: '–– km/h' },
+          ].map((s) => (
+            <View key={s.label} style={styles.statBox}>
+              <Text style={styles.statVal}>{s.val}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <ScrollView
+        style={{ flex: 1, backgroundColor: C.bg }}
+        contentContainerStyle={{ padding: 16, gap: 16 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.miniMap}>
+          <View style={styles.mapGrid}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <View key={i} style={styles.mapGridLine} />
+            ))}
+          </View>
+          <View style={styles.mapCenter}>
+            <PulsingRing color={C.teal} />
+            <View style={styles.vehicleMarker}>
+              <Feather name="navigation-2" size={14} color="#fff" />
+            </View>
+          </View>
+          <View style={[styles.mapPin, { top: 20, left: 20 }]}>
+            <Feather name="map-pin" size={16} color={C.green} />
+          </View>
+          <View style={[styles.mapPin, { bottom: 20, right: 20 }]}>
+            <Feather name="map-pin" size={16} color={C.red} />
+          </View>
+          <TouchableOpacity style={styles.expandBtn}>
+            <Feather name="maximize-2" size={14} color={C.text3} />
+          </TouchableOpacity>
+        </View>
+
+        <View>
+          <Text style={styles.sectionLabel}>TRIP PROGRESS</Text>
+          <View style={styles.stepsCol}>
+            {STEPS.map((step, i) => (
+              <StepCard key={step.key} step={step} index={i} activeIndex={activeStep} />
+            ))}
+          </View>
+        </View>
+
+        {canAct && (
+          <TouchableOpacity
+            style={[styles.actionBtn, actionLoading && { opacity: 0.7 }]}
+            onPress={() => {
+              if (trip.status === 'ASSIGNED') handleAction('start');
+              else if (['STARTED', 'EN_ROUTE'].includes(trip.status)) handleAction('arrive');
+              else if (trip.status === 'ARRIVED') {
+                if (!podUploaded) router.push(`/(driver)/delivery/pod/${tripId}_3`);
+                else handleAction('complete');
+              }
+            }}
+            disabled={actionLoading}
+          >
+            <Text style={styles.actionBtnText}>{actionLoading ? '...' : actionLabel}</Text>
+          </TouchableOpacity>
         )}
-      </View>
 
-      <View style={styles.buttonContainer}>
-        <Button
-          title="Mark Started"
-          onPress={handleMarkStarted}
-          disabled={loading || trip.status !== 'ASSIGNED'}
-        />
+        <View style={styles.cameraRow}>
+          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pre-dispatch/${tripId}_3`)}>
+            <Feather name="camera" size={16} color={C.teal} />
+            <Text style={styles.cameraBtnText}>Pre-dispatch</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pod/${tripId}_3`)}>
+            <Feather name="image" size={16} color={C.green} />
+            <Text style={styles.cameraBtnText}>Capture POD</Text>
+          </TouchableOpacity>
+        </View>
 
-        <Button
-          title="Mark Arrived"
-          onPress={handleMarkArrived}
-          disabled={loading || !isNearDestination || trip.status !== 'IN_PROGRESS'}
-        />
-
-        <Button
-          title="Capture POD"
-          onPress={() => router.push(`/delivery/pod/${id}`)}
-          disabled={trip.status !== 'IN_PROGRESS'}
-        />
-
-        <Button
-          title="Complete Trip"
-          onPress={handleCompleteTrip}
-          disabled={loading || !podUploaded || trip.status !== 'ARRIVED'}
-        />
-      </View>
-    </View>
+        <View style={styles.dangerCard}>
+          <Text style={styles.dangerTitle}>Having a problem?</Text>
+          <Text style={styles.dangerSub}>Report any issues or incidents during this trip</Text>
+          <TouchableOpacity style={styles.reportBtn} onPress={() => router.push(`/(driver)/incident/report/${tripId}_3`)}>
+            <Text style={styles.reportBtnText}>Report incident</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-    backgroundColor: '#f5f5f5',
+  header: { backgroundColor: C.navyDark, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20, gap: 12 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
+  backText: { fontFamily: 'Inter-Medium', fontSize: 14, color: 'rgba(255,255,255,0.7)' },
+  headerMid: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerTripId: { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
+  headerBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
+  badgeDot: { width: 5, height: 5, borderRadius: 3 },
+  badgeText: { fontFamily: 'Inter-SemiBold', fontSize: 11 },
+  headerRoute: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff', lineHeight: 22 },
+  statRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  statBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 3 },
+  statVal: { fontFamily: 'Inter-Bold', fontSize: 14, color: '#fff' },
+  statLabel: { fontFamily: 'Inter-Regular', fontSize: 11, color: 'rgba(255,255,255,0.5)' },
+  miniMap: { height: 180, backgroundColor: '#E8EFF8', borderRadius: 16, overflow: 'hidden', position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  mapGrid: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row', justifyContent: 'space-around' },
+  mapGridLine: { width: 1, backgroundColor: 'rgba(0,0,0,0.06)', height: '100%' },
+  mapCenter: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  pulseRing: { position: 'absolute', width: 44, height: 44, borderRadius: 22, borderWidth: 2 },
+  vehicleMarker: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: C.navyPrimary,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.navyPrimary, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
-  subtitle: {
-    fontSize: 16,
-    marginBottom: 20,
-    color: '#666',
+  mapPin: { position: 'absolute' },
+  expandBtn: {
+    position: 'absolute', bottom: 10, right: 10,
+    width: 30, height: 30, borderRadius: 8, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
-  infoContainer: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
+  sectionLabel: { fontFamily: 'Inter-SemiBold', fontSize: 11, color: C.text3, letterSpacing: 0.8, marginBottom: 10 },
+  stepsCol: { gap: 8 },
+  stepCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, padding: 14,
+    shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
   },
-  label: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginTop: 10,
-    color: '#333',
+  stepBadge: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  stepBadgeDone:   { backgroundColor: C.green },
+  stepBadgeActive: { backgroundColor: C.navyPrimary },
+  stepBadgeLocked: { backgroundColor: C.border },
+  stepNum: { fontFamily: 'Inter-Bold', fontSize: 13, color: '#fff' },
+  stepLabel: { fontFamily: 'Inter-SemiBold', fontSize: 14 },
+  stepDoneText:   { fontFamily: 'Inter-Regular', fontSize: 12, color: C.green, marginTop: 2 },
+  stepActiveText: { fontFamily: 'Inter-Medium', fontSize: 12, color: C.navyPrimary, marginTop: 2 },
+  actionBtn: {
+    backgroundColor: C.teal, borderRadius: 14, height: 54,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.teal, shadowOpacity: 0.25, shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
-  value: {
-    fontSize: 16,
-    color: '#666',
+  actionBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff', letterSpacing: -0.2 },
+  cameraRow: { flexDirection: 'row', gap: 10 },
+  cameraBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: '#fff', borderRadius: 12, paddingVertical: 14,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
   },
-  buttonContainer: {
-    gap: 10,
-  },
+  cameraBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 13, color: C.text1 },
+  dangerCard: { backgroundColor: '#FFF8F8', borderWidth: 1, borderColor: '#FECACA', borderRadius: 14, padding: 16, gap: 4 },
+  dangerTitle: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1 },
+  dangerSub: { fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3, marginBottom: 10 },
+  reportBtn: { borderWidth: 1.5, borderColor: C.red, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  reportBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.red },
 });
