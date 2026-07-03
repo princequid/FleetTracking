@@ -1,145 +1,114 @@
 import api from './api_1';
 import * as FileSystem from 'expo-file-system';
 
+const QUEUE_FILE = `${FileSystem.documentDirectory}ft_upload_queue.json`;
+
+async function readQueue() {
+  try {
+    const info = await FileSystem.getInfoAsync(QUEUE_FILE);
+    if (!info.exists) return [];
+    const raw = await FileSystem.readAsStringAsync(QUEUE_FILE);
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+async function writeQueue(queue) {
+  try {
+    await FileSystem.writeAsStringAsync(QUEUE_FILE, JSON.stringify(queue));
+  } catch {}
+}
+
 export const mediaService = {
   async presignUpload(tripId, photoType, mimeType) {
-    try {
-      const response = await api.post('/media/presign', {
-        tripId,
-        photoType,
-        mimeType,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Presign upload failed:', error);
-      throw error;
-    }
+    const response = await api.post('/media/presign', { tripId, photoType, mimeType });
+    return response.data;
   },
 
-  async uploadToMinio(presignedUrl, fileUri) {
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      if (!fileInfo.exists) {
-        throw new Error('File does not exist');
-      }
-
-      const fileBytes = await FileSystem.readAsStringAsync(fileUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const response = await fetch(presignedUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'image/jpeg',
-        },
-        body: fileBytes,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`);
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Upload to MinIO failed:', error);
-      throw error;
+  async uploadToMinio(presignedUrl, fileUri, mimeType = 'image/jpeg') {
+    // Fetch the file as a binary blob — NOT base64 string
+    const fileResponse = await fetch(fileUri);
+    const blob = await fileResponse.blob();
+    const uploadResponse = await fetch(presignedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': mimeType },
+      body: blob,
+    });
+    if (!uploadResponse.ok) {
+      throw new Error(`Photo upload to storage failed (${uploadResponse.status})`);
     }
+    return true;
   },
 
-  async registerPhoto(tripId, photoKey, photoType, lat, lng, takenAt) {
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(photoKey);
-      const fileSizeBytes = fileInfo.exists ? fileInfo.size : 0;
-
-      const response = await api.post('/media/photos', {
-        tripId,
-        photoKey,
-        photoType,
-        mimeType: 'image/jpeg',
-        fileSizeBytes,
-        lat,
-        lng,
-        takenAt,
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Register photo failed:', error);
-      throw error;
-    }
+  async registerPhoto(tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt) {
+    const response = await api.post('/media/photos', {
+      tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt,
+    });
+    return response.data;
   },
 
-  async fullUploadFlow(tripId, photoType, fileUri, location) {
+  // Main entry point called by camera screens.
+  // onProgress: ({ step: string, percent: number }) => void
+  async fullUploadFlow(tripId, photoType, fileUri, location, onProgress) {
     try {
-      // Step 1: Get presigned URL
-      const presignResponse = await this.presignUpload(tripId, photoType, 'image/jpeg');
-      const { uploadUrl, photoKey } = presignResponse;
+      onProgress?.({ step: 'Preparing upload...', percent: 10 });
 
-      // Step 2: Upload to MinIO
+      // Step 1 — presign
+      const { uploadUrl, photoKey } = await this.presignUpload(tripId, photoType, 'image/jpeg');
+      onProgress?.({ step: 'Uploading photo...', percent: 45 });
+
+      // Step 2 — upload binary to MinIO
       await this.uploadToMinio(uploadUrl, fileUri);
+      onProgress?.({ step: 'Verifying...', percent: 80 });
 
-      // Step 3: Register photo with backend
+      // Step 3 — register with SHA-256 hash
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
       const { latitude, longitude } = location || {};
-      const takenAt = new Date().toISOString();
-      await this.registerPhoto(
-        tripId,
-        photoKey,
-        photoType,
-        latitude,
-        longitude,
-        takenAt
+      const result = await this.registerPhoto(
+        tripId, photoKey, photoType, 'image/jpeg',
+        fileInfo.size || 0, latitude, longitude, new Date().toISOString(),
       );
 
-      return { success: true, photoKey };
+      onProgress?.({ step: 'Complete', percent: 100 });
+      return { success: true, photoKey, photo: result };
     } catch (error) {
-      console.error('Full upload flow failed:', error);
-      
-      // Save to FileSystem for retry
+      // Save to offline queue so we can retry later
       try {
-        const retryData = {
-          tripId,
-          photoType,
-          fileUri,
-          location,
-          timestamp: new Date().toISOString(),
-        };
-        const retryFileUri = `${FileSystem.documentDirectory}retry_${Date.now()}.json`;
-        await FileSystem.writeAsStringAsync(
-          retryFileUri,
-          JSON.stringify(retryData)
-        );
-        console.log('Saved failed upload for retry:', retryFileUri);
-      } catch (saveError) {
-        console.error('Failed to save retry data:', saveError);
-      }
-
+        const queue = await readQueue();
+        queue.push({
+          tripId, photoType, fileUri,
+          lat: location?.latitude, lng: location?.longitude,
+          takenAt: new Date().toISOString(),
+          retryCount: 0,
+        });
+        await writeQueue(queue);
+      } catch {}
       throw error;
     }
   },
 
-  async getRetryQueue() {
-    try {
-      const files = await FileSystem.readDirectoryAsync(FileSystem.documentDirectory);
-      const retryFiles = files.filter((file) => file.startsWith('retry_') && file.endsWith('.json'));
-      
-      const retryQueue = [];
-      for (const file of retryFiles) {
-        const fileUri = `${FileSystem.documentDirectory}${file}`;
-        const content = await FileSystem.readAsStringAsync(fileUri);
-        retryQueue.push(JSON.parse(content));
-      }
-      return retryQueue;
-    } catch (error) {
-      console.error('Failed to get retry queue:', error);
-      return [];
-    }
-  },
+  async retryFailedUploads() {
+    const queue = await readQueue();
+    if (!queue.length) return;
 
-  async clearRetryItem(fileUri) {
-    try {
-      await FileSystem.deleteAsync(fileUri);
-    } catch (error) {
-      console.error('Failed to clear retry item:', error);
+    const remaining = [];
+    for (const item of queue) {
+      if (item.retryCount >= 3) {
+        remaining.push(item); // give up after 3 tries
+        continue;
+      }
+      try {
+        await this.fullUploadFlow(
+          item.tripId, item.photoType, item.fileUri,
+          item.lat ? { latitude: item.lat, longitude: item.lng } : null,
+          null,
+        );
+      } catch {
+        remaining.push({ ...item, retryCount: (item.retryCount || 0) + 1 });
+      }
     }
+    await writeQueue(remaining);
   },
 };
 
