@@ -35,14 +35,13 @@ export const authService = {
   },
 
   async logout() {
+    // Fire server-side logout best-effort — never let a network failure block sign-out
     try {
-      await api.post('/auth/logout');
-    } catch (error) {
-      console.error('Logout API call failed:', error);
-    } finally {
-      await SecureStore.deleteItemAsync(TOKEN_KEYS.ACCESS);
-      await SecureStore.deleteItemAsync(TOKEN_KEYS.REFRESH);
-    }
+      const token = await SecureStore.getItemAsync(TOKEN_KEYS.ACCESS);
+      if (token) await api.post('/auth/logout');
+    } catch {}
+    await SecureStore.deleteItemAsync(TOKEN_KEYS.ACCESS);
+    await SecureStore.deleteItemAsync(TOKEN_KEYS.REFRESH);
   },
 
   async getAccessToken() {
