@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/common/Sidebar";
 import Navbar from "../components/common/Navbar";
@@ -16,7 +16,6 @@ const DOC_TITLES = {
 };
 
 export default function Layout() {
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -28,12 +27,9 @@ export default function Layout() {
   return (
     <ToastProvider>
       <div className="app-shell">
-        <Sidebar mobileOpen={mobileSidebarOpen} onNavigate={() => setMobileSidebarOpen(false)} />
-        {mobileSidebarOpen && (
-          <div className="sidebar-backdrop" onClick={() => setMobileSidebarOpen(false)} />
-        )}
+        <Sidebar />
         <div className="app-main">
-          <Navbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} />
+          <Navbar />
           <main className="page-content">
             <div key={location.pathname} className="page-enter">
               <Outlet />

@@ -6,7 +6,7 @@ export default function DriverLayout() {
       {/* Map and camera screens slide up from bottom like modals */}
       <Stack.Screen
         name="trip/[id]/map"
-        options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
+        options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal', headerShown: false }}
       />
       <Stack.Screen
         name="delivery/pre-dispatch/[id]_3"
