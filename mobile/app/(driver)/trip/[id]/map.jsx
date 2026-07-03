@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, Linking,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Linking, BackHandler,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -19,7 +19,7 @@ import api from '../../../../services/api_1';
 
 const ARRIVE_RADIUS = 200;
 const OSRM_BASE     = 'http://172.20.10.4:5000';
-const REROUTE_DIST  = 80;  // metres off-route before rerouting
+const REROUTE_DIST  = 80;
 
 // ─── Step instruction builder ─────────────────────────────────────────────────
 function buildInstruction(step) {
@@ -93,12 +93,21 @@ function formatDistance(m) {
   return `${(m / 1000).toFixed(1)} km`;
 }
 
-function formatEta(etaDate) {
-  if (!etaDate) return '--';
-  const mins = Math.round((etaDate - Date.now()) / 60000);
-  if (mins < 1)  return '< 1 min';
+// OSRM-based ETA: duration in seconds
+function formatEtaMins(secs) {
+  if (secs == null || secs <= 0) return '--';
+  if (secs < 60) return '< 1 min';
+  const mins = Math.round(secs / 60);
   if (mins < 60) return `${mins} min`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}min` : `${h}h`;
+}
+
+function formatArrivalTime(secs) {
+  if (secs == null) return '--';
+  return new Date(Date.now() + secs * 1000)
+    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function extractCoords(trip) {
@@ -111,7 +120,6 @@ function extractCoords(trip) {
   };
 }
 
-// ─── Parse OSRM steps into direction objects ──────────────────────────────────
 function parseOsrmSteps(steps) {
   return steps.map((step, i) => ({
     id: i,
@@ -131,53 +139,69 @@ function parseOsrmSteps(steps) {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function LiveMapScreen() {
-  const router   = useRouter();
-  const { id: tripId } = useLocalSearchParams();
-  const insets   = useSafeAreaInsets();
-  const mapRef   = useRef(null);
+  const router          = useRouter();
+  const { id: tripId }  = useLocalSearchParams();
+  const insets          = useSafeAreaInsets();
+  const mapRef          = useRef(null);
 
-  // Refs that the GPS callback reads (avoids stale closures)
+  // Mutable nav state — read by GPS callback to avoid stale closures
   const nav = useRef({
-    following:        true,
-    voice:            true,
-    directions:       [],
-    stepIndex:        0,
-    fullCoords:       [],
-    completedCoords:  [],
-    trip:             null,
-    within200m:       false,
+    following:       true,
+    voice:           true,
+    tilt:            true,
+    directions:      [],
+    stepIndex:       0,
+    fullCoords:      [],
+    completedCoords: [],
+    trip:            null,
+    within200m:      false,
   });
-  const locSubRef        = useRef(null);
-  const isReroutingRef   = useRef(false);
-  const lastSpokenStep   = useRef(-1);
-  const spokenThresholds = useRef(new Set()); // "stepIdx_threshold"
-  const mapReadyRef      = useRef(false);
-  const pendingFitRef    = useRef(null);
 
-  // ── State (for rendering) ──
-  const [trip,                 setTrip]           = useState(null);
-  const [fullRouteCoords,      setFullRoute]       = useState([]);
-  const [completedRouteCoords, setCompleted]       = useState([]);
-  const [directions,           setDirections]      = useState([]);
-  const [currentStepIndex,     setStepIndex]       = useState(0);
-  const [currentPosition,      setPosition]        = useState(null);
-  const [currentHeading,       setHeading]         = useState(0);
-  const [currentSpeed,         setSpeed]           = useState(0);
-  const [distanceToNextTurn,   setDistNextTurn]    = useState(0);
-  const [distanceToDest,       setDistDest]        = useState(0);
-  const [eta,                  setEta]             = useState(null);
-  const [isWithin200m,         setWithin200m]      = useState(false);
-  const [isRerouting,          setIsRerouting]     = useState(false);
-  const [isMarkingArrived,     setIsMarkingArrived]= useState(false);
-  const [isFollowingVehicle,   setFollowing]       = useState(true);
-  const [panelExpanded,        setPanelExpanded]   = useState(false);
-  const [voiceEnabled,         setVoice]           = useState(true);
-  const [permissionDenied,     setPermDenied]      = useState(false);
-  const [errorToast,           setErrorToast]      = useState('');
+  const locSubRef           = useRef(null);
+  const isReroutingRef      = useRef(false);
+  const lastSpokenStep      = useRef(-1);
+  const spokenThresholds    = useRef(new Set());
+  const mapReadyRef         = useRef(false);
+  const pendingFitRef       = useRef(null);
+  const zoomRef             = useRef(15);
+  const updateCounterRef    = useRef(0);
+  const etaTimerRef   = useRef(null);
+  const positionRef   = useRef(null);
+  // Tracks actual map center + zoom from onRegionChangeComplete so zoom buttons
+  // always know the real current zoom (not a stale initial value).
+  const mapCameraRef  = useRef({ latitude: 0, longitude: 0, zoom: 15 });
+
+  // ── State ──
+  const [trip,                 setTrip]              = useState(null);
+  const [fullRouteCoords,      setFullRoute]          = useState([]);
+  const [completedRouteCoords, setCompleted]          = useState([]);
+  const [directions,           setDirections]         = useState([]);
+  const [currentStepIndex,     setStepIndex]          = useState(0);
+  const [currentPosition,      setPosition]           = useState(null);
+  const [currentHeading,       setHeading]            = useState(0);
+  const [currentSpeed,         setSpeed]              = useState(0);
+  const [distanceToNextTurn,   setDistNextTurn]       = useState(0);
+  const [distanceToDest,       setDistDest]           = useState(0);
+  const [routeDurationSecs,    setRouteDurationSecs]  = useState(null);
+  const [isWithin200m,         setWithin200m]         = useState(false);
+  const [isRerouting,          setIsRerouting]        = useState(false);
+  const [isMarkingArrived,     setIsMarkingArrived]   = useState(false);
+  const [isFollowingVehicle,   setFollowing]          = useState(true);
+  const [panelExpanded,        setPanelExpanded]      = useState(false);
+  const [voiceEnabled,         setVoice]              = useState(true);
+  const [permissionDenied,     setPermDenied]         = useState(false);
+  const [errorToast,           setErrorToast]         = useState('');
+  const [mapMounted,           setMapMounted]         = useState(false);
+  // tracksViewChanges is always true for the vehicle marker — toggling it causes
+  // react-native-maps to drop the Reanimated view in the native layer, making the
+  // marker vanish or snap to stale coordinates.
+  const [tiltEnabled,          setTiltEnabled]        = useState(true);
+  const [isLoading,            setIsLoading]          = useState(true);
 
   // Keep nav ref in sync with state
   useEffect(() => { nav.current.following = isFollowingVehicle; }, [isFollowingVehicle]);
   useEffect(() => { nav.current.voice     = voiceEnabled; },      [voiceEnabled]);
+  useEffect(() => { nav.current.tilt      = tiltEnabled; },       [tiltEnabled]);
 
   // ── Reanimated shared values ──
   const markerHeading    = useSharedValue(0);
@@ -188,6 +212,8 @@ export default function LiveMapScreen() {
   const pulseOpacity     = useSharedValue(0.6);
   const cardEntrance     = useSharedValue(0);
   const toastOpacity     = useSharedValue(0);
+  const statsOpacity     = useSharedValue(1);
+  const backBtnScale     = useSharedValue(1);
 
   // ── Animated styles ──
   const pulsingRingStyle = useAnimatedStyle(() => ({
@@ -198,8 +224,7 @@ export default function LiveMapScreen() {
     transform: [{ scale: arrivedPulse.value }],
   }));
   const panelStyle       = useAnimatedStyle(() => ({
-    height: panelH.value,
-    overflow: 'hidden',
+    height: panelH.value, overflow: 'hidden',
   }));
   const reroutingStyle   = useAnimatedStyle(() => ({
     opacity: reroutingOpacity.value,
@@ -211,6 +236,10 @@ export default function LiveMapScreen() {
   const toastStyle       = useAnimatedStyle(() => ({
     opacity:   toastOpacity.value,
     transform: [{ translateY: interpolate(toastOpacity.value, [0, 1], [-8, 0]) }],
+  }));
+  const statsAnimStyle   = useAnimatedStyle(() => ({ opacity: statsOpacity.value }));
+  const backBtnAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: backBtnScale.value }],
   }));
 
   // ── Mount animations ──
@@ -228,9 +257,14 @@ export default function LiveMapScreen() {
       ), -1, false,
     );
     cardEntrance.value = withTiming(1, {
-      duration: 350,
-      easing: Easing.bezier(0.16, 1, 0.3, 1),
+      duration: 350, easing: Easing.bezier(0.16, 1, 0.3, 1),
     });
+  }, []);
+
+  // Lazy MapView — defer mount by one frame so the JS thread isn't blocked on initial render
+  useEffect(() => {
+    const t = setTimeout(() => setMapMounted(true), 80);
+    return () => clearTimeout(t);
   }, []);
 
   // ── Arrived pulse ──
@@ -247,15 +281,38 @@ export default function LiveMapScreen() {
     }
   }, [isWithin200m]);
 
+  // ── Android hardware back button ──
+  useFocusEffect(
+    useCallback(() => {
+      const onBack = () => {
+        locSubRef.current?.remove?.();
+        Speech.stop();
+        clearInterval(etaTimerRef.current);
+        router.back();
+        return true;
+      };
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+      return () => sub.remove();
+    }, [router]),
+  );
+
   // ── Error toast helper ──
   const showToast = useCallback((msg) => {
     setErrorToast(msg);
     toastOpacity.value = withTiming(1, { duration: 200 });
     setTimeout(() => {
-      toastOpacity.value = withTiming(0, { duration: 300 }, () => {});
+      toastOpacity.value = withTiming(0, { duration: 300 });
       setTimeout(() => setErrorToast(''), 300);
     }, 3000);
   }, []);
+
+  // ── Back button handler ──
+  const handleBack = useCallback(() => {
+    locSubRef.current?.remove?.();
+    Speech.stop();
+    clearInterval(etaTimerRef.current);
+    router.back();
+  }, [router]);
 
   // ── Voice instruction ──
   const speakInstruction = useCallback((stepIdx, dirs, distNext) => {
@@ -288,26 +345,50 @@ export default function LiveMapScreen() {
     if (dist <= 50)                speak(`${stepIdx}_50`,  next.instruction);
   }, []);
 
-  // ── Fetch OSRM directions ──
+  // ── Fetch OSRM full route + duration ──
   const fetchOsrm = useCallback(async (oLat, oLng, dLat, dLng) => {
     try {
       const url = `${OSRM_BASE}/route/v1/driving/${oLng},${oLat};${dLng},${dLat}?steps=true&geometries=geojson&overview=full`;
       const res = await fetch(url);
-      if (!res.ok) return { steps: [], overviewCoords: [] };
+      if (!res.ok) return { steps: [], overviewCoords: [], duration: null };
       const data = await res.json();
       const steps    = data?.routes?.[0]?.legs?.[0]?.steps ?? [];
       const overview = data?.routes?.[0]?.geometry?.coordinates ?? [];
+      const duration = data?.routes?.[0]?.duration ?? null;
       return {
         steps: parseOsrmSteps(steps),
         overviewCoords: overview.map(([lng, lat]) => ({ latitude: lat, longitude: lng })),
+        duration,
       };
     } catch {
-      return { steps: [], overviewCoords: [] };
+      return { steps: [], overviewCoords: [], duration: null };
     }
   }, []);
 
+  // ── Lightweight ETA refresh (every 30 s) ──
+  const fetchEtaRefresh = useCallback(async () => {
+    const pos = positionRef.current;
+    const t   = nav.current.trip;
+    if (!pos || !t) return;
+    const { destLat, destLng } = extractCoords(t);
+    if (destLat == null) return;
+    try {
+      const url = `${OSRM_BASE}/route/v1/driving/${pos.longitude},${pos.latitude};${destLng},${destLat}?overview=false`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      const secs = data?.routes?.[0]?.duration;
+      if (secs != null) {
+        setRouteDurationSecs(Math.round(secs));
+        statsOpacity.value = withSequence(
+          withTiming(0.3, { duration: 100 }),
+          withTiming(1,   { duration: 200 }),
+        );
+      }
+    } catch {}
+  }, []);
+
   // ── Map fit helpers ──
-  // Call fitToCoordinates safely whether map is ready yet or not
   const fitToRoute = useCallback((coords) => {
     if (!coords || coords.length < 2) return;
     if (mapReadyRef.current && mapRef.current) {
@@ -316,7 +397,6 @@ export default function LiveMapScreen() {
         animated: true,
       });
     } else {
-      // Map not mounted yet — store and apply when onMapReady fires
       pendingFitRef.current = coords;
     }
   }, []);
@@ -345,7 +425,7 @@ export default function LiveMapScreen() {
       const t = nav.current.trip;
       const { destLat, destLng } = extractCoords(t);
       if (destLat == null) return;
-      const { steps, overviewCoords } = await fetchOsrm(lat, lng, destLat, destLng);
+      const { steps, overviewCoords, duration } = await fetchOsrm(lat, lng, destLat, destLng);
       if (steps.length) {
         const newCoords = overviewCoords.length ? overviewCoords : steps.flatMap(s => s.coordinates);
         nav.current.directions      = steps;
@@ -358,6 +438,7 @@ export default function LiveMapScreen() {
         setFullRoute(newCoords);
         setCompleted([]);
         setStepIndex(0);
+        if (duration != null) setRouteDurationSecs(Math.round(duration));
       }
     } catch {}
     finally {
@@ -370,32 +451,39 @@ export default function LiveMapScreen() {
   // ── GPS position handler ──
   const onPositionUpdate = useCallback((location) => {
     const { latitude, longitude, speed, heading, accuracy } = location.coords;
-    const speedKmh = Math.max(0, (speed || 0) * 3.6);
-    const dirs      = nav.current.directions;
+    const speedKmh  = Math.max(0, (speed || 0) * 3.6);
+    const dirs       = nav.current.directions;
     const fullCoords = nav.current.fullCoords;
-    const t         = nav.current.trip;
+    const t          = nav.current.trip;
 
-    // Update marker heading smoothly
+    // Store latest position for ETA refresh and as fallback center for zoom buttons
+    positionRef.current = { latitude, longitude };
+    if (nav.current.following) {
+      mapCameraRef.current.latitude  = latitude;
+      mapCameraRef.current.longitude = longitude;
+      mapCameraRef.current.zoom      = 17;
+    }
+
     markerHeading.value = withTiming(heading || 0, { duration: 500 });
     setPosition({ latitude, longitude });
     setHeading(heading || 0);
     setSpeed(speedKmh);
 
-    // Camera follow
+    // Camera follow — reads tilt from nav ref to avoid stale closure
     if (nav.current.following) {
       mapRef.current?.animateCamera(
-        { center: { latitude, longitude }, heading: heading || 0, pitch: 45, zoom: 17 },
+        { center: { latitude, longitude }, heading: heading || 0, pitch: nav.current.tilt ? 45 : 0, zoom: 17 },
         { duration: 800 },
       );
     }
 
     // GPS ping — fire and forget
     api.post(`/gps/trips/${tripId}/ping`, {
-      lat:       latitude,
-      lng:       longitude,
-      speedKmh:  Math.round(speedKmh),
-      heading:   Math.round(heading || 0),
-      accuracyM: Math.round(accuracy || 0),
+      lat:        latitude,
+      lng:        longitude,
+      speedKmh:   Math.round(speedKmh),
+      heading:    Math.round(heading || 0),
+      accuracyM:  Math.round(accuracy || 0),
       recordedAt: new Date(location.timestamp).toISOString(),
     }).catch(() => {});
 
@@ -419,7 +507,6 @@ export default function LiveMapScreen() {
         }
       }
 
-      // Distance to next turn + voice thresholds
       const nextStep = dirs[newIdx + 1];
       if (nextStep?.startLocation) {
         const d = haversineMetres(latitude, longitude, nextStep.startLocation.latitude, nextStep.startLocation.longitude);
@@ -428,14 +515,15 @@ export default function LiveMapScreen() {
       }
     }
 
-    // ── Distance to destination ──
+    // ── Distance to destination — debounced every 3 ticks ──
     if (t) {
       const { destLat, destLng } = extractCoords(t);
       if (destLat != null) {
         const destDist = haversineMetres(latitude, longitude, destLat, destLng);
-        setDistDest(destDist);
-        const speedMs = Math.max(8.33, speedKmh / 3.6);
-        setEta(new Date(Date.now() + (destDist / speedMs) * 1000));
+        updateCounterRef.current += 1;
+        if (updateCounterRef.current % 3 === 0) {
+          setDistDest(destDist);
+        }
         if (destDist < ARRIVE_RADIUS && !nav.current.within200m) {
           nav.current.within200m = true;
           setWithin200m(true);
@@ -471,80 +559,80 @@ export default function LiveMapScreen() {
   // ── Load trip + start GPS ──
   useEffect(() => {
     (async () => {
-      // ① Kick off permission + trip fetch in parallel — don't wait for one before the other
       const [permResult, tripResult] = await Promise.allSettled([
         Location.requestForegroundPermissionsAsync(),
         api.get(`/trips/${tripId}`),
       ]);
 
-      // Permission check
-      if (
-        permResult.status === 'rejected' ||
-        permResult.value?.status !== 'granted'
-      ) {
+      if (permResult.status === 'rejected' || permResult.value?.status !== 'granted') {
         setPermDenied(true);
         return;
       }
 
-      // Trip data check
       if (tripResult.status === 'rejected') {
         showToast('Could not load trip data. Please go back and try again.');
+        setIsLoading(false);
         return;
       }
       const tripData = tripResult.value.data;
       nav.current.trip = tripData;
       setTrip(tripData);
 
-      // ② Parse and show stored route geometry IMMEDIATELY — no waiting for OSRM
+      // Show stored route geometry immediately
       const storedCoords = parseRoute(tripData.routeGeometry);
       if (storedCoords.length >= 2) {
         nav.current.fullCoords = storedCoords;
         setFullRoute(storedCoords);
-        fitToRoute(storedCoords); // fires as soon as map is ready (onMapReady handles timing)
+        fitToRoute(storedCoords);
       }
 
-      // ③ Fetch OSRM directions + initial GPS position in parallel
+      // Parallel: OSRM directions + initial GPS position
       const { originLat, originLng, destLat, destLng } = extractCoords(tripData);
       const [osrmResult, posResult] = await Promise.allSettled([
         originLat != null && destLat != null
           ? fetchOsrm(originLat, originLng, destLat, destLng)
-          : Promise.resolve({ steps: [], overviewCoords: [] }),
+          : Promise.resolve({ steps: [], overviewCoords: [], duration: null }),
         Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
       ]);
 
-      // Apply OSRM directions (upgrades turn instructions and may refine route line)
       if (osrmResult.status === 'fulfilled') {
-        const { steps, overviewCoords } = osrmResult.value;
+        const { steps, overviewCoords, duration } = osrmResult.value;
         if (steps.length) {
           nav.current.directions = steps;
           setDirections(steps);
-          // If OSRM returned a higher-resolution overview, use it
           if (overviewCoords.length > storedCoords.length) {
             nav.current.fullCoords = overviewCoords;
             setFullRoute(overviewCoords);
           }
         }
+        if (duration != null) setRouteDurationSecs(Math.round(duration));
       }
 
-      // Apply initial GPS position
       if (posResult.status === 'fulfilled') {
         const { latitude, longitude, heading, speed } = posResult.value.coords;
+        positionRef.current = { latitude, longitude };
         setPosition({ latitude, longitude });
         setHeading(heading || 0);
         setSpeed(Math.max(0, (speed || 0) * 3.6));
       }
 
-      // ④ Start live GPS watch
+      setIsLoading(false);
+
+      // Start live GPS watch
       const sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1500, distanceInterval: 5 },
         onPositionUpdate,
       );
       locSubRef.current = sub;
+
+      // OSRM ETA refresh every 30 s
+      etaTimerRef.current = setInterval(fetchEtaRefresh, 30000);
     })();
 
     return () => {
       locSubRef.current?.remove?.();
       Speech.stop();
+      clearInterval(etaTimerRef.current);
     };
   }, [tripId]);
 
@@ -555,6 +643,7 @@ export default function LiveMapScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (nav.current.voice) Speech.speak('You have arrived', { language: 'en-GB' });
     locSubRef.current?.remove?.();
+    clearInterval(etaTimerRef.current);
     Speech.stop();
     try {
       await api.put(`/trips/${tripId}/arrive`);
@@ -565,15 +654,73 @@ export default function LiveMapScreen() {
     }
   }, [tripId, isMarkingArrived, showToast]);
 
-  // ── Re-centre ──
+  // ── Map controls ──
   const handleReCenter = useCallback(() => {
     if (!currentPosition) return;
+    nav.current.following = true;
     setFollowing(true);
+    zoomRef.current = 17;
     mapRef.current?.animateCamera(
-      { center: currentPosition, heading: currentHeading, pitch: 45, zoom: 17 },
+      { center: currentPosition, heading: currentHeading, pitch: tiltEnabled ? 45 : 0, zoom: 17 },
       { duration: 500 },
     );
-  }, [currentPosition, currentHeading]);
+  }, [currentPosition, currentHeading, tiltEnabled]);
+
+  const handleZoomIn = useCallback(() => {
+    if (!mapRef.current) return;
+    nav.current.following = false;
+    setFollowing(false);
+    const newZoom = Math.min(18, mapCameraRef.current.zoom + 1);
+    mapCameraRef.current.zoom = newZoom;
+    zoomRef.current = newZoom;
+    // Always use the live GPS position as centre — mapCameraRef starts at (0,0)
+    // until onRegionChangeComplete fires, so positionRef is the only reliable source.
+    const pos = positionRef.current;
+    if (!pos) return;
+    mapRef.current.animateCamera(
+      { center: pos, zoom: newZoom, heading: 0, pitch: 0 },
+      { duration: 300 },
+    );
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    if (!mapRef.current) return;
+    nav.current.following = false;
+    setFollowing(false);
+    const newZoom = Math.max(3, mapCameraRef.current.zoom - 1);
+    mapCameraRef.current.zoom = newZoom;
+    zoomRef.current = newZoom;
+    const pos = positionRef.current;
+    if (!pos) return;
+    mapRef.current.animateCamera(
+      { center: pos, zoom: newZoom, heading: 0, pitch: 0 },
+      { duration: 300 },
+    );
+  }, []);
+
+  const handleOverview = useCallback(() => {
+    nav.current.following = false;
+    setFollowing(false);
+    const coords = nav.current.fullCoords;
+    if (coords.length >= 2) {
+      mapRef.current?.fitToCoordinates(coords, {
+        edgePadding: { top: 140, right: 40, bottom: 240, left: 40 },
+        animated: true,
+      });
+    }
+  }, []);
+
+  const handleTiltToggle = useCallback(() => {
+    const next = !tiltEnabled;
+    setTiltEnabled(next);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (nav.current.following && currentPosition) {
+      mapRef.current?.animateCamera(
+        { center: currentPosition, heading: currentHeading, pitch: next ? 45 : 0, zoom: zoomRef.current },
+        { duration: 400 },
+      );
+    }
+  }, [tiltEnabled, currentPosition, currentHeading]);
 
   const togglePanel = () => {
     const next = !panelExpanded;
@@ -586,10 +733,13 @@ export default function LiveMapScreen() {
 
   // ── Derived display values ──
   const { originLat, originLng, destLat, destLng } = extractCoords(trip);
-  const curDir  = directions[currentStepIndex];
-  const nextDir = directions[currentStepIndex + 1];
+  const curDir      = directions[currentStepIndex];
+  const nextDir     = directions[currentStepIndex + 1];
   const nextNextDir = directions[currentStepIndex + 2];
-  const remainingCoords = fullRouteCoords.slice(completedRouteCoords.length);
+  const remainingCoords = useMemo(
+    () => fullRouteCoords.slice(completedRouteCoords.length),
+    [fullRouteCoords, completedRouteCoords],
+  );
 
   // ─────────────────────────────────────────────────────────────────────────────
   // PERMISSION DENIED SCREEN
@@ -616,194 +766,250 @@ export default function LiveMapScreen() {
   // MAP SCREEN
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: '#E8EEF4' }}>
 
-      {/* ── Full-screen map ── */}
-      <MapView
-        ref={mapRef}
-        style={StyleSheet.absoluteFillObject}
-        provider={PROVIDER_DEFAULT}
-        mapType="standard"
-        showsUserLocation={false}
-        showsCompass={false}
-        showsMyLocationButton={false}
-        rotateEnabled
-        pitchEnabled
-        onMapReady={onMapReady}
-        onPanDrag={() => setFollowing(false)}
-      >
-        <UrlTile
-          urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          maximumZ={19}
-          tileSize={256}
-          shouldReplaceMapContent
-        />
-
-        {/* Driven segment — gray */}
-        {completedRouteCoords.length > 1 && (
-          <Polyline
-            coordinates={completedRouteCoords}
-            strokeColor="rgba(107,114,128,0.45)"
-            strokeWidth={5}
-            lineCap="round"
+      {/* ── Full-screen map (lazy mount) ── */}
+      {mapMounted && (
+        <MapView
+          ref={mapRef}
+          style={StyleSheet.absoluteFillObject}
+          provider={PROVIDER_DEFAULT}
+          mapType="standard"
+          showsUserLocation={false}
+          showsCompass={false}
+          showsMyLocationButton={false}
+          rotateEnabled
+          pitchEnabled
+          minZoomLevel={3}
+          maxZoomLevel={18}
+          onMapReady={onMapReady}
+          onPanDrag={() => {
+            nav.current.following = false;
+            setFollowing(false);
+          }}
+          onRegionChangeComplete={(region) => {
+            // latitudeDelta ≈ 360 / 2^zoom  →  zoom ≈ log2(360 / latDelta)
+            const zoom = Math.max(3, Math.min(18, Math.round(Math.log2(360 / region.latitudeDelta))));
+            mapCameraRef.current = { latitude: region.latitude, longitude: region.longitude, zoom };
+            zoomRef.current = zoom;
+          }}
+        >
+          {/* Fix 1: cap maximumZ at 18 to prevent black tiles at high zoom */}
+          <UrlTile
+            urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maximumZ={18}
+            minimumZ={3}
+            maximumNativeZ={18}
+            tileSize={512}
+            shouldReplaceMapContent
           />
-        )}
 
-        {/* Remaining route — shadow */}
-        {remainingCoords.length > 1 && (
-          <Polyline
-            coordinates={remainingCoords}
-            strokeColor="rgba(27,58,107,0.15)"
-            strokeWidth={10}
-            lineCap="round"
-          />
-        )}
+          {/* Driven segment — gray */}
+          {completedRouteCoords.length > 1 && (
+            <Polyline
+              coordinates={completedRouteCoords}
+              strokeColor="rgba(107,114,128,0.45)"
+              strokeWidth={5}
+              lineCap="round"
+            />
+          )}
 
-        {/* Remaining route — main line */}
-        {remainingCoords.length > 1 && (
-          <Polyline
-            coordinates={remainingCoords}
-            strokeColor={C.navyPrimary}
-            strokeWidth={5}
-            lineCap="round"
-            lineJoin="round"
-          />
-        )}
+          {/* Remaining route — shadow */}
+          {remainingCoords.length > 1 && (
+            <Polyline
+              coordinates={remainingCoords}
+              strokeColor="rgba(27,58,107,0.15)"
+              strokeWidth={10}
+              lineCap="round"
+            />
+          )}
 
-        {/* Origin dot */}
-        {originLat != null && (
-          <Marker
-            coordinate={{ latitude: originLat, longitude: originLng }}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
-          >
-            <View style={styles.originDot} />
-          </Marker>
-        )}
+          {/* Remaining route — main line */}
+          {remainingCoords.length > 1 && (
+            <Polyline
+              coordinates={remainingCoords}
+              strokeColor={C.navyPrimary}
+              strokeWidth={5}
+              lineCap="round"
+              lineJoin="round"
+            />
+          )}
 
-        {/* Destination — teardrop with label */}
-        {destLat != null && (
-          <Marker
-            coordinate={{ latitude: destLat, longitude: destLng }}
-            anchor={{ x: 0.5, y: 1 }}
-            tracksViewChanges={false}
-          >
-            <View style={{ alignItems: 'center' }}>
-              <View style={styles.destLabel}>
-                <Text style={styles.destLabelText} numberOfLines={1}>
-                  {trip?.destination || 'Destination'}
-                </Text>
-              </View>
-              <View style={styles.destDot} />
-              <View style={styles.destStem} />
-            </View>
-          </Marker>
-        )}
-
-        {/* Next-turn dot */}
-        {nextDir?.startLocation && (
-          <Marker
-            coordinate={nextDir.startLocation}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
-          >
-            <View style={styles.turnDot} />
-          </Marker>
-        )}
-
-        {/* Vehicle marker */}
-        {currentPosition && (
-          <Marker
-            coordinate={currentPosition}
-            anchor={{ x: 0.5, y: 0.5 }}
-            flat
-            tracksViewChanges
-            rotation={currentHeading}
-          >
-            <View style={styles.vehicleWrapper}>
-              <Animated.View style={[styles.pulseRing, pulsingRingStyle]} />
-              <View style={styles.vehicleCircle}>
-                <Feather name="truck" size={18} color="#fff" />
-              </View>
-            </View>
-          </Marker>
-        )}
-      </MapView>
-
-      {/* ── Top instruction card ── */}
-      <View style={[styles.topSafe, { paddingTop: insets.top + 8 }]}>
-        <Animated.View style={[styles.instructionCard, cardStyle]}>
-          {/* Direction icon + text + voice toggle */}
-          <View style={styles.instructionRow}>
-            <View style={styles.maneuverBox}>
-              <Feather
-                name={getManeuverIcon(nextDir?.maneuverType, nextDir?.maneuverModifier)}
-                size={22}
-                color="#fff"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.distText}>{formatDistance(distanceToNextTurn)}</Text>
-              <Text style={styles.instrText} numberOfLines={2}>
-                {nextDir?.instruction || curDir?.instruction || 'Continue on route'}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => setVoice(v => !v)}
-              style={[styles.voiceBtn, { backgroundColor: voiceEnabled ? C.tealPale : '#F3F4F6' }]}
+          {/* Origin dot */}
+          {originLat != null && (
+            <Marker
+              coordinate={{ latitude: originLat, longitude: originLng }}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
             >
-              <Feather
-                name={voiceEnabled ? 'volume-2' : 'volume-x'}
-                size={16}
-                color={voiceEnabled ? C.teal : C.text3}
-              />
-            </Pressable>
-          </View>
+              <View style={styles.originDot} />
+            </Marker>
+          )}
 
-          {/* Next-next step preview */}
-          {(nextNextDir || curDir?.streetName) ? (
-            <>
-              <View style={styles.cardDivider} />
-              <View style={styles.previewRow}>
-                {nextNextDir && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                    <Feather
-                      name={getManeuverIcon(nextNextDir.maneuverType, nextNextDir.maneuverModifier)}
-                      size={13}
-                      color={C.text3}
-                      style={{ marginRight: 5 }}
-                    />
-                    <Text style={styles.previewText} numberOfLines={1}>
-                      {'Then: ' + nextNextDir.instruction}
-                    </Text>
-                  </View>
-                )}
-                {curDir?.streetName ? (
-                  <Text style={styles.streetText} numberOfLines={1}>
-                    {curDir.streetName}
+          {/* Destination — teardrop with label */}
+          {destLat != null && (
+            <Marker
+              coordinate={{ latitude: destLat, longitude: destLng }}
+              anchor={{ x: 0.5, y: 1 }}
+              tracksViewChanges={false}
+            >
+              <View style={{ alignItems: 'center' }}>
+                <View style={styles.destLabel}>
+                  <Text style={styles.destLabelText} numberOfLines={1}>
+                    {trip?.destination || 'Destination'}
                   </Text>
-                ) : null}
+                </View>
+                <View style={styles.destDot} />
+                <View style={styles.destStem} />
               </View>
-            </>
-          ) : null}
-        </Animated.View>
-      </View>
+            </Marker>
+          )}
+
+          {/* Next-turn dot */}
+          {nextDir?.startLocation && (
+            <Marker
+              coordinate={nextDir.startLocation}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={styles.turnDot} />
+            </Marker>
+          )}
+
+          {/* Vehicle marker — tracksViewChanges always true so Reanimated pulse ring
+              stays live in the native layer; acceptable cost for a single moving marker */}
+          {currentPosition && (
+            <Marker
+              coordinate={currentPosition}
+              anchor={{ x: 0.5, y: 0.5 }}
+              flat
+              tracksViewChanges
+              rotation={currentHeading}
+            >
+              <View style={styles.vehicleWrapper}>
+                <Animated.View style={[styles.pulseRing, pulsingRingStyle]} />
+                <View style={styles.vehicleCircle}>
+                  <Feather name="truck" size={18} color="#fff" />
+                </View>
+              </View>
+            </Marker>
+          )}
+        </MapView>
+      )}
+
+      {/* ── Loading pill — shown until trip + OSRM are ready ── */}
+      {isLoading && (
+        <View style={[styles.loadingPill, { top: insets.top + 8 }]}>
+          <ActivityIndicator size="small" color={C.teal} />
+          <Text style={styles.loadingPillText}>Loading route...</Text>
+        </View>
+      )}
+
+      {/* ── Top row: back button + instruction card ── */}
+      {!isLoading && (
+        <View style={[styles.topSafe, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.topRow}>
+
+            {/* Back button */}
+            <Animated.View style={backBtnAnimStyle}>
+              <Pressable
+                style={styles.backBtn}
+                onPress={handleBack}
+                onPressIn={() => { backBtnScale.value = withTiming(0.94, { duration: 80 }); }}
+                onPressOut={() => { backBtnScale.value = withSpring(1, { damping: 12 }); }}
+              >
+                <Feather name="arrow-left" size={20} color={C.navyPrimary} />
+              </Pressable>
+            </Animated.View>
+
+            {/* Instruction card */}
+            <Animated.View style={[styles.instructionCard, cardStyle, { flex: 1 }]}>
+              <View style={styles.instructionRow}>
+                <View style={styles.maneuverBox}>
+                  <Feather
+                    name={getManeuverIcon(nextDir?.maneuverType, nextDir?.maneuverModifier)}
+                    size={22}
+                    color="#fff"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.distText}>{formatDistance(distanceToNextTurn)}</Text>
+                  <Text style={styles.instrText} numberOfLines={2}>
+                    {nextDir?.instruction || curDir?.instruction || 'Continue on route'}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setVoice(v => !v)}
+                  style={[styles.voiceBtn, { backgroundColor: voiceEnabled ? C.tealPale : '#F3F4F6' }]}
+                >
+                  <Feather
+                    name={voiceEnabled ? 'volume-2' : 'volume-x'}
+                    size={16}
+                    color={voiceEnabled ? C.teal : C.text3}
+                  />
+                </Pressable>
+              </View>
+
+              {(nextNextDir || curDir?.streetName) ? (
+                <>
+                  <View style={styles.cardDivider} />
+                  <View style={styles.previewRow}>
+                    {nextNextDir && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                        <Feather
+                          name={getManeuverIcon(nextNextDir.maneuverType, nextNextDir.maneuverModifier)}
+                          size={13}
+                          color={C.text3}
+                          style={{ marginRight: 5 }}
+                        />
+                        <Text style={styles.previewText} numberOfLines={1}>
+                          {'Then: ' + nextNextDir.instruction}
+                        </Text>
+                      </View>
+                    )}
+                    {curDir?.streetName ? (
+                      <Text style={styles.streetText} numberOfLines={1}>
+                        {curDir.streetName}
+                      </Text>
+                    ) : null}
+                  </View>
+                </>
+              ) : null}
+            </Animated.View>
+          </View>
+        </View>
+      )}
 
       {/* ── Speed bubble ── */}
-      <View style={[styles.speedBubble, { top: insets.top + 140 }]}>
+      <View style={[styles.speedBubble, { top: insets.top + 130 }]}>
         <Text style={styles.speedVal}>{Math.round(currentSpeed)}</Text>
         <Text style={styles.speedUnit}>KM/H</Text>
       </View>
 
-      {/* ── Re-centre button ── */}
-      {!isFollowingVehicle && (
+      {/* ── Map control column (right side) ── */}
+      <View style={[styles.controlCol, { top: insets.top + 130 }]}>
         <Pressable
+          style={[styles.controlBtn, isFollowingVehicle && styles.controlBtnActive]}
           onPress={handleReCenter}
-          style={[styles.recenterBtn, { top: insets.top + 140 }]}
         >
-          <Feather name="crosshair" size={20} color={C.navyPrimary} />
+          <Feather name="crosshair" size={18} color={isFollowingVehicle ? C.teal : C.navyPrimary} />
         </Pressable>
-      )}
+        <Pressable style={styles.controlBtn} onPress={handleZoomIn}>
+          <Feather name="plus" size={18} color={C.navyPrimary} />
+        </Pressable>
+        <Pressable style={styles.controlBtn} onPress={handleZoomOut}>
+          <Feather name="minus" size={18} color={C.navyPrimary} />
+        </Pressable>
+        <Pressable style={styles.controlBtn} onPress={handleOverview}>
+          <Feather name="maximize" size={18} color={C.navyPrimary} />
+        </Pressable>
+        <Pressable
+          style={[styles.controlBtn, tiltEnabled && styles.controlBtnActive]}
+          onPress={handleTiltToggle}
+        >
+          <Feather name="layers" size={18} color={tiltEnabled ? C.teal : C.navyPrimary} />
+        </Pressable>
+      </View>
 
       {/* ── Rerouting overlay ── */}
       <Animated.View
@@ -828,29 +1034,27 @@ export default function LiveMapScreen() {
       {/* ── Bottom trip panel ── */}
       <Animated.View style={[styles.bottomPanel, panelStyle]}>
 
-        {/* Drag handle */}
         <Pressable style={styles.dragHandle} onPress={togglePanel}>
           <View style={styles.dragPill} />
         </Pressable>
 
         <View style={styles.panelContent}>
-          {/* Stats row */}
-          <View style={styles.statsRow}>
+
+          {/* Stats row — ETA (mins) | Distance | Arrival time; cross-fades on OSRM refresh */}
+          <Animated.View style={[styles.statsRow, statsAnimStyle]}>
             <View style={[styles.statCell, styles.statCellBorder]}>
-              <Text style={styles.statVal}>{formatEta(eta)}</Text>
+              <Text style={styles.statVal}>{formatEtaMins(routeDurationSecs)}</Text>
               <Text style={styles.statLbl}>ETA</Text>
             </View>
             <View style={[styles.statCell, styles.statCellBorder]}>
               <Text style={styles.statVal}>{formatDistance(distanceToDest)}</Text>
-              <Text style={styles.statLbl}>Remaining</Text>
+              <Text style={styles.statLbl}>Distance</Text>
             </View>
-            <View style={[styles.statCell, { flex: 1.2 }]}>
-              <Text style={[styles.statVal, { fontSize: 13, color: C.teal, textAlign: 'center' }]} numberOfLines={2}>
-                {trip?.destination || 'Destination'}
-              </Text>
-              <Text style={styles.statLbl}>Destination</Text>
+            <View style={[styles.statCell, { flex: 1.1 }]}>
+              <Text style={styles.statVal}>{formatArrivalTime(routeDurationSecs)}</Text>
+              <Text style={styles.statLbl}>Arrives</Text>
             </View>
-          </View>
+          </Animated.View>
 
           {/* Upcoming turns (expanded) */}
           {panelExpanded && directions.length > 0 && (
@@ -889,8 +1093,8 @@ export default function LiveMapScreen() {
                 styles.arriveBtn,
                 {
                   backgroundColor: isWithin200m ? C.green : C.border,
-                  shadowColor: isWithin200m ? C.green : 'transparent',
-                  shadowOpacity: isWithin200m ? 0.35 : 0,
+                  shadowColor:     isWithin200m ? C.green : 'transparent',
+                  shadowOpacity:   isWithin200m ? 0.35 : 0,
                 },
               ]}
             >
@@ -943,6 +1147,81 @@ const styles = StyleSheet.create({
   permGhostBtn:       { borderWidth: 1.5, borderColor: C.border, borderRadius: 14, paddingHorizontal: 32, paddingVertical: 12 },
   permGhostBtnText:   { fontFamily: 'Inter-Medium', fontSize: 14, color: C.text2 },
 
+  // Loading pill
+  loadingPill: {
+    position: 'absolute', alignSelf: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', borderRadius: 20,
+    paddingHorizontal: 16, paddingVertical: 10,
+    shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 12, shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  loadingPillText: { fontFamily: 'Inter-Medium', fontSize: 13, color: C.text2 },
+
+  // Top row (back btn + card side by side)
+  topSafe: { position: 'absolute', top: 0, left: 0, right: 0 },
+  topRow:  { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 12, gap: 8 },
+
+  // Back button
+  backBtn: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+
+  // Instruction card
+  instructionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20, overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  instructionRow:  { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 10 },
+  maneuverBox: {
+    width: 52, height: 52, borderRadius: 14, backgroundColor: C.navyPrimary,
+    alignItems: 'center', justifyContent: 'center', marginRight: 14,
+    shadowColor: C.navyPrimary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
+  },
+  distText:   { fontFamily: 'Inter-Bold', fontSize: 26, color: C.text1, letterSpacing: -0.5 },
+  instrText:  { fontFamily: 'Inter-Medium', fontSize: 14, color: C.text2, marginTop: 1 },
+  voiceBtn: {
+    width: 36, height: 36, borderRadius: 18, marginLeft: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  cardDivider: { height: 1, backgroundColor: '#F9FAFB', marginHorizontal: 16 },
+  previewRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
+  previewText: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3, flex: 1 },
+  streetText:  { fontFamily: 'Inter-Medium', fontSize: 12, color: C.teal },
+
+  // Speed bubble
+  speedBubble: {
+    position: 'absolute', left: 16,
+    backgroundColor: '#fff', borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  speedVal:  { fontFamily: 'Inter-Bold', fontSize: 20, color: C.text1 },
+  speedUnit: { fontFamily: 'Inter-Regular', fontSize: 9, color: C.text3, letterSpacing: 0.5 },
+
+  // Map control column
+  controlCol: {
+    position: 'absolute', right: 16,
+    gap: 8,
+  },
+  controlBtn: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  controlBtnActive: {
+    backgroundColor: C.tealPale,
+    borderWidth: 1.5,
+    borderColor: 'rgba(13,148,136,0.3)',
+  },
+
   // Markers
   originDot: {
     width: 14, height: 14, borderRadius: 7,
@@ -968,48 +1247,6 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 20, backgroundColor: C.navyPrimary,
     borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center',
     shadowColor: C.navyPrimary, shadowOpacity: 0.5, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
-  },
-
-  // Top instruction card
-  topSafe: { position: 'absolute', top: 0, left: 0, right: 0 },
-  instructionCard: {
-    backgroundColor: '#fff', marginHorizontal: 12,
-    borderRadius: 20, overflow: 'hidden',
-    shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: 4 },
-  },
-  instructionRow:  { flexDirection: 'row', alignItems: 'center', padding: 16, paddingBottom: 10 },
-  maneuverBox: {
-    width: 52, height: 52, borderRadius: 14, backgroundColor: C.navyPrimary,
-    alignItems: 'center', justifyContent: 'center', marginRight: 14,
-    shadowColor: C.navyPrimary, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
-  },
-  distText:   { fontFamily: 'Inter-Bold', fontSize: 26, color: C.text1, letterSpacing: -0.5 },
-  instrText:  { fontFamily: 'Inter-Medium', fontSize: 14, color: C.text2, marginTop: 1 },
-  voiceBtn: {
-    width: 36, height: 36, borderRadius: 18, marginLeft: 8,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  cardDivider: { height: 1, backgroundColor: '#F9FAFB', marginHorizontal: 16 },
-  previewRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
-  previewText: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3, flex: 1 },
-  streetText:  { fontFamily: 'Inter-Medium', fontSize: 12, color: C.teal },
-
-  // Speed bubble
-  speedBubble: {
-    position: 'absolute', left: 16,
-    backgroundColor: '#fff', borderRadius: 12,
-    paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center',
-    shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
-  },
-  speedVal:  { fontFamily: 'Inter-Bold', fontSize: 20, color: C.text1 },
-  speedUnit: { fontFamily: 'Inter-Regular', fontSize: 9, color: C.text3, letterSpacing: 0.5 },
-
-  // Re-centre
-  recenterBtn: {
-    position: 'absolute', right: 16,
-    width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 3 },
   },
 
   // Rerouting
@@ -1054,13 +1291,13 @@ const styles = StyleSheet.create({
   statLbl:         { fontFamily: 'Inter-Regular', fontSize: 11, color: C.text3, marginTop: 2 },
 
   // Upcoming steps
-  upcomingLabel:    { fontFamily: 'Inter-SemiBold', fontSize: 11, color: C.text3, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 },
-  stepRow:          { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  stepRowBorder:    { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  stepIconBox:      { width: 32, height: 32, borderRadius: 8, marginRight: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6' },
-  stepIconBoxActive:{ backgroundColor: C.navyPrimary },
-  stepInstruction:  { flex: 1, fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3 },
-  stepDist:         { fontFamily: 'Inter-Medium', fontSize: 12, color: C.text3, marginLeft: 8 },
+  upcomingLabel:     { fontFamily: 'Inter-SemiBold', fontSize: 11, color: C.text3, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 },
+  stepRow:           { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  stepRowBorder:     { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
+  stepIconBox:       { width: 32, height: 32, borderRadius: 8, marginRight: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6' },
+  stepIconBoxActive: { backgroundColor: C.navyPrimary },
+  stepInstruction:   { flex: 1, fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3 },
+  stepDist:          { fontFamily: 'Inter-Medium', fontSize: 12, color: C.text3, marginLeft: 8 },
 
   // Arrive button
   arriveBtn: {
