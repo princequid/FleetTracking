@@ -194,11 +194,17 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.cardActions}>
-                <TouchableOpacity style={styles.navBtn}>
+                <TouchableOpacity
+                  style={styles.navBtn}
+                  onPress={() => router.push(`/(driver)/trip/${activeTrip.id}/map`)}
+                >
                   <Feather name="navigation" size={15} color={C.navyPrimary} />
                   <Text style={styles.navBtnText}>Navigate</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.continueBtn} onPress={() => router.push(`/(driver)/trip/${activeTrip.id}_2`)}>
+                <TouchableOpacity
+                  style={styles.continueBtn}
+                  onPress={() => router.push(`/(driver)/trip/${activeTrip.id}_2`)}
+                >
                   <Text style={styles.continueBtnText}>Continue trip</Text>
                 </TouchableOpacity>
               </View>
@@ -236,7 +242,7 @@ export default function HomeScreen() {
             <QuickActionBtn
               icon="map-pin" label="Navigate" bg={C.amberLight}
               onPress={() => activeTrip
-                ? router.push(`/(driver)/trip/${activeTrip.id}_2`)
+                ? router.push(`/(driver)/trip/${activeTrip.id}/map`)
                 : null}
             />
           </View>
