@@ -97,7 +97,7 @@ services:
 
   osrm:
     image: osrm/osrm-backend
-    command: osrm-routed --algorithm mld /data/ghana-latest.osrm
+    command: osrm-routed --algorithm mld --max-table-size 1000 /data/ghana-latest.osrm
     volumes:
       - ./osrm-data:/data
     ports:
@@ -105,8 +105,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
-          cpus: "0.25"
+          memory: 1024M
+          cpus: "1.0"
     restart: unless-stopped
 
   # ── Eureka Server ──────────────────────────────────────────────────────
