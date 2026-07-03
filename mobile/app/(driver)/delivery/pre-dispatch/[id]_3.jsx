@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
   Image, Animated,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -8,13 +8,88 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import Svg, { Circle } from 'react-native-svg';
+import RAnimated, {
+  useSharedValue, useAnimatedProps, withTiming,
+} from 'react-native-reanimated';
 import { mediaService } from '../../../../services/mediaService_3';
 import { useTripStore } from '../../../../store/tripStore_2';
 import { C } from '../../../../constants/colors';
 
-const { width, height } = Dimensions.get('window');
-const AnimatedImage = Animated.createAnimatedComponent(Image);
+const AnimatedImage  = Animated.createAnimatedComponent(Image);
+const AnimatedCircle = RAnimated.createAnimatedComponent(Circle);
 
+const RING_R = 44;
+const RING_C = 2 * Math.PI * RING_R; // ≈ 276.5
+
+// ─── SVG circular progress ring ───────────────────────────────────────────────
+function ProgressRing({ percent, step, done }) {
+  const offset = useSharedValue(RING_C);
+
+  useEffect(() => {
+    offset.value = withTiming(RING_C * (1 - percent / 100), { duration: 280 });
+  }, [percent]);
+
+  const circleProps = useAnimatedProps(() => ({
+    strokeDashoffset: offset.value,
+  }));
+
+  if (done) {
+    return (
+      <View style={ringStyles.wrap}>
+        <View style={ringStyles.checkCircle}>
+          <Feather name="check" size={38} color={C.green} />
+        </View>
+        <Text style={ringStyles.doneText}>Uploaded!</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={ringStyles.wrap}>
+      {/* Ring + centered percent */}
+      <View style={{ width: 100, height: 100 }}>
+        {/* Rotated SVG: start arc from top */}
+        <View style={{ transform: [{ rotate: '-90deg' }], width: 100, height: 100 }}>
+          <Svg width={100} height={100}>
+            <Circle
+              cx={50} cy={50} r={RING_R}
+              stroke="rgba(255,255,255,0.18)"
+              strokeWidth={6} fill="none"
+            />
+            <AnimatedCircle
+              cx={50} cy={50} r={RING_R}
+              stroke={C.tealLight} strokeWidth={6} fill="none"
+              strokeLinecap="round"
+              strokeDasharray={String(RING_C)}
+              animatedProps={circleProps}
+            />
+          </Svg>
+        </View>
+        {/* Percent overlay */}
+        <View style={StyleSheet.absoluteFill}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={ringStyles.percent}>{Math.round(percent)}%</Text>
+          </View>
+        </View>
+      </View>
+      <Text style={ringStyles.step}>{step || 'Uploading…'}</Text>
+    </View>
+  );
+}
+
+const ringStyles = StyleSheet.create({
+  wrap:        { alignItems: 'center', gap: 14 },
+  percent:     { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
+  step:        { fontFamily: 'Inter-Medium', fontSize: 13, color: 'rgba(255,255,255,0.85)' },
+  checkCircle: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: C.greenLight, alignItems: 'center', justifyContent: 'center',
+  },
+  doneText:    { fontFamily: 'Inter-SemiBold', fontSize: 16, color: '#fff' },
+});
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 export default function PreDispatchScreen() {
   const router = useRouter();
   const { id }  = useLocalSearchParams();
@@ -22,12 +97,14 @@ export default function PreDispatchScreen() {
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
 
   const [permission, requestPermission] = useCameraPermissions();
-  const [photo, setPhoto]     = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [facing, setFacing]   = useState('back');
-  const [error, setError]     = useState('');
-  const cameraRef = useRef(null);
+  const [photo,          setPhoto]          = useState(null);
+  const [loading,        setLoading]        = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ step: '', percent: 0 });
+  const [uploadDone,     setUploadDone]     = useState(false);
+  const [facing,         setFacing]         = useState('back');
+  const [error,          setError]          = useState('');
 
+  const cameraRef      = useRef(null);
   const btnScale       = useRef(new Animated.Value(1)).current;
   const previewOpacity = useRef(new Animated.Value(0)).current;
   const previewScale   = useRef(new Animated.Value(0.92)).current;
@@ -62,7 +139,7 @@ export default function PreDispatchScreen() {
         Animated.timing(previewOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
         Animated.spring(previewScale,   { toValue: 1, damping: 14, stiffness: 120, useNativeDriver: true }),
       ]).start();
-    } catch (_) {
+    } catch {
       showError('Failed to take photo. Try again.');
     }
   };
@@ -78,6 +155,7 @@ export default function PreDispatchScreen() {
   const confirmUpload = async () => {
     if (!photo || loading) return;
     setLoading(true);
+    setUploadProgress({ step: 'Preparing…', percent: 0 });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const locResult = await Location.requestForegroundPermissionsAsync();
@@ -86,14 +164,20 @@ export default function PreDispatchScreen() {
         const loc = await Location.getCurrentPositionAsync({});
         coords = loc.coords;
       }
-      await mediaService.fullUploadFlow(parseInt(tripId), 'PRE_DISPATCH', photo, coords);
-      setActiveTrip({ id: parseInt(tripId) });
+      await mediaService.fullUploadFlow(
+        parseInt(tripId), 'PRE_DISPATCH', photo, coords,
+        (p) => setUploadProgress(p),
+      );
+      setUploadDone(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace(`/(driver)/trip/${tripId}_2`);
-    } catch (err) {
+      setTimeout(() => {
+        setActiveTrip({ id: parseInt(tripId) });
+        router.replace(`/(driver)/trip/${tripId}_2`);
+      }, 950);
+    } catch {
       showError('Upload failed. Check your connection.');
-    } finally {
       setLoading(false);
+      setUploadProgress({ step: '', percent: 0 });
     }
   };
 
@@ -125,10 +209,14 @@ export default function PreDispatchScreen() {
       ) : (
         <AnimatedImage
           source={{ uri: photo }}
-          style={[StyleSheet.absoluteFill, { resizeMode: 'cover' }, { opacity: previewOpacity, transform: [{ scale: previewScale }] }]}
+          style={[
+            StyleSheet.absoluteFill,
+            { resizeMode: 'cover', opacity: previewOpacity, transform: [{ scale: previewScale }] },
+          ]}
         />
       )}
 
+      {/* Top overlay */}
       <View style={styles.topOverlay}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="x" size={20} color="#fff" />
@@ -140,6 +228,7 @@ export default function PreDispatchScreen() {
         </View>
       </View>
 
+      {/* Error toast */}
       {!!error && (
         <Animated.View style={[styles.errorToast, { opacity: errorOpacity, transform: [{ translateY: errorTransY }] }]}>
           <Feather name="alert-circle" size={14} color={C.red} />
@@ -147,24 +236,26 @@ export default function PreDispatchScreen() {
         </Animated.View>
       )}
 
+      {/* Bottom controls */}
       <View style={styles.bottomOverlay}>
         {!photo ? (
           <View style={styles.captureRow}>
-            <TouchableOpacity style={styles.sideBtn} onPress={() => setFacing((f) => f === 'back' ? 'front' : 'back')}>
+            <TouchableOpacity
+              style={styles.sideBtn}
+              onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
+            >
               <Feather name="refresh-cw" size={20} color="#fff" />
             </TouchableOpacity>
-
             <Animated.View style={{ transform: [{ scale: btnScale }] }}>
               <TouchableOpacity style={styles.shutter} onPress={capture}>
                 <View style={styles.shutterInner} />
               </TouchableOpacity>
             </Animated.View>
-
             <View style={styles.sideBtn} />
           </View>
         ) : (
           <View style={styles.confirmRow}>
-            <TouchableOpacity style={styles.retakeBtn} onPress={retake}>
+            <TouchableOpacity style={styles.retakeBtn} onPress={retake} disabled={loading}>
               <Text style={styles.retakeBtnText}>Retake</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -178,17 +269,29 @@ export default function PreDispatchScreen() {
           </View>
         )}
       </View>
+
+      {/* Upload progress overlay */}
+      {loading && (
+        <View style={styles.uploadOverlay}>
+          <ProgressRing
+            percent={uploadProgress.percent}
+            step={uploadProgress.step}
+            done={uploadDone}
+          />
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   permWrap: { flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
-  permTitle: { fontFamily: 'Inter-SemiBold', fontSize: 18, color: C.text1 },
-  permSub:   { fontFamily: 'Inter-Regular',  fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
-  permText:  { fontFamily: 'Inter-Regular',  fontSize: 14, color: C.text3 },
-  grantBtn:  { marginTop: 8, backgroundColor: C.navyPrimary, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 14 },
+  permTitle:    { fontFamily: 'Inter-SemiBold', fontSize: 18, color: C.text1 },
+  permSub:      { fontFamily: 'Inter-Regular',  fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
+  permText:     { fontFamily: 'Inter-Regular',  fontSize: 14, color: C.text3 },
+  grantBtn:     { marginTop: 8, backgroundColor: C.navyPrimary, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 14 },
   grantBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff' },
+
   topOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0,
     paddingTop: 48, paddingHorizontal: 20, paddingBottom: 24,
@@ -199,10 +302,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start',
   },
-  stepInfo: { gap: 4 },
+  stepInfo:  { gap: 4 },
   stepBadge: { fontFamily: 'Inter-SemiBold', fontSize: 11, color: C.tealLight, letterSpacing: 0.6 },
   stepTitle: { fontFamily: 'Inter-Bold', fontSize: 18, color: '#fff' },
   stepHint:  { fontFamily: 'Inter-Regular', fontSize: 13, color: 'rgba(255,255,255,0.6)', lineHeight: 18 },
+
   errorToast: {
     position: 'absolute', top: 160, alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -211,6 +315,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
   },
   errorToastText: { fontFamily: 'Inter-Medium', fontSize: 13, color: C.red },
+
   bottomOverlay: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingBottom: 50, paddingTop: 24, paddingHorizontal: 24,
@@ -222,15 +327,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
-  shutter: { width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  shutter:      { width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   shutterInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff' },
-  confirmRow: { flexDirection: 'row', gap: 12 },
+  confirmRow:   { flexDirection: 'row', gap: 12 },
   retakeBtn: {
     flex: 1, height: 52, borderRadius: 14,
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)',
     alignItems: 'center', justifyContent: 'center',
   },
   retakeBtnText: { fontFamily: 'Inter-Medium', fontSize: 15, color: '#fff' },
-  useBtn: { flex: 2, height: 52, borderRadius: 14, backgroundColor: C.teal, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  useBtn:     { flex: 2, height: 52, borderRadius: 14, backgroundColor: C.teal, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   useBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff' },
+
+  uploadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
