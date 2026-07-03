@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { getIncidents, updateIncidentStatus } from "../services/incidentService";
 import Badge from "../components/common/Badge";
 import { AlertTriangleIcon, CheckCircleIcon } from "../components/common/Icons";
@@ -43,6 +44,7 @@ function labelify(str) {
 }
 
 export default function IncidentsPage() {
+  const location = useLocation();
   const [incidents, setIncidents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [severityFilter, setSeverityFilter] = useState("All");
@@ -59,14 +61,64 @@ export default function IncidentsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const incidentIdFilter = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("incidentId");
+  }, [location.search]);
+
+  useEffect(() => {
+    if (incidentIdFilter) {
+      setExpandedId(Number(incidentIdFilter));
+    }
+  }, [incidentIdFilter]);
+
   const filtered = useMemo(
     () =>
       incidents.filter((i) => {
+        if (incidentIdFilter && String(i.id) !== String(incidentIdFilter)) return false;
         if (severityFilter !== "All" && i.severity !== severityFilter) return false;
+        const SEVERITIES = ["All", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+        const STATUSES = ["All", "OPEN", "UNDER_REVIEW", "RESOLVED", "DISMISSED"];
+
+        const SEVERITY_BADGE = {
+          LOW: "default",
+          MEDIUM: "info",
+          HIGH: "warning",
+          CRITICAL: "danger",
+        };
+
+        const STATUS_BADGE = {
+          OPEN: "danger",
+          UNDER_REVIEW: "warning",
+          RESOLVED: "success",
+          DISMISSED: "default",
+        };
+
+        const STATUS_LABELS = {
+          OPEN: "Open",
+          UNDER_REVIEW: "Under Review",
+          RESOLVED: "Resolved",
+          DISMISSED: "Dismissed",
+        };
+
+        function timeAgo(iso) {
+          if (!iso) return "—";
+          const diff = Date.now() - new Date(iso).getTime();
+          const m = Math.floor(diff / 60000);
+          if (m < 60) return `${m}m ago`;
+          const h = Math.floor(m / 60);
+          if (h < 24) return `${h}h ago`;
+          return `${Math.floor(h / 24)}d ago`;
+        }
+
+        function labelify(str) {
+          if (!str) return "—";
+          return str.charAt(0) + str.slice(1).toLowerCase().replace(/_/g, " ");
+        }
         if (statusFilter !== "All" && i.status !== statusFilter) return false;
         return true;
       }),
-    [incidents, severityFilter, statusFilter]
+    [incidents, severityFilter, statusFilter, incidentIdFilter]
   );
 
   const handleStatusUpdate = async (incident, newStatus) => {
@@ -93,59 +145,45 @@ export default function IncidentsPage() {
       <div className="page-header-row">
         <div>
           <h1>Incidents</h1>
-          <p style={{ color: "var(--color-text-3)", fontSize: 14, marginTop: 4 }}>
-            Monitor and resolve fleet incidents
-          </p>
+          <p className="page-subtitle">Track and manage fleet safety incidents</p>
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            fontSize: 13,
-            color: "var(--color-text-3)",
-          }}
-        >
-          {incidents.length > 0 && (
-            <span
-              style={{
-                background: "var(--color-surface)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "var(--radius-full)",
-                padding: "4px 12px",
-                fontWeight: 600,
-                color: "var(--color-text-2)",
-              }}
-            >
-              {filtered.length} / {incidents.length}
-            </span>
-          )}
-        </div>
+        {incidents.length > 0 && (
+          <div className="incidents-filter-count">
+            <span>{filtered.length}</span> / {incidents.length}
+          </div>
+        )}
       </div>
 
-      {/* Severity + Status filter chips */}
-      <div className="incidents-filters">
-        <div className="incidents-filter-group">
-          {SEVERITIES.map((s) => (
-            <button
-              key={s}
-              className={`incident-chip${severityFilter === s ? " incident-chip-active" : ""}`}
-              onClick={() => setSeverityFilter(s)}
-            >
-              {s === "All" ? "All Severity" : labelify(s)}
-            </button>
-          ))}
+      <div className="incidents-filters-bar">
+        <div className="incidents-filter-block">
+          <span className="incidents-filter-label">Severity</span>
+          <div className="incidents-filter-chips">
+            {SEVERITIES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`incident-chip${severityFilter === s ? " incident-chip-active" : ""}`}
+                onClick={() => setSeverityFilter(s)}
+              >
+                {s === "All" ? "All Severities" : labelify(s)}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="incidents-filter-group">
-          {STATUSES.map((s) => (
-            <button
-              key={s}
-              className={`incident-chip${statusFilter === s ? " incident-chip-active" : ""}`}
-              onClick={() => setStatusFilter(s)}
-            >
-              {s === "All" ? "All Status" : STATUS_LABELS[s]}
-            </button>
-          ))}
+        <div className="incidents-filter-block">
+          <span className="incidents-filter-label">Status</span>
+          <div className="incidents-filter-chips">
+            {STATUSES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`incident-chip${statusFilter === s ? " incident-chip-active" : ""}`}
+                onClick={() => setStatusFilter(s)}
+              >
+                {s === "All" ? "All Statuses" : STATUS_LABELS[s]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
