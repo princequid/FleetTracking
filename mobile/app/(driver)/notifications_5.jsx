@@ -143,7 +143,7 @@ export default function NotificationsScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(it) => String(it.id)}
-        contentContainerStyle={{ padding: 16, gap: 8, flexGrow: 1 }}
+        contentContainerStyle={{ padding: 16, gap: 8, flexGrow: 1, paddingBottom: 110 }}
         renderItem={({ item }) => <NotifItem item={item} onPress={handlePress} />}
         ListEmptyComponent={renderEmpty}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.teal} colors={[C.teal]} />}
