@@ -41,7 +41,7 @@ function getInitials(email) {
   return email.split("@")[0].slice(0, 2).toUpperCase();
 }
 
-export default function Sidebar({ mobileOpen, onNavigate }) {
+export default function Sidebar() {
   const role = useAuthStore((state) => state.role) || "";
   const email = useAuthStore((state) => state.email);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -66,7 +66,6 @@ export default function Sidebar({ mobileOpen, onNavigate }) {
   const sidebarClass = [
     "sidebar",
     mounted ? "sidebar-mounted" : "",
-    mobileOpen ? "sidebar-mobile-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -94,7 +93,6 @@ export default function Sidebar({ mobileOpen, onNavigate }) {
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    onClick={onNavigate}
                     className={({ isActive }) =>
                       `sidebar-link ${isActive ? "sidebar-link-active" : ""}`
                     }
