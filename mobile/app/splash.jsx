@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import Animated, {
@@ -22,7 +23,6 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const TW = 120;
 const TH = 55;
 const TX = (SW - TW) / 2;   // left offset so truck is centered when translateX=0
-const TY = SH * 0.33;        // truck vertical position
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
@@ -87,9 +87,9 @@ function TruckSvg({ wheelAngle }) {
 }
 
 // ─── Track line (gradient fade at ends) ───────────────────────────────────────
-function TrackLine() {
+function TrackLine({ ty }) {
   return (
-    <View style={[styles.trackWrap, { top: TY + TH - 3 }]} pointerEvents="none">
+    <View style={[styles.trackWrap, { top: ty + TH - 3 }]} pointerEvents="none">
       <Svg width={SW} height={4}>
         <Defs>
           <LinearGradient id="tg" x1="0" y1="0" x2="1" y2="0">
@@ -116,7 +116,10 @@ const SPEED_LINES = [
 
 // ─── Main splash ──────────────────────────────────────────────────────────────
 export default function SplashScreen() {
-  const router = useRouter();
+  const router  = useRouter();
+  const insets  = useSafeAreaInsets();
+  // Truck sits at ~33% of the safe-area height, shifted down by the top inset
+  const TY = insets.top + (SH - insets.top - insets.bottom) * 0.30;
 
   const truckX         = useSharedValue(-SW * 0.65);
   const wheelAngle     = useSharedValue(0);
@@ -232,7 +235,7 @@ export default function SplashScreen() {
       <StatusBar hidden />
 
       {/* Track line */}
-      <TrackLine />
+      <TrackLine ty={TY} />
 
       {/* Speed lines — static position, opacity animated */}
       <Animated.View
@@ -254,20 +257,20 @@ export default function SplashScreen() {
       </Animated.View>
 
       {/* Ghost (motion blur) copies */}
-      <Animated.View style={[styles.truckBase, ghost2Style]} pointerEvents="none">
+      <Animated.View style={[styles.truckBase, { top: TY }, ghost2Style]} pointerEvents="none">
         <TruckSvg wheelAngle={wheelAngle} />
       </Animated.View>
-      <Animated.View style={[styles.truckBase, ghost1Style]} pointerEvents="none">
+      <Animated.View style={[styles.truckBase, { top: TY }, ghost1Style]} pointerEvents="none">
         <TruckSvg wheelAngle={wheelAngle} />
       </Animated.View>
 
       {/* Main truck */}
-      <Animated.View style={[styles.truckBase, mainTruckStyle]} pointerEvents="none">
+      <Animated.View style={[styles.truckBase, { top: TY }, mainTruckStyle]} pointerEvents="none">
         <TruckSvg wheelAngle={wheelAngle} />
       </Animated.View>
 
       {/* Brand text */}
-      <Animated.View style={[styles.textSection, nameStyle]} pointerEvents="none">
+      <Animated.View style={[styles.textSection, { top: TY + TH + 36 }, nameStyle]} pointerEvents="none">
         <View style={styles.nameRow}>
           <Text style={styles.appName}>FleetTrack</Text>
           <View style={styles.proBadge}>
@@ -283,7 +286,7 @@ export default function SplashScreen() {
       </Animated.View>
 
       {/* Progress bar */}
-      <View style={styles.progressTrack}>
+      <View style={[styles.progressTrack, { bottom: Math.max(52, insets.bottom + 24) }]}>
         <Animated.View style={[styles.progressFill, progressStyle]} />
       </View>
     </View>
@@ -306,14 +309,12 @@ const styles = StyleSheet.create({
   },
   truckBase: {
     position: 'absolute',
-    top: TY,
     left: TX,
     width: TW,
     height: TH,
   },
   textSection: {
     position: 'absolute',
-    top: TY + TH + 36,
     left: 0,
     right: 0,
     alignItems: 'center',
