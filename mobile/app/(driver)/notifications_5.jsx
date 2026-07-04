@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import api from '../../services/api_1';
+import { useAuthStore } from '../../store/authStore_1';
 import { C } from '../../constants/colors';
 
 const TYPE_META = {
@@ -56,30 +57,36 @@ function NotifItem({ item, onPress }) {
   );
 }
 
-const MOCK = [
-  { id: '1', type: 'TRIP_ASSIGNED',  title: 'New trip assigned',    message: 'Trip #1042 — Accra → Tema. Departs 08:00',                 isRead: false, createdAt: new Date(Date.now() - 12 * 60000).toISOString() },
-  { id: '2', type: 'ALERT',          title: 'Traffic on N1 Highway', message: 'Heavy traffic reported near Tema Motorway toll booth',     isRead: false, createdAt: new Date(Date.now() - 45 * 60000).toISOString() },
-  { id: '3', type: 'TRIP_DELIVERED', title: 'Trip #1040 completed',  message: 'Proof of delivery confirmed. Great job!',                  isRead: true,  createdAt: new Date(Date.now() - 2 * 3600000).toISOString() },
-  { id: '4', type: 'INFO',           title: 'Schedule updated',      message: 'Your Monday schedule has been revised by fleet manager',  isRead: true,  createdAt: new Date(Date.now() - 5 * 3600000).toISOString() },
-  { id: '5', type: 'TRIP_CANCELLED', title: 'Trip #1038 cancelled',  message: 'This trip was cancelled by fleet management.',            isRead: true,  createdAt: new Date(Date.now() - 24 * 3600000).toISOString() },
-];
-
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [items, setItems]    = useState([]);
-  const [tab, setTab]        = useState('all');
-  const [refreshing, setRef] = useState(false);
+  const userId = useAuthStore((s) => s.userId);
+  const [items, setItems]     = useState([]);
+  const [driverId, setDriverId] = useState(null);
+  const [tab, setTab]         = useState('all');
+  const [refreshing, setRef]  = useState(false);
+  const [error, setError]     = useState('');
 
   const load = useCallback(async () => {
+    if (!userId) return;
+    setError('');
     try {
-      const r = await api.get('/notifications');
-      setItems(r.data?.length ? r.data : MOCK);
+      // Notifications are addressed to the driver's profile id, so resolve it first
+      let dId = driverId;
+      if (!dId) {
+        const d = await api.get(`/drivers/user/${userId}`);
+        dId = d.data?.id ?? null;
+        setDriverId(dId);
+      }
+      if (!dId) { setItems([]); return; }
+      const r = await api.get(`/notifications/users/${dId}`);
+      setItems(Array.isArray(r.data) ? r.data : []);
     } catch (_) {
-      setItems(MOCK);
+      setError('Could not load notifications. Pull to retry.');
+      setItems([]);
     }
-  }, []);
+  }, [userId, driverId]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const onRefresh = async () => {
     setRef(true);
@@ -90,7 +97,7 @@ export default function NotificationsScreen() {
   const markAllRead = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setItems((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    api.put('/notifications/read-all').catch(() => {});
+    if (driverId) api.put(`/notifications/users/${driverId}/read-all`).catch(() => {});
   };
 
   const handlePress = (item) => {
@@ -103,9 +110,15 @@ export default function NotificationsScreen() {
 
   const renderEmpty = () => (
     <View style={styles.empty}>
-      <Feather name="bell-off" size={44} color={C.border} />
-      <Text style={styles.emptyTitle}>{tab === 'unread' ? 'All caught up!' : 'No notifications yet'}</Text>
-      <Text style={styles.emptySub}>{tab === 'unread' ? 'You have no unread notifications' : 'Notifications will appear here'}</Text>
+      <Feather name={error ? 'wifi-off' : 'bell-off'} size={44} color={C.border} />
+      <Text style={styles.emptyTitle}>
+        {error ? 'Couldn’t load notifications' : tab === 'unread' ? 'All caught up!' : 'No notifications yet'}
+      </Text>
+      <Text style={styles.emptySub}>
+        {error
+          ? error
+          : tab === 'unread' ? 'You have no unread notifications' : 'Notifications will appear here'}
+      </Text>
     </View>
   );
 

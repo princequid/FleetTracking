@@ -1,5 +1,7 @@
 package com.fleettrack.trip.service;
 
+import com.fleettrack.events.TripAssignedEvent;
+import com.fleettrack.events.TripCancelledEvent;
 import com.fleettrack.events.TripCompletedEvent;
 import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.client.MediaServiceClient;
@@ -93,6 +95,13 @@ public class TripService {
         }
 
         recordStatusChange(trip.getId(), null, TripStatus.ASSIGNED, null);
+
+        // Notify the driver that a new trip was assigned (drives the mobile notifications page)
+        TripAssignedEvent assignedEvent = new TripAssignedEvent(
+                "trip-service", trip.getId(), trip.getDriverId(), trip.getVehicleId(),
+                trip.getOrigin(), trip.getDestination(), trip.getEta());
+        outboxPublisherService.saveToOutbox("trip.assigned", assignedEvent);
+
         return mapToResponse(trip);
     }
 
@@ -171,6 +180,12 @@ public class TripService {
         trip = tripRepository.save(trip);
 
         recordStatusChange(tripId, oldStatus, TripStatus.CANCELLED, userId);
+
+        // Notify the driver that their trip was cancelled
+        TripCancelledEvent cancelledEvent = new TripCancelledEvent(
+                "trip-service", trip.getId(), trip.getDriverId(), trip.getVehicleId(),
+                trip.getOrigin(), trip.getDestination());
+        outboxPublisherService.saveToOutbox("trip.cancelled", cancelledEvent);
 
         try {
             vehicleServiceClient.updateVehicleStatus(trip.getVehicleId(), "AVAILABLE");

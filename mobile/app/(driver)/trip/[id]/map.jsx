@@ -17,9 +17,16 @@ import Animated, {
 import { C } from '../../../../constants/colors';
 import api from '../../../../services/api_1';
 
-const ARRIVE_RADIUS = 200;
+const ARRIVE_RADIUS = 200;   // within this of the destination → "Mark arrived"
+const READY_RADIUS  = 150;   // within this of the trip start → "Ready" button
 const OSRM_BASE     = 'http://172.20.10.4:5000';
 const REROUTE_DIST  = 80;
+
+// Navigation phases:
+//   APPROACH — Leg 1: routing the driver to the trip's start point.
+//   AT_START — reached the start; trip route (origin→destination) loaded, awaiting Start.
+//   TRIP     — Leg 2: navigating the actual trip from start to destination.
+const PHASE = { APPROACH: 'APPROACH', AT_START: 'AT_START', TRIP: 'TRIP' };
 // Street-level navigation zoom. The MapView caps zoom at maxZoomLevel={18}
 // (and UrlTile at maximumZ={18} to avoid black tiles), so 18 is the maximum
 // practical navigation zoom for this map. Shared by auto-zoom, follow and recenter
@@ -165,6 +172,28 @@ function parseOsrmSteps(steps) {
   }));
 }
 
+// ─── Distinct map pin ─────────────────────────────────────────────────────────
+// A bold teardrop marker: a coloured circular head (with an icon or number) sitting
+// on a matching pointer, plus an optional label chip above. Anchored at the bottom
+// tip so the point marks the exact coordinate.
+function Pin({ color, icon, number, label }) {
+  return (
+    <View style={{ alignItems: 'center' }}>
+      {label ? (
+        <View style={styles.pinLabel}>
+          <Text style={styles.pinLabelText} numberOfLines={1}>{label}</Text>
+        </View>
+      ) : null}
+      <View style={[styles.pinHead, { backgroundColor: color }]}>
+        {number != null
+          ? <Text style={styles.pinNumber}>{number}</Text>
+          : <Feather name={icon} size={18} color="#fff" />}
+      </View>
+      <View style={[styles.pinPoint, { borderTopColor: color }]} />
+    </View>
+  );
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function LiveMapScreen() {
   const router          = useRouter();
@@ -185,6 +214,13 @@ export default function LiveMapScreen() {
     completedCoords: [],
     trip:            null,
     within200m:      false,
+    // Two-leg navigation state (read by GPS callback to avoid stale closures)
+    phase:           PHASE.APPROACH,
+    target:          null,   // { latitude, longitude } — end of the active leg
+    originPt:        null,   // trip start coords
+    destPt:          null,   // trip destination coords
+    stopCoords:      [],     // ordered stop coords
+    nearStart:       false,  // driver is within READY_RADIUS of the start
   });
 
   const locSubRef           = useRef(null);
@@ -218,6 +254,9 @@ export default function LiveMapScreen() {
   const [isWithin200m,         setWithin200m]         = useState(false);
   const [isRerouting,          setIsRerouting]        = useState(false);
   const [isMarkingArrived,     setIsMarkingArrived]   = useState(false);
+  const [phase,                setPhase]              = useState(PHASE.APPROACH);
+  const [nearStart,            setNearStart]          = useState(false);
+  const [isStarting,           setIsStarting]         = useState(false);
   const [isFollowingVehicle,   setFollowing]          = useState(false);
   const [panelExpanded,        setPanelExpanded]      = useState(false);
   const [voiceEnabled,         setVoice]              = useState(true);
@@ -234,6 +273,7 @@ export default function LiveMapScreen() {
   useEffect(() => { nav.current.following = isFollowingVehicle; }, [isFollowingVehicle]);
   useEffect(() => { nav.current.voice     = voiceEnabled; },      [voiceEnabled]);
   useEffect(() => { nav.current.tilt      = tiltEnabled; },       [tiltEnabled]);
+  useEffect(() => { nav.current.phase     = phase; },             [phase]);
 
   // ── Reanimated shared values ──
   const markerHeading    = useSharedValue(0);
@@ -381,27 +421,33 @@ export default function LiveMapScreen() {
     if (dist <= 50)                speak(`${stepIdx}_50`,  next.instruction);
   }, []);
 
-  // ── Fetch OSRM full route + duration through an ordered list of waypoints ──
+  // ── Fetch OSRM fastest route + duration through an ordered list of waypoints ──
   // waypoints: [{ latitude, longitude }, ...] in order (origin → stops → destination).
-  // Steps are flattened across all legs so turn-by-turn spans the whole trip.
+  // Requests alternatives and picks the route with the LOWEST duration so the driver
+  // always gets the fastest path. Steps are flattened across all legs.
   const fetchOsrm = useCallback(async (waypoints) => {
     try {
       if (!Array.isArray(waypoints) || waypoints.length < 2) {
         return { steps: [], overviewCoords: [], duration: null };
       }
       const coordStr = waypoints.map((w) => `${w.longitude},${w.latitude}`).join(';');
-      const url = `${OSRM_BASE}/route/v1/driving/${coordStr}?steps=true&geometries=geojson&overview=full`;
+      // alternatives=3 → OSRM returns up to 3 candidate routes (for 2-point legs);
+      // we then select the fastest by duration. Multi-waypoint routes return one route.
+      const url = `${OSRM_BASE}/route/v1/driving/${coordStr}?alternatives=3&steps=true&geometries=geojson&overview=full`;
       const res = await fetch(url);
       if (!res.ok) return { steps: [], overviewCoords: [], duration: null };
       const data = await res.json();
-      const legs     = data?.routes?.[0]?.legs ?? [];
-      const rawSteps = legs.flatMap((leg) => leg.steps ?? []);
-      const overview = data?.routes?.[0]?.geometry?.coordinates ?? [];
-      const duration = data?.routes?.[0]?.duration ?? null;
+      const routes = data?.routes ?? [];
+      if (routes.length === 0) return { steps: [], overviewCoords: [], duration: null };
+
+      // Pick the fastest route (minimum travel time)
+      const best = routes.reduce((a, b) => (b.duration < a.duration ? b : a), routes[0]);
+      const rawSteps = (best.legs ?? []).flatMap((leg) => leg.steps ?? []);
+      const overview = best.geometry?.coordinates ?? [];
       return {
         steps: parseOsrmSteps(rawSteps),
         overviewCoords: overview.map(([lng, lat]) => ({ latitude: lat, longitude: lng })),
-        duration,
+        duration: best.duration ?? null,
       };
     } catch {
       return { steps: [], overviewCoords: [], duration: null };
@@ -410,17 +456,17 @@ export default function LiveMapScreen() {
 
   // ── Lightweight ETA refresh (every 30 s) ──
   const fetchEtaRefresh = useCallback(async () => {
-    const pos = positionRef.current;
-    const t   = nav.current.trip;
-    if (!pos || !t) return;
-    const { destLat, destLng } = extractCoords(t);
-    if (destLat == null) return;
+    const pos    = positionRef.current;
+    const target = nav.current.target;
+    if (!pos || !target) return;
     try {
-      const url = `${OSRM_BASE}/route/v1/driving/${pos.longitude},${pos.latitude};${destLng},${destLat}?overview=false`;
+      const url = `${OSRM_BASE}/route/v1/driving/${pos.longitude},${pos.latitude};${target.longitude},${target.latitude}?alternatives=3&overview=false`;
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
-      const secs = data?.routes?.[0]?.duration;
+      const routes = data?.routes ?? [];
+      // Fastest of the returned routes
+      const secs = routes.length ? Math.min(...routes.map((r) => r.duration)) : null;
       if (secs != null) {
         setRouteDurationSecs(Math.round(secs));
         statsOpacity.value = withSequence(
@@ -521,6 +567,39 @@ export default function LiveMapScreen() {
     }
   }, []);
 
+  // ── Load a navigation leg ──
+  // Fetches the OSRM route through `waypoints`, resets progress/turn tracking, draws
+  // the line and fits it, and sets the active target (leg end). Falls back to a direct
+  // line if OSRM is unreachable. Used for both Leg 1 (driver→start) and Leg 2 (trip).
+  const loadLeg = useCallback(async (waypoints, targetPt) => {
+    nav.current.target = targetPt;
+    // Reset progress + turn tracking for the new leg
+    nav.current.completedCoords = [];
+    nav.current.stepIndex       = 0;
+    lastSpokenStep.current      = -1;
+    spokenThresholds.current.clear();
+    setCompleted([]);
+    setStepIndex(0);
+
+    const { steps, overviewCoords, duration } = await fetchOsrm(waypoints);
+    if (overviewCoords.length >= 2) {
+      nav.current.fullCoords = overviewCoords;
+      nav.current.directions = steps;
+      setFullRoute(overviewCoords);
+      setDirections(steps);
+      if (duration != null) setRouteDurationSecs(Math.round(duration));
+      fitToRoute(overviewCoords);
+    } else if (waypoints.length >= 2) {
+      // OSRM unreachable — show a direct line so the route is still visible
+      nav.current.fullCoords = waypoints;
+      nav.current.directions = [];
+      setFullRoute(waypoints);
+      setDirections([]);
+      fitToRoute(waypoints);
+      showToast('Route server unreachable — showing a direct line.');
+    }
+  }, [fetchOsrm, fitToRoute, showToast]);
+
   // ── Rerouting ──
   const triggerReroute = useCallback(async (lat, lng) => {
     if (isReroutingRef.current) return;
@@ -531,13 +610,13 @@ export default function LiveMapScreen() {
     if (nav.current.voice) Speech.speak('Rerouting', { language: 'en' });
 
     try {
-      const t = nav.current.trip;
-      const { destLat, destLng } = extractCoords(t);
-      if (destLat == null) return;
+      // Reroute from the driver's current position to the active leg's target
+      // (the trip start during APPROACH, the destination during TRIP).
+      const target = nav.current.target;
+      if (!target) return;
       const { steps, overviewCoords, duration } = await fetchOsrm([
         { latitude: lat, longitude: lng },
-        ...(nav.current.stopCoords ?? []),
-        { latitude: destLat, longitude: destLng },
+        { latitude: target.latitude, longitude: target.longitude },
       ]);
       if (steps.length) {
         const newCoords = overviewCoords.length ? overviewCoords : steps.flatMap(s => s.coordinates);
@@ -567,7 +646,6 @@ export default function LiveMapScreen() {
     const speedKmh  = Math.max(0, (speed || 0) * 3.6);
     const dirs       = nav.current.directions;
     const fullCoords = nav.current.fullCoords;
-    const t          = nav.current.trip;
 
     // Store latest position for ETA refresh and as fallback center for zoom buttons
     positionRef.current = { latitude, longitude };
@@ -635,16 +713,25 @@ export default function LiveMapScreen() {
       }
     }
 
-    // ── Distance to destination — debounced every 3 ticks ──
-    if (t) {
-      const { destLat, destLng } = extractCoords(t);
-      if (destLat != null) {
-        const destDist = haversineMetres(latitude, longitude, destLat, destLng);
-        updateCounterRef.current += 1;
-        if (updateCounterRef.current % 3 === 0) {
-          setDistDest(destDist);
+    // ── Distance to the active target + phase transitions (debounced every 3 ticks) ──
+    const target = nav.current.target;
+    if (target) {
+      const dist = haversineMetres(latitude, longitude, target.latitude, target.longitude);
+      updateCounterRef.current += 1;
+      if (updateCounterRef.current % 3 === 0) {
+        setDistDest(dist);
+      }
+      if (nav.current.phase === PHASE.APPROACH) {
+        // Leg 1: reached the start point → reveal the "Ready" button
+        if (dist < READY_RADIUS && !nav.current.nearStart) {
+          nav.current.nearStart = true;
+          setNearStart(true);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          if (nav.current.voice) Speech.speak('You have reached the trip start', { language: 'en-GB' });
         }
-        if (destDist < ARRIVE_RADIUS && !nav.current.within200m) {
+      } else if (nav.current.phase === PHASE.TRIP) {
+        // Leg 2: reached the destination → reveal "Mark arrived"
+        if (dist < ARRIVE_RADIUS && !nav.current.within200m) {
           nav.current.within200m = true;
           setWithin200m(true);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -733,52 +820,54 @@ export default function LiveMapScreen() {
       setTrip({ ...tripData });
       setStopMarkers(stopCoords);
 
-      // Build the ordered waypoint list: origin → stops → destination
+      // Trip endpoints
       const originPt = originLat != null ? { latitude: originLat, longitude: originLng } : null;
       const destPt   = destLat   != null ? { latitude: destLat,   longitude: destLng }   : null;
-      const waypoints = [originPt, ...stopCoords, destPt].filter(Boolean);
-      const canRoute  = waypoints.length >= 2;
+      nav.current.originPt = originPt;
+      nav.current.destPt   = destPt;
 
-      if (!canRoute) {
-        showToast('Could not determine the trip start or destination location.');
-      }
-
-      // Parallel: OSRM route + initial GPS position
-      const [osrmResult, posResult] = await Promise.allSettled([
-        canRoute ? fetchOsrm(waypoints) : Promise.resolve({ steps: [], overviewCoords: [], duration: null }),
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-      ]);
-
-      if (osrmResult.status === 'fulfilled') {
-        const { steps, overviewCoords, duration } = osrmResult.value;
-        if (overviewCoords.length >= 2) {
-          // Road-following route from OSRM
-          nav.current.fullCoords = overviewCoords;
-          setFullRoute(overviewCoords);
-          fitToRoute(overviewCoords);
-          if (steps.length) { nav.current.directions = steps; setDirections(steps); }
-          if (duration != null) setRouteDurationSecs(Math.round(duration));
-        } else if (canRoute) {
-          // Fallback: OSRM unreachable — draw a direct line through the waypoints so the
-          // driver still sees the start → destination connection.
-          nav.current.fullCoords = waypoints;
-          setFullRoute(waypoints);
-          fitToRoute(waypoints);
-          showToast('Route server unreachable — showing a direct line.');
-        }
-      }
-
-      if (posResult.status === 'fulfilled') {
-        const { latitude, longitude, heading, speed } = posResult.value.coords;
-        positionRef.current = { latitude, longitude };
-        setPosition({ latitude, longitude });
+      // ── Get the driver's current position (needed to route the approach leg) ──
+      let driverPos = null;
+      try {
+        const posRes = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const { latitude, longitude, heading, speed } = posRes.coords;
+        driverPos = { latitude, longitude };
+        positionRef.current = driverPos;
+        setPosition(driverPos);
         setHeading(heading || 0);
         setSpeed(Math.max(0, (speed || 0) * 3.6));
-      } else {
-        // Could not obtain the driver's location — show an error instead of zooming.
-        // The live GPS watch below may still recover a fix, at which point the
-        // auto-zoom effect fires normally.
+      } catch {
         showToast('Unable to get your current location. Check GPS and try again.');
+      }
+
+      // ── Choose the starting leg based on trip status ──
+      // Already-started trips skip the approach leg and go straight to the trip route.
+      const status        = (tripData.status || '').toUpperCase();
+      const alreadyStarted = status === 'STARTED' || status === 'EN_ROUTE';
+
+      if (alreadyStarted || !originPt) {
+        // Leg 2 directly: navigate the trip route origin → stops → destination
+        nav.current.phase = PHASE.TRIP;
+        setPhase(PHASE.TRIP);
+        nav.current.following = true;
+        setFollowing(true);
+        const wp = [originPt, ...stopCoords, destPt].filter(Boolean);
+        if (wp.length >= 2) await loadLeg(wp, destPt);
+        else showToast('Could not determine the trip start or destination location.');
+      } else if (driverPos && originPt) {
+        // Leg 1: approach route from the driver's location to the trip start
+        nav.current.phase = PHASE.APPROACH;
+        setPhase(PHASE.APPROACH);
+        await loadLeg([driverPos, originPt], originPt);
+      } else if (originPt && destPt) {
+        // No GPS fix yet — preview the trip route until a fix arrives; the "Ready"
+        // trigger still fires off distance-to-start once GPS resumes.
+        nav.current.phase = PHASE.APPROACH;
+        setPhase(PHASE.APPROACH);
+        nav.current.target = originPt;
+        await loadLeg([originPt, ...stopCoords, destPt], originPt);
+      } else {
+        showToast('Could not determine the trip start or destination location.');
       }
 
       setIsLoading(false);
@@ -818,6 +907,41 @@ export default function LiveMapScreen() {
       showToast('Could not confirm arrival. Please try again.');
     }
   }, [tripId, isMarkingArrived, showToast]);
+
+  // ── Ready: reached the start → load the actual trip route (origin → stops → dest) ──
+  const handleReady = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    nav.current.phase = PHASE.AT_START;
+    setPhase(PHASE.AT_START);
+    nav.current.nearStart = false;
+    setNearStart(false);
+    // Show the trip route as an overview so the driver can review it before starting
+    nav.current.following = false;
+    setFollowing(false);
+    const wp = [nav.current.originPt, ...(nav.current.stopCoords ?? []), nav.current.destPt].filter(Boolean);
+    if (wp.length >= 2) await loadLeg(wp, nav.current.destPt);
+  }, [loadLeg]);
+
+  // ── Start: begin the trip → mark STARTED on the backend + start turn-by-turn ──
+  const handleStart = useCallback(async () => {
+    if (isStarting) return;
+    setIsStarting(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await api.put(`/trips/${tripId}/start`);
+    } catch {
+      // Non-fatal: still let the driver navigate; backend status can reconcile later
+      showToast('Could not update trip status — navigating anyway.');
+    }
+    nav.current.phase = PHASE.TRIP;
+    setPhase(PHASE.TRIP);
+    nav.current.following = true;
+    setFollowing(true);
+    if (nav.current.voice) Speech.speak('Starting trip', { language: 'en-GB' });
+    const pos = positionRef.current;
+    if (pos) focusOnDriver(pos, 800);
+    setIsStarting(false);
+  }, [tripId, isStarting, showToast, focusOnDriver]);
 
   // ── Map controls ──
   const handleReCenter = useCallback(() => {
@@ -895,6 +1019,22 @@ export default function LiveMapScreen() {
   const curDir      = directions[currentStepIndex];
   const nextDir     = directions[currentStepIndex + 1];
   const nextNextDir = directions[currentStepIndex + 2];
+
+  // Phase-aware primary button (bottom panel): Ready → Start → Mark arrived.
+  const primaryBtn = (() => {
+    if (phase === PHASE.TRIP) {
+      return isWithin200m
+        ? { label: 'Mark arrived', icon: 'map-pin', active: true,  loading: isMarkingArrived, onPress: handleMarkArrived, bg: C.green }
+        : { label: `${formatDistance(distanceToDest)} to destination`, icon: 'navigation', active: false, onPress: null };
+    }
+    if (phase === PHASE.AT_START) {
+      return { label: 'Start trip', icon: 'play', active: true, loading: isStarting, onPress: handleStart, bg: C.green };
+    }
+    // APPROACH
+    return nearStart
+      ? { label: 'Ready', icon: 'check-circle', active: true, onPress: handleReady, bg: C.navyPrimary }
+      : { label: `${formatDistance(distanceToDest)} to start`, icon: 'navigation', active: false, onPress: null };
+  })();
 
   // ─────────────────────────────────────────────────────────────────────────────
   // PERMISSION DENIED SCREEN
@@ -1000,47 +1140,40 @@ export default function LiveMapScreen() {
             />
           )}
 
-          {/* Origin dot */}
+          {/* Origin — green "Start" pin */}
           {originLat != null && (
             <Marker
               coordinate={{ latitude: originLat, longitude: originLng }}
-              anchor={{ x: 0.5, y: 0.5 }}
+              anchor={{ x: 0.5, y: 1 }}
               tracksViewChanges={false}
+              zIndex={2}
             >
-              <View style={styles.originDot} />
+              <Pin color={C.green} icon="flag" label="Start" />
             </Marker>
           )}
 
-          {/* Stop markers — numbered waypoints between origin and destination */}
+          {/* Stop markers — numbered navy pins between origin and destination */}
           {stopMarkers.map((s, i) => (
             <Marker
               key={`stop-${i}`}
               coordinate={s}
-              anchor={{ x: 0.5, y: 0.5 }}
+              anchor={{ x: 0.5, y: 1 }}
               tracksViewChanges={false}
+              zIndex={2}
             >
-              <View style={styles.stopMarker}>
-                <Text style={styles.stopMarkerText}>{i + 1}</Text>
-              </View>
+              <Pin color={C.navyPrimary} number={i + 1} />
             </Marker>
           ))}
 
-          {/* Destination — teardrop with label */}
+          {/* Destination — red pin with the destination name */}
           {destLat != null && (
             <Marker
               coordinate={{ latitude: destLat, longitude: destLng }}
               anchor={{ x: 0.5, y: 1 }}
               tracksViewChanges={false}
+              zIndex={3}
             >
-              <View style={{ alignItems: 'center' }}>
-                <View style={styles.destLabel}>
-                  <Text style={styles.destLabelText} numberOfLines={1}>
-                    {trip?.destination || 'Destination'}
-                  </Text>
-                </View>
-                <View style={styles.destDot} />
-                <View style={styles.destStem} />
-              </View>
+              <Pin color={C.red} icon="map-pin" label={trip?.destination || 'Destination'} />
             </Marker>
           )}
 
@@ -1263,33 +1396,31 @@ export default function LiveMapScreen() {
             </View>
           )}
 
-          {/* Mark arrived button */}
+          {/* Phase-aware primary button: (distance hint) → Ready → Start → Mark arrived */}
           <Animated.View style={arrivedBtnStyle}>
             <Pressable
-              onPress={isWithin200m ? handleMarkArrived : null}
-              disabled={!isWithin200m || isMarkingArrived}
+              onPress={primaryBtn.active ? primaryBtn.onPress : null}
+              disabled={!primaryBtn.active || primaryBtn.loading}
               style={[
                 styles.arriveBtn,
                 {
-                  backgroundColor: isWithin200m ? C.green : C.border,
-                  shadowColor:     isWithin200m ? C.green : 'transparent',
-                  shadowOpacity:   isWithin200m ? 0.35 : 0,
+                  backgroundColor: primaryBtn.active ? primaryBtn.bg : C.border,
+                  shadowColor:     primaryBtn.active ? primaryBtn.bg : 'transparent',
+                  shadowOpacity:   primaryBtn.active ? 0.35 : 0,
                 },
               ]}
             >
-              {isMarkingArrived ? (
+              {primaryBtn.loading ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <>
                   <Feather
-                    name={isWithin200m ? 'map-pin' : 'navigation'}
+                    name={primaryBtn.icon}
                     size={18}
-                    color={isWithin200m ? '#fff' : '#9CA3AF'}
+                    color={primaryBtn.active ? '#fff' : '#9CA3AF'}
                   />
-                  <Text style={[styles.arriveBtnText, { color: isWithin200m ? '#fff' : '#9CA3AF' }]}>
-                    {isWithin200m
-                      ? 'Mark arrived'
-                      : `${formatDistance(distanceToDest)} to destination`}
+                  <Text style={[styles.arriveBtnText, { color: primaryBtn.active ? '#fff' : '#9CA3AF' }]}>
+                    {primaryBtn.label}
                   </Text>
                 </>
               )}
@@ -1401,26 +1532,30 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(13,148,136,0.3)',
   },
 
-  // Markers
-  originDot: {
-    width: 14, height: 14, borderRadius: 7,
-    backgroundColor: C.green, borderWidth: 2.5, borderColor: '#fff',
+  // Markers — distinct teardrop pins
+  pinLabel: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 10, marginBottom: 4, maxWidth: 170,
+    shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
-  destLabel: {
-    backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: 10, marginBottom: 4, maxWidth: 160,
-    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+  pinLabelText: { fontFamily: 'Inter-Bold', fontSize: 12, color: C.text1 },
+  pinHead: {
+    width: 38, height: 38, borderRadius: 19,
+    borderWidth: 3, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5, shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
   },
-  destLabelText: { fontFamily: 'Inter-SemiBold', fontSize: 11, color: C.text1 },
-  destDot:       { width: 18, height: 18, borderRadius: 9, backgroundColor: C.red, borderWidth: 3, borderColor: '#fff' },
-  destStem:      { width: 3, height: 8, backgroundColor: C.red, borderRadius: 1.5, marginTop: -1 },
+  pinNumber: { fontFamily: 'Inter-Bold', fontSize: 16, color: '#fff' },
+  pinPoint: {
+    width: 0, height: 0, marginTop: -3,
+    borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 11,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    // borderTopColor set inline per pin
+  },
   turnDot:       { width: 12, height: 12, borderRadius: 6, backgroundColor: C.teal, borderWidth: 2, borderColor: '#fff' },
-  stopMarker: {
-    width: 24, height: 24, borderRadius: 12, backgroundColor: C.navyPrimary,
-    borderWidth: 2.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
-  },
-  stopMarkerText: { fontFamily: 'Inter-Bold', fontSize: 11, color: '#fff' },
 
   // Vehicle marker
   vehicleWrapper: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
