@@ -64,7 +64,18 @@ export default function DispatchPage() {
                 <div className="dispatch-recent-driver">
                   {driversById[trip.driverId]?.fullName || `Driver #${trip.driverId}`}
                 </div>
-                <div className="dispatch-recent-destination">{trip.destination || "—"}</div>
+                {/* Compact route line */}
+                <div className="dispatch-recent-route">
+                  <span className="dispatch-recent-origin">{trip.origin || "—"}</span>
+                  {trip.stops?.length > 0 ? (
+                    <span className="dispatch-recent-stops-pill">
+                      {trip.stops.length} stop{trip.stops.length !== 1 ? "s" : ""}
+                    </span>
+                  ) : (
+                    <span className="dispatch-recent-arrow">→</span>
+                  )}
+                  <span className="dispatch-recent-destination">{trip.destination || "—"}</span>
+                </div>
               </li>
             ))}
           </ul>

@@ -10,6 +10,7 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,7 +27,15 @@ export default function RootLayout() {
     if (loaded) SplashScreen.hideAsync();
   }, [loaded]);
 
-  if (!loaded) return <View style={{ flex: 1, backgroundColor: '#0F2347' }} />;
+  if (!loaded) return (
+    <SafeAreaProvider>
+      <View style={{ flex: 1, backgroundColor: '#0F2347' }} />
+    </SafeAreaProvider>
+  );
 
-  return <Slot />;
+  return (
+    <SafeAreaProvider>
+      <Slot />
+    </SafeAreaProvider>
+  );
 }
