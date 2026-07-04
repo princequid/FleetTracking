@@ -7,16 +7,19 @@ import com.fleettrack.trip.client.VehicleServiceClient;
 import com.fleettrack.trip.event.TripEventPublisher;
 import com.fleettrack.trip.model.dto.*;
 import com.fleettrack.trip.model.entity.Trip;
+import com.fleettrack.trip.model.entity.TripStop;
 import com.fleettrack.trip.model.entity.TripStatusHistory;
 import com.fleettrack.trip.model.enums.TripStatus;
 import com.fleettrack.trip.repository.TripRepository;
 import com.fleettrack.trip.repository.TripStatusHistoryRepository;
+import com.fleettrack.trip.repository.TripStopRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 
 @Service
@@ -25,11 +28,13 @@ public class TripService {
 
     private final TripRepository tripRepository;
     private final TripStatusHistoryRepository statusHistoryRepository;
+    private final TripStopRepository tripStopRepository;
     private final DriverServiceClient driverServiceClient;
     private final VehicleServiceClient vehicleServiceClient;
     private final MediaServiceClient mediaServiceClient;
     private final TripEventPublisher eventPublisher;
     private final OutboxPublisherService outboxPublisherService;
+    private final EtaService etaService;
 
     @Transactional
     public TripResponse createTrip(CreateTripRequest request) {
@@ -46,18 +51,47 @@ public class TripService {
 
         vehicleServiceClient.updateVehicleStatus(request.getVehicleId(), "IN_USE");
 
+        BigDecimal originLat = toBigDecimal(request.getOriginLat());
+        BigDecimal originLng = toBigDecimal(request.getOriginLng());
+        BigDecimal destLat   = toBigDecimal(request.getDestLat());
+        BigDecimal destLng   = toBigDecimal(request.getDestLng());
+
+        // Calculate ETA via OSRM (best-effort — null if server unreachable or coords missing)
+        Instant eta = etaService.calculateEta(originLat, originLng, request.getStops(), destLat, destLng)
+                .orElse(null);
+
         Trip trip = Trip.builder()
                 .driverId(request.getDriverId())
                 .vehicleId(request.getVehicleId())
                 .origin(request.getOrigin())
                 .destination(request.getDestination())
-                .originLat(toBigDecimal(request.getOriginLat()))
-                .originLng(toBigDecimal(request.getOriginLng()))
-                .destLat(toBigDecimal(request.getDestLat()))
-                .destLng(toBigDecimal(request.getDestLng()))
+                .originLat(originLat)
+                .originLng(originLng)
+                .destLat(destLat)
+                .destLng(destLng)
+                .eta(eta)
                 .build();
 
         trip = tripRepository.save(trip);
+
+        // Persist stops in order
+        List<StopRequest> rawStops = request.getStops();
+        if (rawStops != null && !rawStops.isEmpty()) {
+            final Long tripId = trip.getId();
+            for (int i = 0; i < rawStops.size(); i++) {
+                StopRequest s = rawStops.get(i);
+                if (s.getName() != null && !s.getName().isBlank()) {
+                    tripStopRepository.save(TripStop.builder()
+                            .tripId(tripId)
+                            .stopOrder(i + 1)
+                            .locationName(s.getName())
+                            .lat(s.getLat() != null ? BigDecimal.valueOf(s.getLat()) : null)
+                            .lng(s.getLng() != null ? BigDecimal.valueOf(s.getLng()) : null)
+                            .build());
+                }
+            }
+        }
+
         recordStatusChange(trip.getId(), null, TripStatus.ASSIGNED, null);
         return mapToResponse(trip);
     }
@@ -206,6 +240,18 @@ public class TripService {
     }
 
     private TripResponse mapToResponse(Trip trip) {
+        List<TripStopResponse> stops = tripStopRepository
+                .findByTripIdOrderByStopOrder(trip.getId())
+                .stream()
+                .map(s -> TripStopResponse.builder()
+                        .id(s.getId())
+                        .stopOrder(s.getStopOrder())
+                        .name(s.getLocationName())
+                        .lat(s.getLat())
+                        .lng(s.getLng())
+                        .build())
+                .toList();
+
         return TripResponse.builder()
                 .id(trip.getId())
                 .driverId(trip.getDriverId())
@@ -216,6 +262,7 @@ public class TripService {
                 .originLng(trip.getOriginLng())
                 .destLat(trip.getDestLat())
                 .destLng(trip.getDestLng())
+                .stops(stops.isEmpty() ? Collections.emptyList() : stops)
                 .status(trip.getStatus())
                 .eta(trip.getEta())
                 .routeGeometry(trip.getRouteGeometry())
