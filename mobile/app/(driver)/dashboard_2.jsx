@@ -15,6 +15,16 @@ import { useAuthStore } from '../../store/authStore_1';
 import { useTripStore } from '../../store/tripStore_2';
 import api from '../../services/api_1';
 import { C } from '../../constants/colors';
+import { DISPATCH_PHONE } from '../../constants/config';
+
+/* Trim a location name to its first 3 words (+ …) so long addresses stay
+   readable on the card instead of being shrunk to a tiny font. */
+function shortLocation(name) {
+  if (!name) return '';
+  const words = name.trim().split(/\s+/);
+  if (words.length <= 3) return name;
+  return words.slice(0, 3).join(' ') + '…';
+}
 
 /* ─── constants ──────────────────────────────────────────────────── */
 
@@ -435,12 +445,12 @@ export default function HomeScreen() {
               </View>
               <Text style={ss.tripIdText}>Trip #{activeTrip.id}</Text>
               <View style={ss.routeRow}>
-                <Text style={ss.routeOrigin} numberOfLines={1} adjustsFontSizeToFit>
-                  {activeTrip.origin || 'Origin'}
+                <Text style={ss.routeOrigin} numberOfLines={1}>
+                  {shortLocation(activeTrip.origin) || 'Origin'}
                 </Text>
                 <Text style={ss.routeArrow}>→</Text>
-                <Text style={ss.routeDest} numberOfLines={1} adjustsFontSizeToFit>
-                  {activeTrip.destination || 'Destination'}
+                <Text style={ss.routeDest} numberOfLines={1}>
+                  {shortLocation(activeTrip.destination) || 'Destination'}
                 </Text>
               </View>
               <View style={ss.metaRow}>
@@ -482,10 +492,7 @@ export default function HomeScreen() {
                 </View>
                 <View style={{ flex: 1.4 }}>
                   <PressableScale
-                    onPress={() => router.push({
-                      pathname: '/(driver)/trip/[id]_2',
-                      params: { id: activeTrip.id },
-                    })}
+                    onPress={() => router.push(`/(driver)/trip/${activeTrip.id}_2`)}
                     style={ss.continueBtn}
                   >
                     <Feather name="arrow-right" size={16} color="#fff" />
@@ -493,6 +500,15 @@ export default function HomeScreen() {
                   </PressableScale>
                 </View>
               </View>
+
+              {/* View full trip details (available before the trip is started) */}
+              <PressableScale
+                onPress={() => router.push(`/(driver)/trip/${activeTrip.id}_2`)}
+                style={ss.detailsBtn}
+              >
+                <Feather name="file-text" size={15} color={C.teal} />
+                <Text style={ss.detailsBtnText}>View trip details</Text>
+              </PressableScale>
             </View>
           ) : (
             <View style={ss.noTripBox}>
@@ -533,7 +549,7 @@ export default function HomeScreen() {
             <QuickActionTile
               icon="phone" label="Call dispatch"
               bg="#FFFBEB" borderColor="#FDE68A" iconColor={C.amber}
-              onPress={() => Linking.openURL('tel:+233000000000')}
+              onPress={() => Linking.openURL(`tel:${DISPATCH_PHONE}`)}
             />
           </View>
         </Animated.View>
@@ -832,6 +848,21 @@ const ss = StyleSheet.create({
     fontSize: 14,
     color: '#fff',
     letterSpacing: -0.2,
+  },
+  detailsBtn: {
+    height: 44,
+    borderRadius: 12,
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: C.tealPale,
+  },
+  detailsBtnText: {
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13.5,
+    color: C.teal,
   },
   noTripBox: {
     alignItems: 'center',
