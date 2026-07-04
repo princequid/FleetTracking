@@ -6,6 +6,7 @@ import lombok.Getter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 @Getter
 @Builder
@@ -19,6 +20,7 @@ public class TripResponse {
     private BigDecimal originLng;
     private BigDecimal destLat;
     private BigDecimal destLng;
+    private List<TripStopResponse> stops;
     private TripStatus status;
     private Instant eta;
     private String routeGeometry;

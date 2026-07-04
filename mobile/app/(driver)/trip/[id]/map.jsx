@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, Linking, BackHandler,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Linking, BackHandler, Platform,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +20,18 @@ import api from '../../../../services/api_1';
 const ARRIVE_RADIUS = 200;
 const OSRM_BASE     = 'http://172.20.10.4:5000';
 const REROUTE_DIST  = 80;
+// Street-level navigation zoom. The MapView caps zoom at maxZoomLevel={18}
+// (and UrlTile at maximumZ={18} to avoid black tiles), so 18 is the maximum
+// practical navigation zoom for this map. Shared by auto-zoom, follow and recenter
+// so the camera never snaps between zoom levels.
+const NAV_ZOOM = 18;
+// Apple Maps (PROVIDER_DEFAULT on iOS) ignores Camera.zoom and uses Camera.altitude
+// (metres) instead. ~350 m gives an equivalent street-level navigation view. Camera
+// helpers below set BOTH fields so zoom works on Google (Android) and Apple (iOS).
+const NAV_ALTITUDE = 350;
+const MIN_ZOOM = 3;
+// Native vector maps render detail well past 18 without going black.
+const MAX_ZOOM = 20;
 
 // ─── Step instruction builder ─────────────────────────────────────────────────
 function buildInstruction(step) {
@@ -120,6 +132,22 @@ function extractCoords(trip) {
   };
 }
 
+// Geocode a free-text address → { latitude, longitude } via Nominatim (OSM).
+// Used as a fallback when a trip was dispatched with a typed address but no coordinates.
+async function geocodeAddress(query) {
+  if (!query || !query.trim()) return null;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+    const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': 'FleetTrackPro/1.0' } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+    return { latitude: parseFloat(data[0].lat), longitude: parseFloat(data[0].lon) };
+  } catch {
+    return null;
+  }
+}
+
 function parseOsrmSteps(steps) {
   return steps.map((step, i) => ({
     id: i,
@@ -144,9 +172,11 @@ export default function LiveMapScreen() {
   const insets          = useSafeAreaInsets();
   const mapRef          = useRef(null);
 
-  // Mutable nav state — read by GPS callback to avoid stale closures
+  // Mutable nav state — read by GPS callback to avoid stale closures.
+  // following starts false so the map opens on the full-route overview; the driver
+  // taps the recenter/crosshair button to lock onto their location and follow.
   const nav = useRef({
-    following:       true,
+    following:       false,
     voice:           true,
     tilt:            true,
     directions:      [],
@@ -162,6 +192,7 @@ export default function LiveMapScreen() {
   const lastSpokenStep      = useRef(-1);
   const spokenThresholds    = useRef(new Set());
   const mapReadyRef         = useRef(false);
+  const didAutoZoomRef      = useRef(false);
   const pendingFitRef       = useRef(null);
   const zoomRef             = useRef(15);
   const updateCounterRef    = useRef(0);
@@ -174,6 +205,7 @@ export default function LiveMapScreen() {
   // ── State ──
   const [trip,                 setTrip]              = useState(null);
   const [fullRouteCoords,      setFullRoute]          = useState([]);
+  const [stopMarkers,          setStopMarkers]        = useState([]);
   const [completedRouteCoords, setCompleted]          = useState([]);
   const [directions,           setDirections]         = useState([]);
   const [currentStepIndex,     setStepIndex]          = useState(0);
@@ -186,7 +218,7 @@ export default function LiveMapScreen() {
   const [isWithin200m,         setWithin200m]         = useState(false);
   const [isRerouting,          setIsRerouting]        = useState(false);
   const [isMarkingArrived,     setIsMarkingArrived]   = useState(false);
-  const [isFollowingVehicle,   setFollowing]          = useState(true);
+  const [isFollowingVehicle,   setFollowing]          = useState(false);
   const [panelExpanded,        setPanelExpanded]      = useState(false);
   const [voiceEnabled,         setVoice]              = useState(true);
   const [permissionDenied,     setPermDenied]         = useState(false);
@@ -267,6 +299,10 @@ export default function LiveMapScreen() {
     return () => clearTimeout(t);
   }, []);
 
+  // On load we intentionally show the whole route (origin → destination) so the driver
+  // can see the full trip. Zooming in to the driver is a deliberate action via the
+  // recenter/crosshair button, not automatic — otherwise it hides the route on open.
+
   // ── Arrived pulse ──
   useEffect(() => {
     if (isWithin200m) {
@@ -345,18 +381,25 @@ export default function LiveMapScreen() {
     if (dist <= 50)                speak(`${stepIdx}_50`,  next.instruction);
   }, []);
 
-  // ── Fetch OSRM full route + duration ──
-  const fetchOsrm = useCallback(async (oLat, oLng, dLat, dLng) => {
+  // ── Fetch OSRM full route + duration through an ordered list of waypoints ──
+  // waypoints: [{ latitude, longitude }, ...] in order (origin → stops → destination).
+  // Steps are flattened across all legs so turn-by-turn spans the whole trip.
+  const fetchOsrm = useCallback(async (waypoints) => {
     try {
-      const url = `${OSRM_BASE}/route/v1/driving/${oLng},${oLat};${dLng},${dLat}?steps=true&geometries=geojson&overview=full`;
+      if (!Array.isArray(waypoints) || waypoints.length < 2) {
+        return { steps: [], overviewCoords: [], duration: null };
+      }
+      const coordStr = waypoints.map((w) => `${w.longitude},${w.latitude}`).join(';');
+      const url = `${OSRM_BASE}/route/v1/driving/${coordStr}?steps=true&geometries=geojson&overview=full`;
       const res = await fetch(url);
       if (!res.ok) return { steps: [], overviewCoords: [], duration: null };
       const data = await res.json();
-      const steps    = data?.routes?.[0]?.legs?.[0]?.steps ?? [];
+      const legs     = data?.routes?.[0]?.legs ?? [];
+      const rawSteps = legs.flatMap((leg) => leg.steps ?? []);
       const overview = data?.routes?.[0]?.geometry?.coordinates ?? [];
       const duration = data?.routes?.[0]?.duration ?? null;
       return {
-        steps: parseOsrmSteps(steps),
+        steps: parseOsrmSteps(rawSteps),
         overviewCoords: overview.map(([lng, lat]) => ({ latitude: lat, longitude: lng })),
         duration,
       };
@@ -401,6 +444,72 @@ export default function LiveMapScreen() {
     }
   }, []);
 
+  // ── Camera helper: focus on the driver at street-level nav zoom ──
+  // Reads the live camera so we can set BOTH zoom (Google) and altitude (Apple),
+  // making the zoom actually take effect on iOS as well as Android.
+  const focusOnDriver = useCallback(async (pos, duration) => {
+    const map = mapRef.current;
+    if (!map || !pos) return;
+    let cam;
+    try { cam = await map.getCamera(); } catch { cam = {}; }
+    cam.center  = pos;
+    cam.heading = currentHeading;
+    cam.pitch   = nav.current.tilt ? 45 : 0;
+    cam.zoom    = NAV_ZOOM;         // Google Maps (Android)
+    cam.altitude = NAV_ALTITUDE;    // Apple Maps (iOS)
+    zoomRef.current           = NAV_ZOOM;
+    mapCameraRef.current.zoom = NAV_ZOOM;
+    map.animateCamera(cam, { duration });
+  }, [currentHeading]);
+
+  // ── Gentle two-phase zoom-in used by the auto-zoom on map open ──
+  // Phase 1 (450 ms): ease over to the driver at a wide zoom.
+  // Phase 2 (1100 ms): smoothly zoom the rest of the way in to NAV_ZOOM.
+  // The result is a continuous, gentle "zooming in" rather than a single jump.
+  const smoothZoomToDriver = useCallback(async (pos, onDone) => {
+    const map = mapRef.current;
+    if (!map || !pos) return;
+    const heading = currentHeading;
+    const pitch   = nav.current.tilt ? 45 : 0;
+    let cam;
+    try { cam = await map.getCamera(); } catch { cam = {}; }
+
+    // Phase 1 — glide to the driver at a wide, zoomed-out view
+    map.animateCamera(
+      { ...cam, center: pos, heading, pitch, zoom: 15, altitude: NAV_ALTITUDE * 6 },
+      { duration: 450 },
+    );
+
+    // Phase 2 — gently zoom in to street level
+    setTimeout(() => {
+      zoomRef.current           = NAV_ZOOM;
+      mapCameraRef.current.zoom = NAV_ZOOM;
+      map.animateCamera(
+        { center: pos, heading, pitch, zoom: NAV_ZOOM, altitude: NAV_ALTITUDE },
+        { duration: 1100 },
+      );
+      // Hand back to the follow camera / turn-by-turn once the zoom-in finishes
+      setTimeout(() => onDone?.(), 1100);
+    }, 450);
+  }, [currentHeading]);
+
+  // ── Auto-zoom onto the driver once the map + GPS are ready (fires once per open) ──
+  // Follow is paused during the gentle zoom so GPS ticks can't interrupt it, then
+  // re-enabled so turn-by-turn resumes. Does not touch gestures or any map controls.
+  const maybeAutoZoom = useCallback(() => {
+    if (didAutoZoomRef.current) return;
+    if (!mapReadyRef.current || !mapRef.current) return;
+    const pos = positionRef.current;
+    if (!pos) return;                 // wait for the first GPS fix (see error toast below)
+    didAutoZoomRef.current = true;    // set before await so the two triggers can't double-fire
+    nav.current.following = false;    // pause follow for the duration of the gentle zoom
+    setFollowing(false);
+    smoothZoomToDriver(pos, () => {
+      nav.current.following = true;   // resume turn-by-turn follow after the zoom-in
+      setFollowing(true);
+    });
+  }, [smoothZoomToDriver]);
+
   const onMapReady = useCallback(() => {
     mapReadyRef.current = true;
     if (pendingFitRef.current && mapRef.current) {
@@ -425,7 +534,11 @@ export default function LiveMapScreen() {
       const t = nav.current.trip;
       const { destLat, destLng } = extractCoords(t);
       if (destLat == null) return;
-      const { steps, overviewCoords, duration } = await fetchOsrm(lat, lng, destLat, destLng);
+      const { steps, overviewCoords, duration } = await fetchOsrm([
+        { latitude: lat, longitude: lng },
+        ...(nav.current.stopCoords ?? []),
+        { latitude: destLat, longitude: destLng },
+      ]);
       if (steps.length) {
         const newCoords = overviewCoords.length ? overviewCoords : steps.flatMap(s => s.coordinates);
         nav.current.directions      = steps;
@@ -461,7 +574,7 @@ export default function LiveMapScreen() {
     if (nav.current.following) {
       mapCameraRef.current.latitude  = latitude;
       mapCameraRef.current.longitude = longitude;
-      mapCameraRef.current.zoom      = 17;
+      mapCameraRef.current.zoom      = NAV_ZOOM;
     }
 
     markerHeading.value = withTiming(heading || 0, { duration: 500 });
@@ -469,10 +582,17 @@ export default function LiveMapScreen() {
     setHeading(heading || 0);
     setSpeed(speedKmh);
 
-    // Camera follow — reads tilt from nav ref to avoid stale closure
+    // Camera follow — reads tilt from nav ref to avoid stale closure.
+    // Sets both zoom (Android) and altitude (iOS) so the zoom holds on both providers.
     if (nav.current.following) {
       mapRef.current?.animateCamera(
-        { center: { latitude, longitude }, heading: heading || 0, pitch: nav.current.tilt ? 45 : 0, zoom: 17 },
+        {
+          center: { latitude, longitude },
+          heading: heading || 0,
+          pitch: nav.current.tilt ? 45 : 0,
+          zoom: NAV_ZOOM,
+          altitude: NAV_ALTITUDE,
+        },
         { duration: 800 },
       );
     }
@@ -575,37 +695,77 @@ export default function LiveMapScreen() {
         return;
       }
       const tripData = tripResult.value.data;
-      nav.current.trip = tripData;
-      setTrip(tripData);
 
-      // Show stored route geometry immediately
-      const storedCoords = parseRoute(tripData.routeGeometry);
-      if (storedCoords.length >= 2) {
-        nav.current.fullCoords = storedCoords;
-        setFullRoute(storedCoords);
-        fitToRoute(storedCoords);
+      // ── Resolve start & destination coordinates ──
+      // Prefer coordinates stored on the trip; if a trip was dispatched with only a
+      // typed address, geocode that text so the route still draws.
+      let { originLat, originLng, destLat, destLng } = extractCoords(tripData);
+      if (originLat == null && tripData.origin) {
+        const g = await geocodeAddress(tripData.origin);
+        if (g) { originLat = g.latitude; originLng = g.longitude; }
+      }
+      if (destLat == null && tripData.destination) {
+        const g = await geocodeAddress(tripData.destination);
+        if (g) { destLat = g.latitude; destLng = g.longitude; }
       }
 
-      // Parallel: OSRM directions + initial GPS position
-      const { originLat, originLng, destLat, destLng } = extractCoords(tripData);
+      // ── Resolve stop coordinates (geocode any missing), preserving order ──
+      const rawStops = Array.isArray(tripData.stops) ? tripData.stops : [];
+      const stopCoords = [];
+      for (const s of rawStops) {
+        let lat = s.lat ?? s.latitude ?? null;
+        let lng = s.lng ?? s.longitude ?? null;
+        if ((lat == null || lng == null) && s.name) {
+          const g = await geocodeAddress(s.name);
+          if (g) { lat = g.latitude; lng = g.longitude; }
+        }
+        if (lat != null && lng != null) {
+          stopCoords.push({ latitude: Number(lat), longitude: Number(lng) });
+        }
+      }
+
+      // Patch the trip with resolved coords so markers + distance-to-destination work,
+      // and stash stop coords for reroutes.
+      tripData.originLat = originLat; tripData.originLng = originLng;
+      tripData.destLat   = destLat;   tripData.destLng   = destLng;
+      nav.current.trip       = tripData;
+      nav.current.stopCoords = stopCoords;
+      setTrip({ ...tripData });
+      setStopMarkers(stopCoords);
+
+      // Build the ordered waypoint list: origin → stops → destination
+      const originPt = originLat != null ? { latitude: originLat, longitude: originLng } : null;
+      const destPt   = destLat   != null ? { latitude: destLat,   longitude: destLng }   : null;
+      const waypoints = [originPt, ...stopCoords, destPt].filter(Boolean);
+      const canRoute  = waypoints.length >= 2;
+
+      if (!canRoute) {
+        showToast('Could not determine the trip start or destination location.');
+      }
+
+      // Parallel: OSRM route + initial GPS position
       const [osrmResult, posResult] = await Promise.allSettled([
-        originLat != null && destLat != null
-          ? fetchOsrm(originLat, originLng, destLat, destLng)
-          : Promise.resolve({ steps: [], overviewCoords: [], duration: null }),
+        canRoute ? fetchOsrm(waypoints) : Promise.resolve({ steps: [], overviewCoords: [], duration: null }),
         Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
       ]);
 
       if (osrmResult.status === 'fulfilled') {
         const { steps, overviewCoords, duration } = osrmResult.value;
-        if (steps.length) {
-          nav.current.directions = steps;
-          setDirections(steps);
-          if (overviewCoords.length > storedCoords.length) {
-            nav.current.fullCoords = overviewCoords;
-            setFullRoute(overviewCoords);
-          }
+        if (overviewCoords.length >= 2) {
+          // Road-following route from OSRM
+          nav.current.fullCoords = overviewCoords;
+          setFullRoute(overviewCoords);
+          fitToRoute(overviewCoords);
+          if (steps.length) { nav.current.directions = steps; setDirections(steps); }
+          if (duration != null) setRouteDurationSecs(Math.round(duration));
+        } else if (canRoute) {
+          // Fallback: OSRM unreachable — draw a direct line through the waypoints so the
+          // driver still sees the start → destination connection.
+          nav.current.fullCoords = waypoints;
+          setFullRoute(waypoints);
+          fitToRoute(waypoints);
+          showToast('Route server unreachable — showing a direct line.');
         }
-        if (duration != null) setRouteDurationSecs(Math.round(duration));
       }
 
       if (posResult.status === 'fulfilled') {
@@ -614,6 +774,11 @@ export default function LiveMapScreen() {
         setPosition({ latitude, longitude });
         setHeading(heading || 0);
         setSpeed(Math.max(0, (speed || 0) * 3.6));
+      } else {
+        // Could not obtain the driver's location — show an error instead of zooming.
+        // The live GPS watch below may still recover a fix, at which point the
+        // auto-zoom effect fires normally.
+        showToast('Unable to get your current location. Check GPS and try again.');
       }
 
       setIsLoading(false);
@@ -656,47 +821,40 @@ export default function LiveMapScreen() {
 
   // ── Map controls ──
   const handleReCenter = useCallback(() => {
-    if (!currentPosition) return;
+    const pos = positionRef.current ?? currentPosition;
+    if (!pos) {
+      showToast('Location unavailable. Please wait for GPS signal.');
+      return;
+    }
     nav.current.following = true;
     setFollowing(true);
-    zoomRef.current = 17;
-    mapRef.current?.animateCamera(
-      { center: currentPosition, heading: currentHeading, pitch: tiltEnabled ? 45 : 0, zoom: 17 },
-      { duration: 500 },
-    );
-  }, [currentPosition, currentHeading, tiltEnabled]);
+    focusOnDriver(pos, 500);
+  }, [currentPosition, showToast, focusOnDriver]);
 
-  const handleZoomIn = useCallback(() => {
-    if (!mapRef.current) return;
+  // Zoom relative to the current camera. Reads the live camera and adjusts BOTH
+  // zoom (Google/Android) and altitude (Apple/iOS) so it works on both providers,
+  // keeping the current centre so it doesn't need a GPS fix.
+  const zoomBy = useCallback(async (delta) => {
+    const map = mapRef.current;
+    if (!map) return;
     nav.current.following = false;
     setFollowing(false);
-    const newZoom = Math.min(18, mapCameraRef.current.zoom + 1);
-    mapCameraRef.current.zoom = newZoom;
-    zoomRef.current = newZoom;
-    // Always use the live GPS position as centre — mapCameraRef starts at (0,0)
-    // until onRegionChangeComplete fires, so positionRef is the only reliable source.
-    const pos = positionRef.current;
-    if (!pos) return;
-    mapRef.current.animateCamera(
-      { center: pos, zoom: newZoom, heading: 0, pitch: 0 },
-      { duration: 300 },
-    );
+    let cam;
+    try { cam = await map.getCamera(); } catch { return; }
+    if (cam.zoom != null) {
+      cam.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cam.zoom + delta));
+      zoomRef.current = cam.zoom;
+      mapCameraRef.current.zoom = cam.zoom;
+    }
+    if (cam.altitude != null) {
+      // Each zoom step halves/doubles altitude (zoom in = delta +1 = altitude / 2)
+      cam.altitude = cam.altitude / Math.pow(2, delta);
+    }
+    map.animateCamera(cam, { duration: 300 });
   }, []);
 
-  const handleZoomOut = useCallback(() => {
-    if (!mapRef.current) return;
-    nav.current.following = false;
-    setFollowing(false);
-    const newZoom = Math.max(3, mapCameraRef.current.zoom - 1);
-    mapCameraRef.current.zoom = newZoom;
-    zoomRef.current = newZoom;
-    const pos = positionRef.current;
-    if (!pos) return;
-    mapRef.current.animateCamera(
-      { center: pos, zoom: newZoom, heading: 0, pitch: 0 },
-      { duration: 300 },
-    );
-  }, []);
+  const handleZoomIn  = useCallback(() => zoomBy(1),  [zoomBy]);
+  const handleZoomOut = useCallback(() => zoomBy(-1), [zoomBy]);
 
   const handleOverview = useCallback(() => {
     nav.current.following = false;
@@ -714,9 +872,10 @@ export default function LiveMapScreen() {
     const next = !tiltEnabled;
     setTiltEnabled(next);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (nav.current.following && currentPosition) {
+    const pos = positionRef.current ?? currentPosition;
+    if (nav.current.following && pos) {
       mapRef.current?.animateCamera(
-        { center: currentPosition, heading: currentHeading, pitch: next ? 45 : 0, zoom: zoomRef.current },
+        { center: pos, heading: currentHeading, pitch: next ? 45 : 0, zoom: NAV_ZOOM, altitude: NAV_ALTITUDE },
         { duration: 400 },
       );
     }
@@ -736,10 +895,6 @@ export default function LiveMapScreen() {
   const curDir      = directions[currentStepIndex];
   const nextDir     = directions[currentStepIndex + 1];
   const nextNextDir = directions[currentStepIndex + 2];
-  const remainingCoords = useMemo(
-    () => fullRouteCoords.slice(completedRouteCoords.length),
-    [fullRouteCoords, completedRouteCoords],
-  );
 
   // ─────────────────────────────────────────────────────────────────────────────
   // PERMISSION DENIED SCREEN
@@ -781,7 +936,7 @@ export default function LiveMapScreen() {
           rotateEnabled
           pitchEnabled
           minZoomLevel={3}
-          maxZoomLevel={18}
+          maxZoomLevel={20}
           onMapReady={onMapReady}
           onPanDrag={() => {
             nav.current.following = false;
@@ -789,49 +944,59 @@ export default function LiveMapScreen() {
           }}
           onRegionChangeComplete={(region) => {
             // latitudeDelta ≈ 360 / 2^zoom  →  zoom ≈ log2(360 / latDelta)
-            const zoom = Math.max(3, Math.min(18, Math.round(Math.log2(360 / region.latitudeDelta))));
+            const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(Math.log2(360 / region.latitudeDelta))));
             mapCameraRef.current = { latitude: region.latitude, longitude: region.longitude, zoom };
             zoomRef.current = zoom;
           }}
         >
-          {/* Fix 1: cap maximumZ at 18 to prevent black tiles at high zoom */}
-          <UrlTile
-            urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maximumZ={18}
-            minimumZ={3}
-            maximumNativeZ={18}
-            tileSize={512}
-            shouldReplaceMapContent
-          />
+          {/* Map imagery:
+              - iOS  → Apple Maps (native vector, free, no key). No tile overlay needed.
+              - Android → Google's base map needs an API key we don't have, so we overlay
+                OpenStreetMap raster tiles instead.
+              Tile tuning to avoid black screens:
+              - maximumNativeZ 18 → only fetch tiles that always exist on OSM.
+              - maximumZ 20 (> maxZoomLevel) → beyond native zoom the last tile is
+                UPSCALED (slightly blurry) instead of rendering black.
+              - tileSize 256 matches OSM's native tile size for correct, fast loading. */}
+          {Platform.OS === 'android' && (
+            <UrlTile
+              urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              minimumZ={1}
+              maximumZ={20}
+              maximumNativeZ={18}
+              tileSize={256}
+              shouldReplaceMapContent
+            />
+          )}
 
-          {/* Driven segment — gray */}
+          {/* Full route — drawn start → finish so the line is ALWAYS visible,
+              independent of the driver's position. Shadow underlay first, then the
+              solid navy line on top. */}
+          {fullRouteCoords.length > 1 && (
+            <Polyline
+              coordinates={fullRouteCoords}
+              strokeColor="rgba(0,0,0,0.35)"
+              strokeWidth={11}
+              lineCap="round"
+            />
+          )}
+          {fullRouteCoords.length > 1 && (
+            <Polyline
+              coordinates={fullRouteCoords}
+              strokeColor="#FFFFFF"
+              strokeWidth={6}
+              lineCap="round"
+              lineJoin="round"
+            />
+          )}
+
+          {/* Driven portion overlaid in gray on top, to show progress along the route */}
           {completedRouteCoords.length > 1 && (
             <Polyline
               coordinates={completedRouteCoords}
-              strokeColor="rgba(107,114,128,0.45)"
+              strokeColor="rgba(107,114,128,0.55)"
               strokeWidth={5}
               lineCap="round"
-            />
-          )}
-
-          {/* Remaining route — shadow */}
-          {remainingCoords.length > 1 && (
-            <Polyline
-              coordinates={remainingCoords}
-              strokeColor="rgba(27,58,107,0.15)"
-              strokeWidth={10}
-              lineCap="round"
-            />
-          )}
-
-          {/* Remaining route — main line */}
-          {remainingCoords.length > 1 && (
-            <Polyline
-              coordinates={remainingCoords}
-              strokeColor={C.navyPrimary}
-              strokeWidth={5}
-              lineCap="round"
-              lineJoin="round"
             />
           )}
 
@@ -845,6 +1010,20 @@ export default function LiveMapScreen() {
               <View style={styles.originDot} />
             </Marker>
           )}
+
+          {/* Stop markers — numbered waypoints between origin and destination */}
+          {stopMarkers.map((s, i) => (
+            <Marker
+              key={`stop-${i}`}
+              coordinate={s}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={styles.stopMarker}>
+                <Text style={styles.stopMarkerText}>{i + 1}</Text>
+              </View>
+            </Marker>
+          ))}
 
           {/* Destination — teardrop with label */}
           {destLat != null && (
@@ -1236,6 +1415,12 @@ const styles = StyleSheet.create({
   destDot:       { width: 18, height: 18, borderRadius: 9, backgroundColor: C.red, borderWidth: 3, borderColor: '#fff' },
   destStem:      { width: 3, height: 8, backgroundColor: C.red, borderRadius: 1.5, marginTop: -1 },
   turnDot:       { width: 12, height: 12, borderRadius: 6, backgroundColor: C.teal, borderWidth: 2, borderColor: '#fff' },
+  stopMarker: {
+    width: 24, height: 24, borderRadius: 12, backgroundColor: C.navyPrimary,
+    borderWidth: 2.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+  },
+  stopMarkerText: { fontFamily: 'Inter-Bold', fontSize: 11, color: '#fff' },
 
   // Vehicle marker
   vehicleWrapper: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
