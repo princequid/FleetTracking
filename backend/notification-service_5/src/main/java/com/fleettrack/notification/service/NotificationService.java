@@ -9,7 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -18,6 +20,7 @@ import java.util.UUID;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final FcmService fcmService;
 
     @Transactional(readOnly = true)
     public List<NotificationResponse> listForUser(Long recipientId) {
@@ -73,5 +76,13 @@ public class NotificationService {
                 .build();
         notificationRepository.save(n);
         log.info("Created notification type={} recipient={} trip={}", type, recipientId, tripId);
+
+        // Also deliver as a push. Payload carries type/tripId/notificationId so the app
+        // can deep-link when the notification is tapped. No-ops if push isn't configured.
+        Map<String, String> data = new HashMap<>();
+        data.put("type", type != null ? type.name() : "INFO");
+        if (tripId != null) data.put("tripId", String.valueOf(tripId));
+        data.put("notificationId", String.valueOf(n.getId()));
+        fcmService.sendToRecipient(recipientId, title, message, data);
     }
 }

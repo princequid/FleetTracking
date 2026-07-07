@@ -3,6 +3,7 @@ package com.fleettrack.trip.service;
 import com.fleettrack.events.TripAssignedEvent;
 import com.fleettrack.events.TripCancelledEvent;
 import com.fleettrack.events.TripCompletedEvent;
+import com.fleettrack.events.TripStartedEvent;
 import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.client.MediaServiceClient;
 import com.fleettrack.trip.client.VehicleServiceClient;
@@ -23,6 +24,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -116,6 +119,13 @@ public class TripService {
         trip = tripRepository.save(trip);
 
         recordStatusChange(tripId, oldStatus, TripStatus.STARTED, userId);
+
+        // Notify the driver the trip is now started
+        TripStartedEvent startedEvent = new TripStartedEvent(
+                "trip-service", trip.getId(), trip.getDriverId(), trip.getVehicleId(),
+                trip.getOrigin(), trip.getDestination());
+        outboxPublisherService.saveToOutbox("trip.started", startedEvent);
+
         return mapToResponse(trip);
     }
 
@@ -203,7 +213,7 @@ public class TripService {
         } else {
             trips = tripRepository.findAll();
         }
-        return trips.stream().map(this::mapToResponse).toList();
+        return mapTripsWithStops(trips);
     }
 
     public List<TripResponse> getTripsByDriver(Long driverId, String status) {
@@ -213,7 +223,7 @@ public class TripService {
         } else {
             trips = tripRepository.findByDriverId(driverId);
         }
-        return trips.stream().map(this::mapToResponse).toList();
+        return mapTripsWithStops(trips);
     }
 
     public TripResponse getTripById(Long id) {
@@ -254,10 +264,27 @@ public class TripService {
         statusHistoryRepository.save(history);
     }
 
+    // Single-trip mapping (createTrip, getTripById, transitions) — one stop query.
     private TripResponse mapToResponse(Trip trip) {
-        List<TripStopResponse> stops = tripStopRepository
-                .findByTripIdOrderByStopOrder(trip.getId())
+        return buildResponse(trip, tripStopRepository.findByTripIdOrderByStopOrder(trip.getId()));
+    }
+
+    // List mapping — fetches ALL stops for the trips in ONE query, then groups them
+    // in memory. Avoids the N+1 (one stop query per trip) on /trips.
+    private List<TripResponse> mapTripsWithStops(List<Trip> trips) {
+        if (trips.isEmpty()) return List.of();
+        List<Long> ids = trips.stream().map(Trip::getId).toList();
+        Map<Long, List<TripStop>> stopsByTrip = tripStopRepository
+                .findByTripIdInOrderByTripIdAscStopOrderAsc(ids)
                 .stream()
+                .collect(Collectors.groupingBy(TripStop::getTripId));
+        return trips.stream()
+                .map(t -> buildResponse(t, stopsByTrip.getOrDefault(t.getId(), List.of())))
+                .toList();
+    }
+
+    private TripResponse buildResponse(Trip trip, List<TripStop> tripStops) {
+        List<TripStopResponse> stops = tripStops.stream()
                 .map(s -> TripStopResponse.builder()
                         .id(s.getId())
                         .stopOrder(s.getStopOrder())
