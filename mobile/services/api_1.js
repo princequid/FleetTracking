@@ -2,7 +2,11 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 
-const API_BASE_URL = 'http://172.20.10.4:8080';
+// Backend gateway URL. Override per-device/network without editing code by setting
+// EXPO_PUBLIC_API_URL in a .env file (e.g. EXPO_PUBLIC_API_URL=http://192.168.1.20:8080).
+// The phone MUST be on the same network as the machine running the backend, and that
+// IP must be reachable from the phone. 172.20.10.x is an iPhone hotspot subnet.
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.5:8080';
 
 // Auth endpoints that must never trigger the refresh interceptor
 const AUTH_PATHS = ['/auth/login', '/auth/logout', '/auth/refresh'];

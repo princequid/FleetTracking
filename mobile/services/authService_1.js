@@ -29,7 +29,7 @@ export const authService = {
 
       return { userId, role, email };
     } catch (error) {
-      console.error('Login failed:', error);
+      if (__DEV__) console.error('Login failed:', error);
       throw error;
     }
   },

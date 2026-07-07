@@ -304,21 +304,22 @@ export default function HomeScreen() {
         }
       }
     } catch (err) {
-      console.log('[Home] loadData error:', err.message);
+      if (__DEV__) console.log('[Home] loadData error:', err.message);
     } finally {
       setLoading(false);
     }
   }, [userId]);
 
   useEffect(() => {
+    // Animate the shell in immediately so the screen appears instantly (skeleton first),
+    // instead of waiting for the network. Data fills in when loadData resolves.
+    headerAnim.value  = withTiming(1, { duration: 300 });
+    cardAnim.value    = withDelay(80,  withSpring(1, { damping: 18, stiffness: 160 }));
+    actionsAnim.value = withDelay(160, withTiming(1, { duration: 300 }));
+    tripsAnim.value   = withDelay(240, withTiming(1, { duration: 300 }));
+
     const fallback = setTimeout(() => setLoading(false), 3000);
-    loadData().then(() => {
-      clearTimeout(fallback);
-      headerAnim.value  = withDelay(0,   withTiming(1, { duration: 300 }));
-      cardAnim.value    = withDelay(100,  withSpring(1, { damping: 18, stiffness: 160 }));
-      actionsAnim.value = withDelay(220,  withTiming(1, { duration: 300 }));
-      tripsAnim.value   = withDelay(340,  withTiming(1, { duration: 300 }));
-    });
+    loadData().then(() => clearTimeout(fallback));
     return () => clearTimeout(fallback);
   }, []);
 
