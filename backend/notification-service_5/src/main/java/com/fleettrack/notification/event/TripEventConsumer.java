@@ -54,6 +54,11 @@ public class TripEventConsumer {
                         "New trip assigned",
                         routeText("New trip", origin, dest, tripId),
                         tripId);
+                case "trip.started" -> notificationService.createFromEvent(
+                        eventId, driverId, NotificationType.TRIP_STARTED,
+                        "Trip started",
+                        routeText("Trip started", origin, dest, tripId),
+                        tripId);
                 case "trip.cancelled" -> notificationService.createFromEvent(
                         eventId, driverId, NotificationType.TRIP_CANCELLED,
                         "Trip cancelled",
