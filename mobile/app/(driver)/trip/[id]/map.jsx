@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Pressable, ActivityIndicator, Linking, BackHandler, Platform,
+  View, Text, StyleSheet, Pressable, ActivityIndicator, Linking, BackHandler, Platform, Dimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
+import * as SecureStore from 'expo-secure-store';
 import MapView, { Marker, Polyline, UrlTile, PROVIDER_DEFAULT } from 'react-native-maps';
 import Animated, {
   useSharedValue, useAnimatedStyle,
@@ -16,10 +17,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { C } from '../../../../constants/colors';
 import api from '../../../../services/api_1';
+import { useNavStore } from '../../../../store/navStore_2';
 
-const ARRIVE_RADIUS = 200;   // within this of the destination → "Mark arrived"
-const READY_RADIUS  = 150;   // within this of the trip start → "Ready" button
-const OSRM_BASE     = 'http://172.20.10.4:5000';
+const ARRIVE_RADIUS = 50;    // within this of the destination → "Mark arrived"
+const READY_RADIUS  = 50;    // within this of the trip start → "Ready" button
+// Public OSRM server (HTTPS) so routes follow real roads from anywhere the phone has
+// internet — no local OSRM/firewall needed. Override with EXPO_PUBLIC_OSRM_URL to use a
+// self-hosted OSRM instead. If unreachable, the map falls back to a direct line.
+const OSRM_BASE     = process.env.EXPO_PUBLIC_OSRM_URL || 'https://router.project-osrm.org';
 const REROUTE_DIST  = 80;
 
 // Navigation phases:
@@ -27,6 +32,11 @@ const REROUTE_DIST  = 80;
 //   AT_START — reached the start; trip route (origin→destination) loaded, awaiting Start.
 //   TRIP     — Leg 2: navigating the actual trip from start to destination.
 const PHASE = { APPROACH: 'APPROACH', AT_START: 'AT_START', TRIP: 'TRIP' };
+
+// In-memory cache of a trip's resolved route/nav state, keyed by tripId. Survives
+// navigating away and back within the app session, so re-opening the map is instant
+// (no re-fetch/geocode/route). Cleared when the trip is marked arrived.
+const routeCache = new Map();
 // Street-level navigation zoom. The MapView caps zoom at maxZoomLevel={18}
 // (and UrlTile at maximumZ={18} to avoid black tiles), so 18 is the maximum
 // practical navigation zoom for this map. Shared by auto-zoom, follow and recenter
@@ -39,6 +49,10 @@ const NAV_ALTITUDE = 350;
 const MIN_ZOOM = 3;
 // Native vector maps render detail well past 18 without going black.
 const MAX_ZOOM = 20;
+
+// Screen height — used to offset the driver marker toward the lower third while
+// following (via mapPadding), so more of the road ahead is visible.
+const SCREEN_H = Dimensions.get('window').height;
 
 // ─── Step instruction builder ─────────────────────────────────────────────────
 function buildInstruction(step) {
@@ -103,6 +117,37 @@ function haversineMetres(lat1, lng1, lat2, lng2) {
     + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
     * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Camera bearing helpers ─────────────────────────────────────────────────────
+// Initial compass bearing (degrees, 0–360) from point A to point B.
+function bearingBetween(lat1, lng1, lat2, lng2) {
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+// Signed smallest difference b−a in [−180, 180].
+function angleDiff(a, b) { return ((b - a + 540) % 360) - 180; }
+// Interpolate along the SHORTEST arc from a→b by fraction t (handles 359°→1° wrap).
+function angleLerp(a, b, t) { return (a + angleDiff(a, b) * t + 360) % 360; }
+
+// A point on the route ~aheadM metres in front of the driver, used to orient the
+// camera toward where the driver is going (look-ahead), not just the noisy GPS heading.
+function routeLookAheadPoint(coords, lat, lng, aheadM) {
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  let ci = 0, md = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const d = haversineMetres(lat, lng, coords[i].latitude, coords[i].longitude);
+    if (d < md) { md = d; ci = i; }
+  }
+  let acc = 0;
+  for (let i = ci; i < coords.length - 1; i++) {
+    acc += haversineMetres(coords[i].latitude, coords[i].longitude, coords[i + 1].latitude, coords[i + 1].longitude);
+    if (acc >= aheadM) return coords[i + 1];
+  }
+  return coords[coords.length - 1];
 }
 
 function formatDistance(m) {
@@ -176,7 +221,11 @@ function parseOsrmSteps(steps) {
 // A bold teardrop marker: a coloured circular head (with an icon or number) sitting
 // on a matching pointer, plus an optional label chip above. Anchored at the bottom
 // tip so the point marks the exact coordinate.
-function Pin({ color, icon, number, label }) {
+// NOTE: the pin head deliberately uses only plain Views/Text — NOT an icon font.
+// Icon-font glyphs (e.g. Feather) don't reliably rasterise inside a react-native-maps
+// custom marker on Android, which left the start/destination pins blank. A number (Text)
+// or a solid white centre dot (View) always renders.
+function Pin({ color, number, label }) {
   return (
     <View style={{ alignItems: 'center' }}>
       {label ? (
@@ -187,7 +236,7 @@ function Pin({ color, icon, number, label }) {
       <View style={[styles.pinHead, { backgroundColor: color }]}>
         {number != null
           ? <Text style={styles.pinNumber}>{number}</Text>
-          : <Feather name={icon} size={18} color="#fff" />}
+          : <View style={styles.pinCenterDot} />}
       </View>
       <View style={[styles.pinPoint, { borderTopColor: color }]} />
     </View>
@@ -201,11 +250,22 @@ export default function LiveMapScreen() {
   const insets          = useSafeAreaInsets();
   const mapRef          = useRef(null);
 
+  // ── Global nav state (survives leaving/returning to the map) ──
+  const storeLocation   = useNavStore((s) => s.location);   // live GPS from shared tracker
+  const setStoreCamera  = useNavStore((s) => s.setCamera);
+  const getStoreCamera  = useNavStore((s) => s.getCamera);
+  const clearStoreCamera = useNavStore((s) => s.clearCamera);
+  // Snapshot whether a camera was already saved for this trip (decided once, on mount):
+  // if so we restore that exact view instead of auto-zooming to the driver.
+  const hasSavedCameraRef = useRef(null);
+  if (hasSavedCameraRef.current === null) {
+    hasSavedCameraRef.current = !!getStoreCamera(tripId);
+  }
+
   // Mutable nav state — read by GPS callback to avoid stale closures.
-  // following starts false so the map opens on the full-route overview; the driver
-  // taps the recenter/crosshair button to lock onto their location and follow.
+  // following starts true so the map auto-zooms to and tracks the driver on open.
   const nav = useRef({
-    following:       false,
+    following:       true,
     voice:           true,
     tilt:            true,
     directions:      [],
@@ -221,6 +281,8 @@ export default function LiveMapScreen() {
     destPt:          null,   // trip destination coords
     stopCoords:      [],     // ordered stop coords
     nearStart:       false,  // driver is within READY_RADIUS of the start
+    camBearing:      0,      // smoothed follow-camera bearing (deg)
+    camZoom:         NAV_ZOOM, // smoothed follow-camera zoom
   });
 
   const locSubRef           = useRef(null);
@@ -229,6 +291,11 @@ export default function LiveMapScreen() {
   const spokenThresholds    = useRef(new Set());
   const mapReadyRef         = useRef(false);
   const didAutoZoomRef      = useRef(false);
+  const firstFixZoomedRef   = useRef(false);  // auto-zoom to driver once, on first GPS fix
+  const approachFixRef      = useRef(false);  // approach route drawn from a real fix
+  const lastPersistRef      = useRef(0);      // throttle nav-state persistence
+  const lastFixTimeRef      = useRef(0);      // timestamp of last accepted fix (for speed)
+  const speedSmoothRef      = useRef(0);      // low-pass smoothed speed (km/h)
   const pendingFitRef       = useRef(null);
   const zoomRef             = useRef(15);
   const updateCounterRef    = useRef(0);
@@ -257,7 +324,14 @@ export default function LiveMapScreen() {
   const [phase,                setPhase]              = useState(PHASE.APPROACH);
   const [nearStart,            setNearStart]          = useState(false);
   const [isStarting,           setIsStarting]         = useState(false);
-  const [isFollowingVehicle,   setFollowing]          = useState(false);
+  // Vehicle marker rasterisation: on briefly so Android captures a crisp icon, then off
+  const [vehicleTracking,      setVehicleTracking]    = useState(true);
+  const vehicleReadyRef = useRef(false);
+  // Same for the start/stop/destination pins — track changes briefly so Android
+  // rasterises the pin (icon + label) properly, then freeze for performance.
+  const [trackMarkers,         setTrackMarkers]       = useState(true);
+  const markersFrozenRef = useRef(false);
+  const [isFollowingVehicle,   setFollowing]          = useState(true);
   const [panelExpanded,        setPanelExpanded]      = useState(false);
   const [voiceEnabled,         setVoice]              = useState(true);
   const [permissionDenied,     setPermDenied]         = useState(false);
@@ -280,18 +354,12 @@ export default function LiveMapScreen() {
   const panelH           = useSharedValue(180 + insets.bottom);
   const reroutingOpacity = useSharedValue(0);
   const arrivedPulse     = useSharedValue(1);
-  const pulseScale       = useSharedValue(1);
-  const pulseOpacity     = useSharedValue(0.6);
   const cardEntrance     = useSharedValue(0);
   const toastOpacity     = useSharedValue(0);
   const statsOpacity     = useSharedValue(1);
   const backBtnScale     = useSharedValue(1);
 
   // ── Animated styles ──
-  const pulsingRingStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulseScale.value }],
-    opacity:   pulseOpacity.value,
-  }));
   const arrivedBtnStyle  = useAnimatedStyle(() => ({
     transform: [{ scale: arrivedPulse.value }],
   }));
@@ -316,18 +384,6 @@ export default function LiveMapScreen() {
 
   // ── Mount animations ──
   useEffect(() => {
-    pulseScale.value = withRepeat(
-      withSequence(
-        withTiming(1.5, { duration: 1500, easing: Easing.out(Easing.ease) }),
-        withTiming(1, { duration: 0 }),
-      ), -1, false,
-    );
-    pulseOpacity.value = withRepeat(
-      withSequence(
-        withTiming(0, { duration: 1500 }),
-        withTiming(0.6, { duration: 0 }),
-      ), -1, false,
-    );
     cardEntrance.value = withTiming(1, {
       duration: 350, easing: Easing.bezier(0.16, 1, 0.3, 1),
     });
@@ -339,9 +395,50 @@ export default function LiveMapScreen() {
     return () => clearTimeout(t);
   }, []);
 
+  // Once the vehicle marker first has a position, keep it rasterising just long enough
+  // for the truck glyph to render, then stop so the icon stays crisp (Android fix).
+  useEffect(() => {
+    if (currentPosition && !vehicleReadyRef.current) {
+      vehicleReadyRef.current = true;
+      const t = setTimeout(() => setVehicleTracking(false), 1000);
+      return () => clearTimeout(t);
+    }
+  }, [currentPosition]);
+
+  // Once the start/destination/stop pins have coordinates, keep them rasterising for a
+  // moment so Android captures the fully-rendered pin (icon + label), then freeze.
+  useEffect(() => {
+    const c = extractCoords(trip);
+    const hasPins = c.originLat != null || c.destLat != null || stopMarkers.length > 0;
+    if (hasPins && !markersFrozenRef.current) {
+      markersFrozenRef.current = true;
+      const t = setTimeout(() => setTrackMarkers(false), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [trip, stopMarkers]);
+
   // On load we intentionally show the whole route (origin → destination) so the driver
   // can see the full trip. Zooming in to the driver is a deliberate action via the
   // recenter/crosshair button, not automatic — otherwise it hides the route on open.
+
+  // ── Persist navigation state so the trip resumes where the driver left off ──
+  // Saves the phase + last position (keyed by trip). Restored on the load effect below;
+  // updated on phase changes and (throttled) as the driver moves.
+  const NAV_KEY = `ft_nav_${tripId}`;
+  const persistNav = useCallback(() => {
+    const pos = positionRef.current;
+    SecureStore.setItemAsync(NAV_KEY, JSON.stringify({
+      phase: nav.current.phase,
+      lat: pos?.latitude ?? null,
+      lng: pos?.longitude ?? null,
+      updatedAt: Date.now(),
+    })).catch(() => {});
+  }, [NAV_KEY]);
+
+  // Save on phase transitions (Ready / Start), once past initial load
+  useEffect(() => {
+    if (!isLoading) persistNav();
+  }, [phase, isLoading, persistNav]);
 
   // ── Arrived pulse ──
   useEffect(() => {
@@ -434,7 +531,12 @@ export default function LiveMapScreen() {
       // alternatives=3 → OSRM returns up to 3 candidate routes (for 2-point legs);
       // we then select the fastest by duration. Multi-waypoint routes return one route.
       const url = `${OSRM_BASE}/route/v1/driving/${coordStr}?alternatives=3&steps=true&geometries=geojson&overview=full`;
-      const res = await fetch(url);
+      // Cap the request so a slow/unreachable OSRM can't make the route hang — the
+      // caller falls back to a straight line if this times out.
+      const res = await Promise.race([
+        fetch(url),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('osrm-timeout')), 7000)),
+      ]);
       if (!res.ok) return { steps: [], overviewCoords: [], duration: null };
       const data = await res.json();
       const routes = data?.routes ?? [];
@@ -558,6 +660,25 @@ export default function LiveMapScreen() {
 
   const onMapReady = useCallback(() => {
     mapReadyRef.current = true;
+
+    // A saved camera only exists if the driver left in Free Explore mode — restore that
+    // EXACT view (no reset/flicker) and STAY in Explore (recenter button shown). Follow
+    // Mode is not resumed automatically here; the driver taps Recenter to resume it.
+    const savedCam = getStoreCamera(tripId);
+    if (savedCam && mapRef.current) {
+      nav.current.following = false;
+      setFollowing(false);
+      mapRef.current.setCamera({
+        center: { latitude: savedCam.latitude, longitude: savedCam.longitude },
+        zoom:     savedCam.zoom,
+        heading:  savedCam.heading,
+        pitch:    savedCam.pitch,
+        altitude: savedCam.altitude,
+      });
+      pendingFitRef.current = null;
+      return;
+    }
+
     if (pendingFitRef.current && mapRef.current) {
       mapRef.current.fitToCoordinates(pendingFitRef.current, {
         edgePadding: { top: 140, right: 40, bottom: 240, left: 40 },
@@ -565,7 +686,7 @@ export default function LiveMapScreen() {
       });
       pendingFitRef.current = null;
     }
-  }, []);
+  }, [getStoreCamera, tripId]);
 
   // ── Load a navigation leg ──
   // Fetches the OSRM route through `waypoints`, resets progress/turn tracking, draws
@@ -581,6 +702,18 @@ export default function LiveMapScreen() {
     setCompleted([]);
     setStepIndex(0);
 
+    // Only auto-fit the camera to the route when we're NOT restoring a saved view —
+    // otherwise fitting would override the exact camera the driver left.
+    const mayMoveCamera = !hasSavedCameraRef.current;
+
+    // 1) Draw a straight line IMMEDIATELY so the route appears with no delay…
+    if (waypoints.length >= 2) {
+      nav.current.fullCoords = waypoints;
+      setFullRoute(waypoints);
+      if (mayMoveCamera) fitToRoute(waypoints);
+    }
+
+    // 2) …then upgrade to the road-following OSRM route when it arrives (7s timeout).
     const { steps, overviewCoords, duration } = await fetchOsrm(waypoints);
     if (overviewCoords.length >= 2) {
       nav.current.fullCoords = overviewCoords;
@@ -588,17 +721,29 @@ export default function LiveMapScreen() {
       setFullRoute(overviewCoords);
       setDirections(steps);
       if (duration != null) setRouteDurationSecs(Math.round(duration));
-      fitToRoute(overviewCoords);
-    } else if (waypoints.length >= 2) {
-      // OSRM unreachable — show a direct line so the route is still visible
-      nav.current.fullCoords = waypoints;
-      nav.current.directions = [];
-      setFullRoute(waypoints);
-      setDirections([]);
-      fitToRoute(waypoints);
-      showToast('Route server unreachable — showing a direct line.');
+      if (mayMoveCamera) fitToRoute(overviewCoords);
     }
-  }, [fetchOsrm, fitToRoute, showToast]);
+    // If OSRM was unreachable the straight line from step 1 stays visible.
+  }, [fetchOsrm, fitToRoute]);
+
+  // ── On the first real GPS fix: auto-zoom to the driver AND (if approaching) draw the
+  //    driver→start route. Handles the case where the map loaded before GPS locked on. ──
+  useEffect(() => {
+    if (!currentPosition) return;
+
+    // Auto-zoom in to the driver once, ONLY when there's no saved camera to restore.
+    // If the driver had left a camera position, we keep that view instead.
+    if (!firstFixZoomedRef.current && mapReadyRef.current && !hasSavedCameraRef.current) {
+      firstFixZoomedRef.current = true;
+      focusOnDriver(currentPosition, 1000);
+    }
+
+    // Draw the approach route from the driver's real position to the trip start (once)
+    if (nav.current.phase === PHASE.APPROACH && nav.current.originPt && !approachFixRef.current) {
+      approachFixRef.current = true;
+      loadLeg([currentPosition, nav.current.originPt], nav.current.originPt);
+    }
+  }, [currentPosition, focusOnDriver, loadLeg]);
 
   // ── Rerouting ──
   const triggerReroute = useCallback(async (lat, lng) => {
@@ -640,39 +785,105 @@ export default function LiveMapScreen() {
     }
   }, [fetchOsrm]);
 
-  // ── GPS position handler ──
-  const onPositionUpdate = useCallback((location) => {
-    const { latitude, longitude, speed, heading, accuracy } = location.coords;
-    const speedKmh  = Math.max(0, (speed || 0) * 3.6);
+  // ── GPS position handler — processes a location fed from the shared tracker/store.
+  //    NOTE: this updates the driver marker + nav logic ONLY. It never moves the map
+  //    camera (the camera is fully independent — it only moves on recenter). ──
+  const onPositionUpdate = useCallback((coords) => {
+    const { latitude, longitude, speed, heading, accuracy, timestamp } = coords;
+    const acc  = accuracy ?? 0;
+    const prev = positionRef.current;
+    const now  = timestamp || Date.now();
+
+    // ── Location stabilisation (fixes Android GPS jitter/drift when parked) ──
+    // 1) Drop very inaccurate fixes that would make the marker jump around.
+    if (prev && acc > 50) return;
+    // 2) Deadband: GPS keeps reporting tiny position changes even when the vehicle
+    //    is stationary. If the reported move is below the noise radius, treat the
+    //    driver as not moving — keep the marker/camera still and show 0 km/h.
+    let movedMeters = 0;
+    if (prev) {
+      movedMeters    = haversineMetres(prev.latitude, prev.longitude, latitude, longitude);
+      const deadband = Math.min(20, Math.max(8, acc * 0.5));
+      if (movedMeters < deadband) {
+        // Stationary jitter — show 0. Do NOT advance lastFixTimeRef here: it must stay
+        // paired with positionRef (both only move on accepted fixes) so the distance÷time
+        // speed below always covers the same interval and isn't wildly inflated.
+        speedSmoothRef.current = 0;
+        setSpeed(0); // React bails out if already 0 — no needless re-render
+        return;
+      }
+    }
+
+    // ── Accurate speed (Android fix) ──
+    // Prefer the GPS Doppler speed when it's a valid moving value. Android frequently
+    // omits it (0/null/-1), which used to pin the readout to 0 while driving — so fall
+    // back to distance ÷ time between accepted fixes. Clamp to a sane range and lightly
+    // low-pass smooth so the needle is steady, not jumpy.
+    let speedMs = (speed != null && speed > 0.3) ? speed : null;
+    if (speedMs == null && prev && lastFixTimeRef.current) {
+      const dt = (now - lastFixTimeRef.current) / 1000;      // seconds since last fix
+      if (dt >= 0.4) speedMs = movedMeters / dt;             // derive from motion
+    }
+    speedMs = Math.max(0, speedMs || 0);
+    let speedKmh = Math.min(200, speedMs * 3.6);
+    speedKmh = speedSmoothRef.current * 0.4 + speedKmh * 0.6; // light smoothing
+    speedSmoothRef.current = speedKmh;
+    lastFixTimeRef.current = now;
+
     const dirs       = nav.current.directions;
     const fullCoords = nav.current.fullCoords;
 
     // Store latest position for ETA refresh and as fallback center for zoom buttons
     positionRef.current = { latitude, longitude };
-    if (nav.current.following) {
-      mapCameraRef.current.latitude  = latitude;
-      mapCameraRef.current.longitude = longitude;
-      mapCameraRef.current.zoom      = NAV_ZOOM;
+
+    // Persist nav state as the driver moves (throttled to every 5s) so leaving/returning
+    // resumes at the current location.
+    if (now - lastPersistRef.current > 5000) {
+      lastPersistRef.current = now;
+      SecureStore.setItemAsync(`ft_nav_${tripId}`, JSON.stringify({
+        phase: nav.current.phase, lat: latitude, lng: longitude, updatedAt: now,
+      })).catch(() => {});
     }
 
+    // Marker + readouts
     markerHeading.value = withTiming(heading || 0, { duration: 500 });
     setPosition({ latitude, longitude });
     setHeading(heading || 0);
     setSpeed(speedKmh);
 
-    // Camera follow — reads tilt from nav ref to avoid stale closure.
-    // Sets both zoom (Android) and altitude (iOS) so the zoom holds on both providers.
-    if (nav.current.following) {
-      mapRef.current?.animateCamera(
-        {
-          center: { latitude, longitude },
-          heading: heading || 0,
-          pitch: nav.current.tilt ? 45 : 0,
-          zoom: NAV_ZOOM,
-          altitude: NAV_ALTITUDE,
-        },
-        { duration: 800 },
-      );
+    // ── Follow-Mode camera (Uber/Waze-style) ──
+    // Only in Follow Mode. Uses a route look-ahead point (not just noisy GPS heading)
+    // for the bearing, low-pass smooths rotation, ignores small jitter, holds bearing
+    // when slow/stationary (no spinning), and adapts zoom/look-ahead to speed. The
+    // deadband above already skips this entirely when the vehicle isn't really moving.
+    if (nav.current.following && mapRef.current) {
+      const aheadM      = Math.min(200, Math.max(30, speedMs * 7));           // 30m→200m
+      const targetZoom  = speedKmh > 60 ? 16.5 : speedKmh > 30 ? 17.3 : NAV_ZOOM;
+
+      // Desired bearing: route look-ahead is primary (stable); GPS heading nudges it.
+      let desired = nav.current.camBearing;
+      if (speedKmh >= 4) {
+        const la = routeLookAheadPoint(nav.current.fullCoords, latitude, longitude, aheadM);
+        const routeBearing = la
+          ? bearingBetween(latitude, longitude, la.latitude, la.longitude)
+          : (heading ?? nav.current.camBearing);
+        desired = (heading != null) ? angleLerp(routeBearing, heading, 0.3) : routeBearing;
+      }
+      // Low-pass toward the desired bearing; ignore sub-3° jitter for stability
+      if (Math.abs(angleDiff(nav.current.camBearing, desired)) > 3) {
+        nav.current.camBearing = angleLerp(nav.current.camBearing, desired, 0.22);
+      }
+      // Smooth the zoom so speed changes don't jump
+      nav.current.camZoom += (targetZoom - nav.current.camZoom) * 0.15;
+      mapCameraRef.current.zoom = Math.round(nav.current.camZoom);
+
+      mapRef.current.animateCamera({
+        center:   { latitude, longitude },
+        heading:  nav.current.camBearing,
+        pitch:    nav.current.tilt ? 50 : 0,
+        zoom:     nav.current.camZoom,
+        altitude: NAV_ALTITUDE,
+      }, { duration: 900 });
     }
 
     // GPS ping — fire and forget
@@ -682,7 +893,7 @@ export default function LiveMapScreen() {
       speedKmh:   Math.round(speedKmh),
       heading:    Math.round(heading || 0),
       accuracyM:  Math.round(accuracy || 0),
-      recordedAt: new Date(location.timestamp).toISOString(),
+      recordedAt: new Date(timestamp || Date.now()).toISOString(),
     }).catch(() => {});
 
     // ── Step detection ──
@@ -763,9 +974,63 @@ export default function LiveMapScreen() {
     }
   }, [tripId, speakInstruction, checkVoiceThresholds, triggerReroute]);
 
-  // ── Load trip + start GPS ──
+  // Drive the nav logic from the shared location store (single source of truth). The
+  // marker + turn/arrival logic update as GPS flows in; the camera is untouched here.
   useEffect(() => {
+    if (storeLocation) onPositionUpdate(storeLocation);
+  }, [storeLocation, onPositionUpdate]);
+
+  // ── Load trip + start ETA timer ──
+  useEffect(() => {
+    // The live GPS watch is owned by the shared tracker in the driver layout (so it keeps
+    // running across screens). Here we only start the periodic ETA refresh.
+    const startTracking = async () => {
+      etaTimerRef.current = setInterval(fetchEtaRefresh, 30000);
+    };
+
     (async () => {
+      // ── FAST PATH: hydrate from the in-memory cache for an instant re-open ──
+      const cached = routeCache.get(tripId);
+      if (cached) {
+        nav.current.trip            = cached.trip;
+        nav.current.fullCoords      = cached.fullCoords || [];
+        nav.current.stopCoords      = cached.stopCoords || [];
+        nav.current.directions      = cached.directions || [];
+        nav.current.completedCoords = cached.completedCoords || [];
+        nav.current.stepIndex       = cached.stepIndex || 0;
+        nav.current.originPt        = cached.originPt || null;
+        nav.current.destPt          = cached.destPt || null;
+        nav.current.target          = cached.target || null;
+        nav.current.phase           = cached.phase || PHASE.APPROACH;
+        nav.current.nearStart       = !!cached.nearStart;
+        nav.current.within200m      = !!cached.within200m;
+        if (cached.position) positionRef.current = cached.position;
+
+        setTrip(cached.trip);
+        setFullRoute(cached.fullCoords || []);
+        setStopMarkers(cached.stopCoords || []);
+        setDirections(cached.directions || []);
+        setCompleted(cached.completedCoords || []);
+        setStepIndex(cached.stepIndex || 0);
+        setPhase(cached.phase || PHASE.APPROACH);
+        setNearStart(!!cached.nearStart);
+        setWithin200m(!!cached.within200m);
+        if (cached.position) setPosition(cached.position);
+        approachFixRef.current = true;     // route already present — don't redraw
+        firstFixZoomedRef.current = false; // allow a fresh zoom to the current position
+        setIsLoading(false);               // no loading pill on re-entry
+
+        // Ensure permission is still granted, then resume live tracking
+        const perm = await Location.getForegroundPermissionsAsync().catch(() => null);
+        if (perm && perm.status !== 'granted') {
+          const req = await Location.requestForegroundPermissionsAsync().catch(() => null);
+          if (!req || req.status !== 'granted') { setPermDenied(true); return; }
+        }
+        await startTracking();
+        return;
+      }
+
+      // ── FULL PATH (first open of this trip) ──
       const [permResult, tripResult] = await Promise.allSettled([
         Location.requestForegroundPermissionsAsync(),
         api.get(`/trips/${tripId}`),
@@ -783,70 +1048,101 @@ export default function LiveMapScreen() {
       }
       const tripData = tripResult.value.data;
 
-      // ── Resolve start & destination coordinates ──
-      // Prefer coordinates stored on the trip; if a trip was dispatched with only a
-      // typed address, geocode that text so the route still draws.
+      // ── Restore saved nav state (resume where the driver left off) ──
+      let saved = null;
+      try {
+        const raw = await SecureStore.getItemAsync(NAV_KEY);
+        if (raw) saved = JSON.parse(raw);
+      } catch { /* ignore */ }
+      // Show the last-known position instantly so the marker appears before a fresh fix
+      if (saved?.lat != null && saved?.lng != null) {
+        const restored = { latitude: saved.lat, longitude: saved.lng };
+        positionRef.current = restored;
+        setPosition(restored);
+      }
+
+      // ── Start the GPS fix immediately, in parallel with geocoding/route work ──
+      // (last-known first for an instant fix, then a fresh one capped at 8s.)
+      const positionPromise = (async () => {
+        let pos = null;
+        try {
+          const last = await Location.getLastKnownPositionAsync();
+          if (last?.coords) pos = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+        } catch { /* ignore */ }
+        try {
+          // Balanced accuracy locks on much faster than High (network/wifi assisted);
+          // the live watch upgrades to precise GPS right after. Capped at 6s.
+          const fresh = await Promise.race([
+            Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('gps-timeout')), 6000)),
+          ]);
+          pos = {
+            latitude:  fresh.coords.latitude,
+            longitude: fresh.coords.longitude,
+            heading:   fresh.coords.heading,
+            speed:     fresh.coords.speed,
+          };
+        } catch { /* keep last-known */ }
+        return pos;
+      })();
+
+      // ── Resolve start/destination/stop coordinates — geocode ALL missing ones
+      //    CONCURRENTLY (was one-at-a-time; this is the main load-time win) ──
       let { originLat, originLng, destLat, destLng } = extractCoords(tripData);
-      if (originLat == null && tripData.origin) {
-        const g = await geocodeAddress(tripData.origin);
-        if (g) { originLat = g.latitude; originLng = g.longitude; }
-      }
-      if (destLat == null && tripData.destination) {
-        const g = await geocodeAddress(tripData.destination);
-        if (g) { destLat = g.latitude; destLng = g.longitude; }
-      }
-
-      // ── Resolve stop coordinates (geocode any missing), preserving order ──
       const rawStops = Array.isArray(tripData.stops) ? tripData.stops : [];
-      const stopCoords = [];
-      for (const s of rawStops) {
-        let lat = s.lat ?? s.latitude ?? null;
-        let lng = s.lng ?? s.longitude ?? null;
-        if ((lat == null || lng == null) && s.name) {
-          const g = await geocodeAddress(s.name);
-          if (g) { lat = g.latitude; lng = g.longitude; }
-        }
-        if (lat != null && lng != null) {
-          stopCoords.push({ latitude: Number(lat), longitude: Number(lng) });
-        }
-      }
 
-      // Patch the trip with resolved coords so markers + distance-to-destination work,
-      // and stash stop coords for reroutes.
+      const [originGeo, destGeo, stopGeos] = await Promise.all([
+        (originLat == null && tripData.origin)      ? geocodeAddress(tripData.origin)      : Promise.resolve(null),
+        (destLat   == null && tripData.destination) ? geocodeAddress(tripData.destination) : Promise.resolve(null),
+        Promise.all(rawStops.map((s) => {
+          const lat = s.lat ?? s.latitude ?? null;
+          const lng = s.lng ?? s.longitude ?? null;
+          if (lat != null && lng != null) return Promise.resolve({ latitude: Number(lat), longitude: Number(lng) });
+          if (s.name) return geocodeAddress(s.name);
+          return Promise.resolve(null);
+        })),
+      ]);
+      if (originGeo) { originLat = originGeo.latitude; originLng = originGeo.longitude; }
+      if (destGeo)   { destLat   = destGeo.latitude;   destLng   = destGeo.longitude; }
+      const stopCoords = stopGeos.filter(Boolean);
+
+      // Patch trip + endpoints, stash for reroutes
       tripData.originLat = originLat; tripData.originLng = originLng;
       tripData.destLat   = destLat;   tripData.destLng   = destLng;
+      const originPt = originLat != null ? { latitude: originLat, longitude: originLng } : null;
+      const destPt   = destLat   != null ? { latitude: destLat,   longitude: destLng }   : null;
       nav.current.trip       = tripData;
       nav.current.stopCoords = stopCoords;
+      nav.current.originPt   = originPt;
+      nav.current.destPt     = destPt;
       setTrip({ ...tripData });
       setStopMarkers(stopCoords);
 
-      // Trip endpoints
-      const originPt = originLat != null ? { latitude: originLat, longitude: originLng } : null;
-      const destPt   = destLat   != null ? { latitude: destLat,   longitude: destLng }   : null;
-      nav.current.originPt = originPt;
-      nav.current.destPt   = destPt;
+      // Map + markers are ready — clear the loading pill NOW. GPS + route stream in next.
+      setIsLoading(false);
 
-      // ── Get the driver's current position (needed to route the approach leg) ──
-      let driverPos = null;
-      try {
-        const posRes = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const { latitude, longitude, heading, speed } = posRes.coords;
-        driverPos = { latitude, longitude };
-        positionRef.current = driverPos;
-        setPosition(driverPos);
-        setHeading(heading || 0);
-        setSpeed(Math.max(0, (speed || 0) * 3.6));
-      } catch {
-        showToast('Unable to get your current location. Check GPS and try again.');
+      // ── Await the GPS fix (already in flight) ──
+      const driverPos = await positionPromise;
+      if (driverPos) {
+        positionRef.current = { latitude: driverPos.latitude, longitude: driverPos.longitude };
+        setPosition({ latitude: driverPos.latitude, longitude: driverPos.longitude });
+        if (driverPos.heading != null) setHeading(driverPos.heading || 0);
+        if (driverPos.speed   != null) setSpeed(Math.max(0, (driverPos.speed || 0) * 3.6));
+      } else {
+        const servicesOn = await Location.hasServicesEnabledAsync().catch(() => true);
+        showToast(servicesOn
+          ? 'Waiting for GPS signal… move to an open area and it will lock on.'
+          : 'Location is off. Turn on Location/GPS in your phone settings, then reopen.');
       }
 
-      // ── Choose the starting leg based on trip status ──
-      // Already-started trips skip the approach leg and go straight to the trip route.
+      // ── Choose the starting leg + draw the route ──
       const status        = (tripData.status || '').toUpperCase();
       const alreadyStarted = status === 'STARTED' || status === 'EN_ROUTE';
+      // Backend status wins for STARTED; otherwise resume the saved local phase (e.g. the
+      // driver had tapped "Ready" and was at the start reviewing the trip route).
+      const resumeAtStart = !alreadyStarted && saved?.phase === PHASE.AT_START && originPt && destPt;
 
       if (alreadyStarted || !originPt) {
-        // Leg 2 directly: navigate the trip route origin → stops → destination
         nav.current.phase = PHASE.TRIP;
         setPhase(PHASE.TRIP);
         nav.current.following = true;
@@ -854,14 +1150,18 @@ export default function LiveMapScreen() {
         const wp = [originPt, ...stopCoords, destPt].filter(Boolean);
         if (wp.length >= 2) await loadLeg(wp, destPt);
         else showToast('Could not determine the trip start or destination location.');
+      } else if (resumeAtStart) {
+        // Resume the "at start" state: show the trip route + the Start button
+        nav.current.phase = PHASE.AT_START;
+        setPhase(PHASE.AT_START);
+        const wp = [originPt, ...stopCoords, destPt].filter(Boolean);
+        if (wp.length >= 2) await loadLeg(wp, destPt);
       } else if (driverPos && originPt) {
-        // Leg 1: approach route from the driver's location to the trip start
         nav.current.phase = PHASE.APPROACH;
         setPhase(PHASE.APPROACH);
-        await loadLeg([driverPos, originPt], originPt);
+        approachFixRef.current = true; // drawn from a real fix — don't redraw in the GPS effect
+        await loadLeg([{ latitude: driverPos.latitude, longitude: driverPos.longitude }, originPt], originPt);
       } else if (originPt && destPt) {
-        // No GPS fix yet — preview the trip route until a fix arrives; the "Ready"
-        // trigger still fires off distance-to-start once GPS resumes.
         nav.current.phase = PHASE.APPROACH;
         setPhase(PHASE.APPROACH);
         nav.current.target = originPt;
@@ -870,20 +1170,27 @@ export default function LiveMapScreen() {
         showToast('Could not determine the trip start or destination location.');
       }
 
-      setIsLoading(false);
-
-      // Start live GPS watch
-      const sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1500, distanceInterval: 5 },
-        onPositionUpdate,
-      );
-      locSubRef.current = sub;
-
-      // OSRM ETA refresh every 30 s
-      etaTimerRef.current = setInterval(fetchEtaRefresh, 30000);
+      // Start live GPS watch + ETA timer
+      await startTracking();
     })();
 
     return () => {
+      // Snapshot the current nav state so re-opening the map is instant (no reload)
+      routeCache.set(tripId, {
+        trip:            nav.current.trip,
+        fullCoords:      nav.current.fullCoords,
+        stopCoords:      nav.current.stopCoords,
+        directions:      nav.current.directions,
+        completedCoords: nav.current.completedCoords,
+        stepIndex:       nav.current.stepIndex,
+        originPt:        nav.current.originPt,
+        destPt:          nav.current.destPt,
+        target:          nav.current.target,
+        phase:           nav.current.phase,
+        nearStart:       nav.current.nearStart,
+        within200m:      nav.current.within200m,
+        position:        positionRef.current,
+      });
       locSubRef.current?.remove?.();
       Speech.stop();
       clearInterval(etaTimerRef.current);
@@ -896,17 +1203,42 @@ export default function LiveMapScreen() {
     setIsMarkingArrived(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (nav.current.voice) Speech.speak('You have arrived', { language: 'en-GB' });
-    locSubRef.current?.remove?.();
-    clearInterval(etaTimerRef.current);
     Speech.stop();
+
+    const finish = () => {
+      locSubRef.current?.remove?.();
+      clearInterval(etaTimerRef.current);
+      routeCache.delete(tripId);                                       // trip done — drop cache
+      clearStoreCamera(tripId);                                        // and the saved camera
+      SecureStore.deleteItemAsync(`ft_nav_${tripId}`).catch(() => {}); // and saved state
+      router.replace(`/(driver)/trip/${tripId}_2`);
+    };
+
     try {
       await api.put(`/trips/${tripId}/arrive`);
-      router.replace(`/(driver)/trip/${tripId}_2`);
-    } catch {
+      finish();
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.response?.data?.message || '';
+      // The backend rejects arrival unless the trip is STARTED/EN_ROUTE. If the Start
+      // step never landed, start it now and retry arrival once.
+      const notStarted = err?.response?.status === 400 || /STARTED|EN_ROUTE|must be/i.test(msg);
+      if (notStarted) {
+        try {
+          await api.put(`/trips/${tripId}/start`);
+          await api.put(`/trips/${tripId}/arrive`);
+          finish();
+          return;
+        } catch (err2) {
+          const m2 = err2?.response?.data?.error || err2?.response?.data?.message;
+          setIsMarkingArrived(false);
+          showToast(m2 || 'Could not confirm arrival. Please try again.');
+          return;
+        }
+      }
       setIsMarkingArrived(false);
-      showToast('Could not confirm arrival. Please try again.');
+      showToast(msg || 'Could not confirm arrival. Please try again.');
     }
-  }, [tripId, isMarkingArrived, showToast]);
+  }, [tripId, isMarkingArrived, showToast, clearStoreCamera, router]);
 
   // ── Ready: reached the start → load the actual trip route (origin → stops → dest) ──
   const handleReady = useCallback(async () => {
@@ -950,10 +1282,16 @@ export default function LiveMapScreen() {
       showToast('Location unavailable. Please wait for GPS signal.');
       return;
     }
+    // Resume Follow Mode: drop the saved Explore view so future returns keep following,
+    // and seed the follow camera with the current heading/zoom for a smooth resume.
+    clearStoreCamera(tripId);
+    hasSavedCameraRef.current = false;
     nav.current.following = true;
     setFollowing(true);
-    focusOnDriver(pos, 500);
-  }, [currentPosition, showToast, focusOnDriver]);
+    nav.current.camBearing = currentHeading || nav.current.camBearing;
+    nav.current.camZoom    = NAV_ZOOM;
+    focusOnDriver(pos, 600);
+  }, [currentPosition, currentHeading, showToast, focusOnDriver, clearStoreCamera, tripId]);
 
   // Zoom relative to the current camera. Reads the live camera and adjusts BOTH
   // zoom (Google/Android) and altitude (Apple/iOS) so it works on both providers,
@@ -1077,45 +1415,68 @@ export default function LiveMapScreen() {
           pitchEnabled
           minZoomLevel={3}
           maxZoomLevel={20}
+          // While following, push the camera target down so the driver sits ~30% from the
+          // bottom and more of the road ahead is visible (top padding lowers the target).
+          mapPadding={isFollowingVehicle
+            ? { top: Math.round(SCREEN_H * 0.34), right: 0, bottom: 0, left: 0 }
+            : { top: 0, right: 0, bottom: 0, left: 0 }}
           onMapReady={onMapReady}
           onPanDrag={() => {
             nav.current.following = false;
             setFollowing(false);
           }}
-          onRegionChangeComplete={(region) => {
+          onRegionChangeComplete={async (region) => {
             // latitudeDelta ≈ 360 / 2^zoom  →  zoom ≈ log2(360 / latDelta)
             const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(Math.log2(360 / region.latitudeDelta))));
             mapCameraRef.current = { latitude: region.latitude, longitude: region.longitude, zoom };
             zoomRef.current = zoom;
+            // Persist the FULL camera ONLY in Free Explore mode. In Follow Mode the camera
+            // is derived from the driver, so saving it would overwrite the explore view and
+            // make returns snap to a stale frame. getCamera adds heading + pitch.
+            if (nav.current.following) return;
+            try {
+              const cam = await mapRef.current?.getCamera();
+              if (cam) {
+                setStoreCamera(tripId, {
+                  latitude:  cam.center?.latitude  ?? region.latitude,
+                  longitude: cam.center?.longitude ?? region.longitude,
+                  zoom:      cam.zoom ?? zoom,
+                  heading:   cam.heading ?? 0,
+                  pitch:     cam.pitch ?? 0,
+                  altitude:  cam.altitude,
+                });
+              }
+            } catch { /* ignore */ }
           }}
         >
           {/* Map imagery:
               - iOS  → Apple Maps (native vector, free, no key). No tile overlay needed.
               - Android → Google's base map needs an API key we don't have, so we overlay
-                OpenStreetMap raster tiles instead.
-              Tile tuning to avoid black screens:
-              - maximumNativeZ 18 → only fetch tiles that always exist on OSM.
-              - maximumZ 20 (> maxZoomLevel) → beyond native zoom the last tile is
-                UPSCALED (slightly blurry) instead of rendering black.
-              - tileSize 256 matches OSM's native tile size for correct, fast loading. */}
+                raster tiles instead.
+              Tiles come from CARTO's basemaps (OpenStreetMap data), NOT the OSM
+              volunteer servers. The public osm.org tiles block embedded apps (HTTP 403 —
+              tile usage policy); CARTO permits app use for free with attribution.
+              - maximumNativeZ 20 → CARTO serves tiles up to z20.
+              - maximumZ 20 caps display so nothing over-zooms into missing tiles.
+              - tileSize 256 matches the raster tile size. */}
           {Platform.OS === 'android' && (
             <UrlTile
-              urlTemplate="https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              urlTemplate="https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
               minimumZ={1}
               maximumZ={20}
-              maximumNativeZ={18}
+              maximumNativeZ={20}
               tileSize={256}
               shouldReplaceMapContent
             />
           )}
 
           {/* Full route — drawn start → finish so the line is ALWAYS visible,
-              independent of the driver's position. Shadow underlay first, then the
-              solid navy line on top. */}
+              independent of the driver's position. White casing underlay first, then the
+              solid blue line on top (classic navigation look, high visibility). */}
           {fullRouteCoords.length > 1 && (
             <Polyline
               coordinates={fullRouteCoords}
-              strokeColor="rgba(0,0,0,0.35)"
+              strokeColor="rgba(255,255,255,0.9)"
               strokeWidth={11}
               lineCap="round"
             />
@@ -1123,7 +1484,7 @@ export default function LiveMapScreen() {
           {fullRouteCoords.length > 1 && (
             <Polyline
               coordinates={fullRouteCoords}
-              strokeColor="#FFFFFF"
+              strokeColor="#2563EB"
               strokeWidth={6}
               lineCap="round"
               lineJoin="round"
@@ -1143,12 +1504,12 @@ export default function LiveMapScreen() {
           {/* Origin — green "Start" pin */}
           {originLat != null && (
             <Marker
-              coordinate={{ latitude: originLat, longitude: originLng }}
+              coordinate={{ latitude: Number(originLat), longitude: Number(originLng) }}
               anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
+              tracksViewChanges={trackMarkers}
               zIndex={2}
             >
-              <Pin color={C.green} icon="flag" label="Start" />
+              <Pin color={C.green} label="Start" />
             </Marker>
           )}
 
@@ -1156,9 +1517,9 @@ export default function LiveMapScreen() {
           {stopMarkers.map((s, i) => (
             <Marker
               key={`stop-${i}`}
-              coordinate={s}
+              coordinate={{ latitude: Number(s.latitude), longitude: Number(s.longitude) }}
               anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
+              tracksViewChanges={trackMarkers}
               zIndex={2}
             >
               <Pin color={C.navyPrimary} number={i + 1} />
@@ -1168,12 +1529,12 @@ export default function LiveMapScreen() {
           {/* Destination — red pin with the destination name */}
           {destLat != null && (
             <Marker
-              coordinate={{ latitude: destLat, longitude: destLng }}
+              coordinate={{ latitude: Number(destLat), longitude: Number(destLng) }}
               anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={false}
+              tracksViewChanges={trackMarkers}
               zIndex={3}
             >
-              <Pin color={C.red} icon="map-pin" label={trip?.destination || 'Destination'} />
+              <Pin color={C.red} label={trip?.destination || 'Destination'} />
             </Marker>
           )}
 
@@ -1188,18 +1549,21 @@ export default function LiveMapScreen() {
             </Marker>
           )}
 
-          {/* Vehicle marker — tracksViewChanges always true so Reanimated pulse ring
-              stays live in the native layer; acceptable cost for a single moving marker */}
+          {/* Vehicle marker — static content so Android rasterises a crisp icon.
+              tracksViewChanges is on only briefly (so the truck glyph is captured), then
+              off, keeping the icon sharp and stable. The coordinate still moves natively
+              and `rotation` still turns it to face the heading without re-capturing. */}
           {currentPosition && (
             <Marker
               coordinate={currentPosition}
               anchor={{ x: 0.5, y: 0.5 }}
               flat
-              tracksViewChanges
+              tracksViewChanges={vehicleTracking}
               rotation={currentHeading}
             >
+              {/* Wrapper IS the halo (in-flow layout) — an absolute halo gets clipped
+                  to a partial arc when Android rasterises the marker. */}
               <View style={styles.vehicleWrapper}>
-                <Animated.View style={[styles.pulseRing, pulsingRingStyle]} />
                 <View style={styles.vehicleCircle}>
                   <Feather name="truck" size={18} color="#fff" />
                 </View>
@@ -1297,6 +1661,13 @@ export default function LiveMapScreen() {
         <Text style={styles.speedVal}>{Math.round(currentSpeed)}</Text>
         <Text style={styles.speedUnit}>KM/H</Text>
       </View>
+
+      {/* Tile attribution — required by CARTO/OpenStreetMap usage terms (Android tiles) */}
+      {Platform.OS === 'android' && (
+        <Text style={[styles.attribution, { bottom: insets.bottom + 190 }]}>
+          © OpenStreetMap © CARTO
+        </Text>
+      )}
 
       {/* ── Map control column (right side) ── */}
       <View style={[styles.controlCol, { top: insets.top + 130 }]}>
@@ -1515,6 +1886,20 @@ const styles = StyleSheet.create({
   speedVal:  { fontFamily: 'Inter-Bold', fontSize: 20, color: C.text1 },
   speedUnit: { fontFamily: 'Inter-Regular', fontSize: 9, color: C.text3, letterSpacing: 0.5 },
 
+  // Tile attribution (bottom-left, subtle)
+  attribution: {
+    position: 'absolute',
+    left: 10,
+    fontFamily: 'Inter-Regular',
+    fontSize: 9,
+    color: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+
   // Map control column
   controlCol: {
     position: 'absolute', right: 16,
@@ -1549,6 +1934,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   pinNumber: { fontFamily: 'Inter-Bold', fontSize: 16, color: '#fff' },
+  pinCenterDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#fff' },
   pinPoint: {
     width: 0, height: 0, marginTop: -3,
     borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 11,
@@ -1557,16 +1943,17 @@ const styles = StyleSheet.create({
   },
   turnDot:       { width: 12, height: 12, borderRadius: 6, backgroundColor: C.teal, borderWidth: 2, borderColor: '#fff' },
 
-  // Vehicle marker
-  vehicleWrapper: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
-  pulseRing: {
-    position: 'absolute', width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(13,148,136,0.18)',
+  // Vehicle marker (static + in-flow layout so it rasterises crisply on Android)
+  // The wrapper is the teal halo; the navy circle sits centred inside it.
+  vehicleWrapper: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: 'rgba(13,148,136,0.22)',
+    borderWidth: 1, borderColor: 'rgba(13,148,136,0.40)',
+    alignItems: 'center', justifyContent: 'center',
   },
   vehicleCircle: {
-    width: 40, height: 40, borderRadius: 20, backgroundColor: C.navyPrimary,
+    width: 38, height: 38, borderRadius: 19, backgroundColor: C.navyPrimary,
     borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center',
-    shadowColor: C.navyPrimary, shadowOpacity: 0.5, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
   },
 
   // Rerouting

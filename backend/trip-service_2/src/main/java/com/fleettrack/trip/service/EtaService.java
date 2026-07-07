@@ -16,7 +16,7 @@ import java.util.Optional;
 @Slf4j
 public class EtaService {
 
-    @Value("${osrm.base-url:http://172.20.10.4:5000}")
+    @Value("${osrm.base-url:http://localhost:5000}")
     private String osrmBaseUrl;
 
     // Plain RestTemplate — not @LoadBalanced, so it can call external IPs directly.
