@@ -101,6 +101,25 @@ function StepCard({ step, index, activeIndex }) {
   );
 }
 
+// One point in the trip's route timeline (start / a stop / destination).
+function RouteStop({ color, tag, name, description, number, last }) {
+  return (
+    <View style={styles.routeRow}>
+      <View style={styles.routeGutter}>
+        <View style={[styles.routeDot, { backgroundColor: color }]}>
+          {number != null && <Text style={styles.routeDotNum}>{number}</Text>}
+        </View>
+        {!last && <View style={styles.routeLine} />}
+      </View>
+      <View style={[styles.routeBody, last && { paddingBottom: 0 }]}>
+        <Text style={[styles.routeTag, { color }]}>{tag}</Text>
+        <Text style={styles.routeName}>{name}</Text>
+        {description ? <Text style={styles.routeDesc}>{description}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 export default function TripDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
@@ -214,6 +233,46 @@ export default function TripDetailScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Full route: start → stops → destination, with any admin descriptions */}
+        <View>
+          <Text style={styles.sectionLabel}>ROUTE</Text>
+          <View style={styles.routeCard}>
+            <RouteStop
+              color={C.green}
+              tag="START"
+              name={trip?.origin || 'Origin'}
+              description={trip?.originDescription || trip?.originNote}
+            />
+            {(trip?.stops || []).map((s, i) => (
+              <RouteStop
+                key={s.id ?? `stop-${i}`}
+                color={C.navyPrimary}
+                tag={`STOP ${i + 1}`}
+                number={i + 1}
+                name={s.name || s.locationName || `Stop ${i + 1}`}
+                description={s.description || s.note}
+              />
+            ))}
+            <RouteStop
+              color={C.red}
+              tag="DESTINATION"
+              name={trip?.destination || 'Destination'}
+              description={trip?.destinationDescription || trip?.destNote}
+              last
+            />
+          </View>
+        </View>
+
+        {trip?.description ? (
+          <View>
+            <Text style={styles.sectionLabel}>INSTRUCTIONS FROM DISPATCH</Text>
+            <View style={styles.notesCard}>
+              <Feather name="info" size={16} color={C.navyPrimary} style={{ marginTop: 1 }} />
+              <Text style={styles.notesText}>{trip.description}</Text>
+            </View>
+          </View>
+        ) : null}
+
         <View>
           <Text style={styles.sectionLabel}>TRIP PROGRESS</Text>
           <View style={styles.stepsCol}>
@@ -300,6 +359,30 @@ const styles = StyleSheet.create({
   },
   sectionLabel: { fontFamily: 'Inter-SemiBold', fontSize: 11, color: C.text3, letterSpacing: 0.8, marginBottom: 10 },
   stepsCol: { gap: 8 },
+
+  // Route timeline (start → stops → destination)
+  routeCard: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 16,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+  },
+  routeRow: { flexDirection: 'row' },
+  routeGutter: { width: 26, alignItems: 'center' },
+  routeDot: {
+    width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#fff',
+    alignItems: 'center', justifyContent: 'center', marginTop: 1,
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2, elevation: 2,
+  },
+  routeDotNum: { fontFamily: 'Inter-Bold', fontSize: 10, color: '#fff' },
+  routeLine: { width: 2, flex: 1, backgroundColor: C.border, marginVertical: 2 },
+  routeBody: { flex: 1, paddingLeft: 10, paddingBottom: 18 },
+  routeTag: { fontFamily: 'Inter-SemiBold', fontSize: 10, letterSpacing: 0.5 },
+  routeName: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1, marginTop: 2 },
+  routeDesc: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3, marginTop: 3, lineHeight: 18 },
+  notesCard: {
+    flexDirection: 'row', gap: 10, backgroundColor: '#EEF3FB', borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: '#DCE6F5',
+  },
+  notesText: { flex: 1, fontFamily: 'Inter-Regular', fontSize: 13, color: C.text2, lineHeight: 20 },
   stepCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     borderRadius: 14, padding: 14,
