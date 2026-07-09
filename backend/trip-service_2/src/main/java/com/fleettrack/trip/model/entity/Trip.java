@@ -32,6 +32,9 @@ public class Trip {
     @Column(length = 500)
     private String destination;
 
+    @Column(length = 1000)
+    private String description;
+
     @Column(name = "origin_lat", precision = 10, scale = 7)
     private BigDecimal originLat;
 
