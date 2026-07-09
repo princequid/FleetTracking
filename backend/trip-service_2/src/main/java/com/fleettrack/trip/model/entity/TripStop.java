@@ -27,6 +27,9 @@ public class TripStop {
     @Column(name = "location_name", length = 500)
     private String locationName;
 
+    @Column(length = 500)
+    private String description;
+
     @Column(precision = 10, scale = 7)
     private BigDecimal lat;
 

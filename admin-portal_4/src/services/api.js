@@ -26,7 +26,7 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
 
-      const { refreshToken, userId, role, setAuth, clearAuth } = useAuthStore.getState();
+      const { refreshToken, userId, email, role, setAuth, clearAuth } = useAuthStore.getState();
 
       if (!refreshToken) {
         clearAuth();
@@ -39,6 +39,9 @@ api.interceptors.response.use(
 
         setAuth({
           userId: data.userId ?? userId,
+          // Preserve the signed-in email — the refresh endpoint doesn't return it,
+          // and setAuth() nulls out any field left unset.
+          email: data.email ?? email,
           role: data.role ?? role,
           accessToken: data.accessToken,
           refreshToken: data.refreshToken ?? refreshToken,
