@@ -16,6 +16,7 @@ public class TripResponse {
     private Long vehicleId;
     private String origin;
     private String destination;
+    private String description;
     private BigDecimal originLat;
     private BigDecimal originLng;
     private BigDecimal destLat;

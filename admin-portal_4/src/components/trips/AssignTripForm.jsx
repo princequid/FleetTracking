@@ -26,6 +26,7 @@ export default function AssignTripForm({ onDispatched, onError }) {
   const [origin,      setOrigin]      = useState({ name: "", lat: null, lng: null });
   const [destination, setDestination] = useState({ name: "", lat: null, lng: null });
   const [stops,       setStops]       = useState([]);
+  const [description, setDescription] = useState("");
 
   const [driverId,       setDriverId]       = useState("");
   const [vehicleId,      setVehicleId]      = useState("");
@@ -70,6 +71,7 @@ export default function AssignTripForm({ onDispatched, onError }) {
       }
       if (d.driverId)    setDriverId(d.driverId);
       if (d.vehicleId)   setVehicleId(d.vehicleId);
+      if (d.description) setDescription(d.description);
       setDraftRestored(true);
     } catch { /* corrupted draft — ignore */ }
     // Allow save effect to run on subsequent changes only
@@ -82,14 +84,14 @@ export default function AssignTripForm({ onDispatched, onError }) {
     if (skipSaveRef.current) return;
     const isEmpty =
       !origin.name && !destination.name &&
-      stops.length === 0 && !driverId && !vehicleId;
+      stops.length === 0 && !driverId && !vehicleId && !description;
     if (isEmpty) {
       localStorage.removeItem(DRAFT_KEY);
       setDraftRestored(false);
     } else {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ origin, destination, stops, driverId, vehicleId }));
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ origin, destination, stops, driverId, vehicleId, description }));
     }
-  }, [origin, destination, stops, driverId, vehicleId]);
+  }, [origin, destination, stops, driverId, vehicleId, description]);
 
   // ── Origin ───────────────────────────────────────────────────────────────────
   function handleOriginChange(text) {
@@ -118,7 +120,7 @@ export default function AssignTripForm({ onDispatched, onError }) {
   // ── Stops ────────────────────────────────────────────────────────────────────
   function addStop() {
     if (stops.length >= MAX_STOPS) return;
-    setStops((prev) => [...prev, { id: newStopId(), name: "", lat: null, lng: null }]);
+    setStops((prev) => [...prev, { id: newStopId(), name: "", lat: null, lng: null, description: "" }]);
   }
 
   function removeStop(id) {
@@ -134,6 +136,12 @@ export default function AssignTripForm({ onDispatched, onError }) {
   function handleStopSelect(id, { name, lat, lng }) {
     setStops((prev) =>
       prev.map((s) => (s.id === id ? { ...s, name, lat, lng } : s)),
+    );
+  }
+
+  function handleStopDescChange(id, text) {
+    setStops((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, description: text } : s)),
     );
   }
 
@@ -164,6 +172,7 @@ export default function AssignTripForm({ onDispatched, onError }) {
     setStops([]);
     setDriverId("");
     setVehicleId("");
+    setDescription("");
     setDraftRestored(false);
   }
 
@@ -199,11 +208,13 @@ export default function AssignTripForm({ onDispatched, onError }) {
         vehicleId:   Number(vehicleId),
         origin:      origin.name,
         destination: destination.name,
+        ...(description.trim() && { description: description.trim() }),
         ...(origin.lat      != null && { originLat: origin.lat,      originLng: origin.lng }),
         ...(destination.lat != null && { destLat:   destination.lat, destLng:   destination.lng }),
         ...(filledStops.length > 0 && {
           stops: filledStops.map((s) => ({
             name: s.name,
+            ...(s.description?.trim() && { description: s.description.trim() }),
             ...(s.lat != null && { lat: s.lat, lng: s.lng }),
           })),
         }),
@@ -215,6 +226,7 @@ export default function AssignTripForm({ onDispatched, onError }) {
       setStops([]);
       setDriverId("");
       setVehicleId("");
+      setDescription("");
       setDraftRestored(false);
     } catch (err) {
       onError(
@@ -328,6 +340,13 @@ export default function AssignTripForm({ onDispatched, onError }) {
                         <PinIcon />
                         Pin on map
                       </button>
+                      <input
+                        type="text"
+                        className="dispatch-input dispatch-stop-note"
+                        value={stop.description || ""}
+                        onChange={(e) => handleStopDescChange(stop.id, e.target.value)}
+                        placeholder="Note for driver (optional) — e.g. deliver to gate B"
+                      />
                     </div>
 
                     {/* Remove */}
@@ -372,6 +391,22 @@ export default function AssignTripForm({ onDispatched, onError }) {
               <PinIcon />
               Pin on map (near typed location)
             </button>
+          </div>
+
+          {/* Trip instructions / description */}
+          <div className="dispatch-field">
+            <label className="dispatch-label" htmlFor="dispatch-description">
+              Trip instructions
+              <span className="dispatch-stops-optional">optional</span>
+            </label>
+            <textarea
+              id="dispatch-description"
+              className="dispatch-input dispatch-textarea"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              placeholder="Notes for the driver — special handling, contact person, gate code, etc."
+            />
           </div>
 
           {/* Driver */}
