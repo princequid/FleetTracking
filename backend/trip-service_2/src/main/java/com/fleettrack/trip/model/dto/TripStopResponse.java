@@ -13,4 +13,5 @@ public class TripStopResponse {
     private String name;
     private BigDecimal lat;
     private BigDecimal lng;
+    private String description;
 }

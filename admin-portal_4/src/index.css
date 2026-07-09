@@ -61,6 +61,155 @@
   --color-muted: var(--color-text-3);
   --color-accent: var(--color-teal);
   --color-accent-strong: var(--color-teal-light);
+
+  color-scheme: light;
+}
+
+/* ── Dark theme ───────────────────────────────────────────────────────────────
+   Only the semantic color tokens are remapped — every component pulls its
+   surface/text/border from these, so the whole app flips coherently.
+   Brand navy (sidebar) and vivid status colors are intentionally preserved. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-text-1: #f1f5f9;
+  --color-text-2: #cbd5e1;
+  --color-text-3: #94a3b8;
+
+  --color-bg:      #0b1120; /* page background — deepest layer */
+  --color-surface: #131c2e; /* insets, alternating rows */
+  --color-white:   #182236; /* card / panel face — the elevated layer */
+  --color-border:  #273449;
+
+  --color-teal-pale: rgba(34, 211, 238, 0.14);
+
+  /* Shadows read as depth via darkness rather than brand-tinted blur */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+/* Smooth cross-fade of colors while switching themes (added briefly by JS) */
+html.theme-transition,
+html.theme-transition * {
+  transition: background-color 300ms ease, border-color 300ms ease,
+              color 300ms ease, fill 300ms ease, stroke 300ms ease,
+              box-shadow 300ms ease !important;
+}
+
+/* Navy is a brand color used both as a dark *background* (kept as-is) and as
+   dark *text* on light surfaces. Only the text usages must flip to light in
+   dark mode — map markers are intentionally excluded (they sit on light tiles). */
+:root[data-theme="dark"] .navbar-title,
+:root[data-theme="dark"] .navbar-icon-btn,
+:root[data-theme="dark"] .placeholder-icon,
+:root[data-theme="dark"] .placeholder-title,
+:root[data-theme="dark"] .map-modal-title,
+:root[data-theme="dark"] .filter-tab:hover,
+:root[data-theme="dark"] .trips-pagination button:hover:not(:disabled),
+:root[data-theme="dark"] .trip-back-btn,
+:root[data-theme="dark"] .btn-secondary,
+:root[data-theme="dark"] .btn-ghost,
+:root[data-theme="dark"] .driver-stat-value,
+:root[data-theme="dark"] .fleet-map-controls button,
+:root[data-theme="dark"] .incidents-filter-count span {
+  color: var(--color-text-1);
+}
+
+/* These rows/controls use a hardcoded light hover background (#f0f4ff) in light
+   mode. In dark mode that would hide the now-light text, so swap it for a subtle
+   translucent raise that keeps the text fully visible. Light mode is unchanged. */
+:root[data-theme="dark"] .trips-data-table tbody tr:hover,
+:root[data-theme="dark"] .dispatch-recent-item:hover,
+:root[data-theme="dark"] .btn-secondary:hover:not(:disabled),
+:root[data-theme="dark"] .btn-secondary:hover,
+:root[data-theme="dark"] .btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* The sidebar is always a dark navy surface, so its text uses var(--color-white)
+   as literal white. In dark mode that token remaps to the dark card face, which
+   hid the "FleetTrack" brand (and other sidebar labels). Re-pin it to true white
+   just inside the sidebar — nothing there uses it as a background, so this is safe. */
+:root[data-theme="dark"] .sidebar {
+  --color-white: #ffffff;
+}
+
+/* The login-left panel (navy image overlay) and the primary login button are
+   always dark surfaces whose text uses var(--color-white) as literal white.
+   In dark mode that token remaps to a dark face and hid the wordmark, feature
+   list, and "Sign in" label. Re-pin to true white in just those regions —
+   neither uses the token as a background, so the rest of the page is unaffected. */
+:root[data-theme="dark"] .login-left,
+:root[data-theme="dark"] .login-button {
+  --color-white: #ffffff;
+}
+
+/* Theme toggle — segmented control in the navbar */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-3);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: color var(--transition-base), background var(--transition-base),
+              box-shadow var(--transition-base), transform var(--transition-fast);
+}
+
+.theme-toggle-btn:hover {
+  color: var(--color-text-1);
+}
+
+.theme-toggle-btn:active {
+  transform: scale(0.9);
+}
+
+.theme-toggle-btn.active {
+  background: var(--color-white);
+  color: var(--color-teal);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Fallback shown in the content area while a lazy route chunk loads */
+.route-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 60vh;
+  color: var(--color-text-3);
+}
+
+.route-fallback-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-teal);
+  border-radius: var(--radius-full);
+  animation: login-spin 700ms linear infinite;
+}
+
+.route-fallback-text {
+  font-size: var(--text-sm);
+  font-weight: 500;
 }
 
 * {
@@ -1116,6 +1265,20 @@ h1 {
   outline: none;
   border-color: var(--color-navy);
   box-shadow: 0 0 0 3px rgba(27, 58, 107, 0.1);
+}
+
+.dispatch-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+
+.dispatch-stop-note {
+  width: 100%;
+  margin-top: var(--space-2);
+  font-size: 13px;
 }
 
 /* keep old class as alias so any existing markup doesn't break */
@@ -3496,6 +3659,10 @@ h1 {
   padding: 1.25rem 1.5rem 1rem;
   box-shadow: var(--shadow-sm);
   transition: box-shadow var(--transition-base);
+  /* Allow the card to shrink below its content's intrinsic width so long,
+     unbroken text (e.g. a full destination address) truncates with an
+     ellipsis instead of widening the grid and side-scrolling the page. */
+  min-width: 0;
 }
 
 .chart-card:hover {
@@ -3694,6 +3861,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0; /* let the destination line truncate instead of overflowing */
 }
 
 .recent-activity-top {
