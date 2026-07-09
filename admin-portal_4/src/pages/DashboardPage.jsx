@@ -128,20 +128,30 @@ export default function DashboardPage() {
 
   const deliveryData = useMemo(() => buildDeliveryData(), []);
 
-  const load = () =>
-    Promise.allSettled([getTrips(), getVehicles(), getIncidents()]).then(
-      ([tR, vR, iR]) => {
-        if (tR.status === "fulfilled" && Array.isArray(tR.value)) setTrips(tR.value);
-        if (vR.status === "fulfilled" && Array.isArray(vR.value)) setVehicles(vR.value);
-        if (iR.status === "fulfilled" && Array.isArray(iR.value)) setIncidents(iR.value);
-      }
-    );
-
   useEffect(() => {
+    // `alive` prevents state updates from a request that resolves after the
+    // component unmounts (avoids React warnings and wasted renders on navigate-away).
+    let alive = true;
+
+    const load = () =>
+      Promise.allSettled([getTrips(), getVehicles(), getIncidents()]).then(
+        ([tR, vR, iR]) => {
+          if (!alive) return;
+          if (tR.status === "fulfilled" && Array.isArray(tR.value)) setTrips(tR.value);
+          if (vR.status === "fulfilled" && Array.isArray(vR.value)) setVehicles(vR.value);
+          if (iR.status === "fulfilled" && Array.isArray(iR.value)) setIncidents(iR.value);
+        }
+      );
+
     setLoading(true);
-    load().finally(() => setLoading(false));
+    load().finally(() => {
+      if (alive) setLoading(false);
+    });
     const interval = setInterval(load, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const activeTrips = trips.filter((t) =>

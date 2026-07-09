@@ -1,27 +1,33 @@
-import React from "react";
+import React, { lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import "leaflet/dist/leaflet.css";
 import "./index.css";
+import { ThemeProvider } from "./context/ThemeContext";
 import PrivateRoute from "./components/common/PrivateRoute";
 import Layout from "./pages/Layout";
 import LoginPage from "./pages/LoginPage";
-import DashboardPage from "./pages/DashboardPage";
-import TripsPage from "./pages/TripsPage";
-import TripDetailPage from "./pages/TripDetailPage";
-import DispatchPage from "./pages/DispatchPage";
-import DriversPage from "./pages/DriversPage";
-import DriverDetailPage from "./pages/DriverDetailPage";
-import VehiclesPage from "./pages/VehiclesPage";
-import ReportsPage from "./pages/ReportsPage";
-import IncidentsPage from "./pages/IncidentsPage";
-import LiveMapPage from "./pages/LiveMapPage";
+
+// Route-level code splitting: each page (and its heavy deps — Recharts on the
+// dashboard/reports, Leaflet on the map) ships as its own chunk that loads only
+// when navigated to. The login screen no longer downloads the whole app.
+// The shell (Layout, Sidebar, Navbar, Login) stays eager for an instant first paint.
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const TripsPage = lazy(() => import("./pages/TripsPage"));
+const TripDetailPage = lazy(() => import("./pages/TripDetailPage"));
+const DispatchPage = lazy(() => import("./pages/DispatchPage"));
+const DriversPage = lazy(() => import("./pages/DriversPage"));
+const DriverDetailPage = lazy(() => import("./pages/DriverDetailPage"));
+const VehiclesPage = lazy(() => import("./pages/VehiclesPage"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage"));
+const IncidentsPage = lazy(() => import("./pages/IncidentsPage"));
+const LiveMapPage = lazy(() => import("./pages/LiveMapPage"));
 
 const root = createRoot(document.getElementById("root"));
 
 root.render(
-  <BrowserRouter>
-    <Routes>
+  <ThemeProvider>
+    <BrowserRouter>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/"
@@ -44,6 +50,7 @@ root.render(
         <Route path="map" element={<LiveMapPage />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
-    </Routes>
-  </BrowserRouter>
+      </Routes>
+    </BrowserRouter>
+  </ThemeProvider>
 );

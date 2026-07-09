@@ -19,6 +19,7 @@ public class CreateTripRequest {
 
     private String origin;
     private String destination;
+    private String description;
     private Double originLat;
     private Double originLng;
     private Double destLat;
