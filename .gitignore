@@ -9,6 +9,12 @@ target/
 firebase-service-account.json
 google-services.json
 
+# TLS certificates / private keys (generated locally, never committed)
+infrastructure_1/tls/certs/
+*.pem
+*.key
+*.crt
+
 # Build artifacts
 build/
 dist/

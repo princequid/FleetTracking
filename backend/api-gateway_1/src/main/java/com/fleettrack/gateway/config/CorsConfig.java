@@ -20,7 +20,10 @@ public class CorsConfig {
                 "http://localhost:3000",
                 "http://127.0.0.1:3000"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-User-Id", "X-User-Role"));
+        // NOTE: X-User-Id / X-User-Role are gateway-internal identity headers set by
+        // JwtAuthFilter. They are deliberately NOT accepted from clients — the browser
+        // must not be able to send them, and the gateway overwrites them regardless.
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

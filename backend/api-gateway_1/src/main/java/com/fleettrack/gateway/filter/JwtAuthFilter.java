@@ -26,9 +26,12 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
     );
 
     private final WebClient webClient;
+    private final String internalServiceSecret;
 
-    public JwtAuthFilter(WebClient.Builder webClientBuilder) {
+    public JwtAuthFilter(WebClient.Builder webClientBuilder,
+                         @org.springframework.beans.factory.annotation.Value("${internal.service.secret}") String internalServiceSecret) {
         this.webClient = webClientBuilder.build();
+        this.internalServiceSecret = internalServiceSecret;
     }
 
     @Override
@@ -48,6 +51,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
         return webClient.get()
                 .uri("lb://auth-service/auth/validate")
                 .header(HttpHeaders.AUTHORIZATION, authHeader)
+                .header("X-Internal-Service-Key", internalServiceSecret)
                 .retrieve()
                 .bodyToMono(Map.class)
                 .flatMap(body -> {
@@ -55,9 +59,14 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                     String role = (String) body.get("role");
                     log.debug("Token validated — userId={} role={}", userId, role);
 
+                    // SECURITY: forcibly OVERWRITE these identity headers (set, not add)
+                    // so a client can never smuggle its own X-User-Id / X-User-Role
+                    // through the gateway and impersonate another user or role.
                     var mutatedRequest = exchange.getRequest().mutate()
-                            .header("X-User-Id", userId)
-                            .header("X-User-Role", role)
+                            .headers(h -> {
+                                h.set("X-User-Id", userId);
+                                h.set("X-User-Role", role);
+                            })
                             .build();
                     return chain.filter(exchange.mutate().request(mutatedRequest).build());
                 })
