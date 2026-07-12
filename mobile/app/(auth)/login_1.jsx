@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Dimensions, KeyboardAvoidingView, Platform, ScrollView,
@@ -9,13 +9,15 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { authService } from '../../services/authService_1';
 import { useAuthStore } from '../../store/authStore_1';
-import { C } from '../../constants/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
   const setLoggedIn = useAuthStore((s) => s.setLoggedIn);
 
   const [email, setEmail]       = useState('');
@@ -69,12 +71,12 @@ export default function LoginScreen() {
   };
 
   const emailStyle = emailFocused
-    ? { borderColor: C.navyPrimary, backgroundColor: '#fff' }
-    : { borderColor: C.border, backgroundColor: '#F3F4F6' };
+    ? { borderColor: C.navyPrimary, backgroundColor: C.surface }
+    : { borderColor: C.border, backgroundColor: C.bg };
 
   const pwStyle = passwordFocused
-    ? { borderColor: C.navyPrimary, backgroundColor: '#fff' }
-    : { borderColor: C.border, backgroundColor: '#F3F4F6' };
+    ? { borderColor: C.navyPrimary, backgroundColor: C.surface }
+    : { borderColor: C.border, backgroundColor: C.bg };
 
   return (
     <KeyboardAvoidingView
@@ -82,7 +84,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: C.surface }}
         contentContainerStyle={{ flexGrow: 1 }}
         keyboardShouldPersistTaps="handled"
         bounces={false}
@@ -174,7 +176,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   topSection: {
     backgroundColor: C.navyDark,
     paddingTop: 60, paddingBottom: 40, paddingHorizontal: 28,
@@ -192,7 +194,7 @@ const styles = StyleSheet.create({
   heroAccent:  { color: C.tealLight },
   heroSub:     { fontFamily: 'Inter-Regular', fontSize: 13, color: 'rgba(255,255,255,0.55)', lineHeight: 20 },
   bottomSection: {
-    flex: 1, backgroundColor: '#fff',
+    flex: 1, backgroundColor: C.surface,
     paddingHorizontal: 24, paddingTop: 32, paddingBottom: 40,
   },
   errorBanner: {

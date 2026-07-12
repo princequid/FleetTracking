@@ -34,14 +34,20 @@ eureka:
   instance:
     prefer-ip-address: true
 
+internal:
+  service:
+    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+
 logging:
   level:
     com.fleettrack.media: DEBUG
     org.hibernate.SQL: WARN
 
 minio:
-  endpoint: http://localhost:9000
-  external-endpoint: http://localhost:9000
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  # The endpoint baked into presigned upload URLs — opened by the phone, so it must be
+  # the dev machine's LAN IP (same host the app uses for the API), not localhost.
+  external-endpoint: ${MINIO_EXTERNAL_ENDPOINT:http://172.20.10.4:9000}
   accessKey: fleettrack
   secretKey: fleettrack123
   bucket: fleettrack-media

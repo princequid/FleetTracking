@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   RefreshControl, Linking, Modal,
@@ -14,7 +14,7 @@ import Animated, {
 import { useAuthStore } from '../../store/authStore_1';
 import { useTripStore } from '../../store/tripStore_2';
 import api from '../../services/api_1';
-import { C } from '../../constants/colors';
+import { useTheme } from '../../theme/ThemeContext';
 import { DISPATCH_PHONE } from '../../constants/config';
 
 /* Trim a location name to its first 3 words (+ …) so long addresses stay
@@ -26,24 +26,24 @@ function shortLocation(name) {
   return words.slice(0, 3).join(' ') + '…';
 }
 
-/* ─── constants ──────────────────────────────────────────────────── */
+/* ─── theme-aware status configs ─────────────────────────────────── */
 
-const STATUS_CONFIG = {
-  ASSIGNED:  { bg: '#EFF6FF', text: '#1D4ED8', dot: '#1D4ED8' },
-  STARTED:   { bg: '#FEF3C7', text: '#B45309', dot: '#D97706' },
-  EN_ROUTE:  { bg: '#FEF3C7', text: '#B45309', dot: '#D97706' },
-  ARRIVED:   { bg: '#D1FAE5', text: '#065F46', dot: '#059669' },
-  DELIVERED: { bg: '#D1FAE5', text: '#065F46', dot: '#059669' },
-  CANCELLED: { bg: '#FEE2E2', text: '#DC2626', dot: '#DC2626' },
-};
+const statusConfig = (C) => ({
+  ASSIGNED:  { bg: C.accentSoft, text: C.navyPrimary, dot: C.navyPrimary },
+  STARTED:   { bg: C.amberLight, text: C.amber,       dot: C.amber },
+  EN_ROUTE:  { bg: C.amberLight, text: C.amber,       dot: C.amber },
+  ARRIVED:   { bg: C.greenLight, text: C.green,       dot: C.green },
+  DELIVERED: { bg: C.greenLight, text: C.green,       dot: C.green },
+  CANCELLED: { bg: C.redLight,   text: C.red,         dot: C.red },
+});
 
-const ROW_CONFIG = {
-  DELIVERED: { bg: '#ECFDF5', icon: 'check',      color: '#059669' },
-  STARTED:   { bg: '#EEF3FB', icon: 'navigation', color: '#1B3A6B' },
-  EN_ROUTE:  { bg: '#EEF3FB', icon: 'navigation', color: '#1B3A6B' },
-  ASSIGNED:  { bg: '#F0F9FF', icon: 'clock',      color: '#0284C7' },
-  CANCELLED: { bg: '#FEF2F2', icon: 'x',          color: '#DC2626' },
-};
+const rowConfig = (C) => ({
+  DELIVERED: { bg: C.greenLight, icon: 'check',      color: C.green },
+  STARTED:   { bg: C.accentSoft, icon: 'navigation', color: C.navyPrimary },
+  EN_ROUTE:  { bg: C.accentSoft, icon: 'navigation', color: C.navyPrimary },
+  ASSIGNED:  { bg: C.accentSoft, icon: 'clock',      color: C.navyPrimary },
+  CANCELLED: { bg: C.redLight,   icon: 'x',          color: C.red },
+});
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -68,9 +68,9 @@ function formatEta(val) {
 
 /* ─── SkeletonBox ────────────────────────────────────────────────── */
 
-function SkeletonBox({ width, height, borderRadius = 6, style, shimmerStyle }) {
+function SkeletonBox({ width, height, borderRadius = 6, style, shimmerStyle, C }) {
   return (
-    <View style={[{ width, height, borderRadius, backgroundColor: '#E5E7EB', overflow: 'hidden' }, style]}>
+    <View style={[{ width, height, borderRadius, backgroundColor: C.border, overflow: 'hidden' }, style]}>
       <Animated.View style={[StyleSheet.absoluteFill, shimmerStyle]}>
         <LinearGradient
           colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0)']}
@@ -85,13 +85,13 @@ function SkeletonBox({ width, height, borderRadius = 6, style, shimmerStyle }) {
 
 /* ─── StatusBadge ────────────────────────────────────────────────── */
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, ss, C }) {
   const scale = useSharedValue(0.8);
   useEffect(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 300 });
   }, [status]);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const cfg = STATUS_CONFIG[status] || { bg: '#F3F4F6', text: C.text3, dot: C.text3 };
+  const cfg = statusConfig(C)[status] || { bg: C.bg, text: C.text3, dot: C.text3 };
   return (
     <Animated.View style={[ss.badge, { backgroundColor: cfg.bg }, animStyle]}>
       <View style={[ss.badgeDot, { backgroundColor: cfg.dot }]} />
@@ -122,7 +122,7 @@ function PressableScale({ children, onPress, style, ...props }) {
 
 /* ─── QuickActionTile ────────────────────────────────────────────── */
 
-function QuickActionTile({ icon, label, bg, borderColor, iconColor, onPress }) {
+function QuickActionTile({ icon, label, bg, borderColor, iconColor, onPress, ss }) {
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -150,8 +150,8 @@ function QuickActionTile({ icon, label, bg, borderColor, iconColor, onPress }) {
 
 /* ─── TripRow ────────────────────────────────────────────────────── */
 
-function TripRow({ trip, isLast, onPress }) {
-  const cfg = ROW_CONFIG[trip.status] || { bg: '#F3F4F6', icon: 'circle', color: C.text3 };
+function TripRow({ trip, isLast, onPress, ss, C }) {
+  const cfg = rowConfig(C)[trip.status] || { bg: C.bg, icon: 'circle', color: C.text3 };
 
   const timeStr = (() => {
     const d = trip.completedAt || trip.startedAt;
@@ -177,7 +177,7 @@ function TripRow({ trip, isLast, onPress }) {
           {[timeStr, `#${trip.id}`].filter(Boolean).join(' · ')}
         </Text>
       </View>
-      <StatusBadge status={trip.status} />
+      <StatusBadge status={trip.status} ss={ss} C={C} />
     </Pressable>
   );
 }
@@ -186,6 +186,9 @@ function TripRow({ trip, isLast, onPress }) {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const C = useTheme();
+  const ss = useMemo(() => makeStyles(C), [C]);
+
   const { userId }   = useAuthStore();
   const { activeTrip, setActiveTrip } = useTripStore();
 
@@ -423,26 +426,26 @@ export default function HomeScreen() {
           {loading ? (
             <View style={{ gap: 14 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <SkeletonBox width={80} height={10} shimmerStyle={shimmerStyle} />
-                <SkeletonBox width={60} height={22} borderRadius={11} shimmerStyle={shimmerStyle} />
+                <SkeletonBox width={80} height={10} shimmerStyle={shimmerStyle} C={C} />
+                <SkeletonBox width={60} height={22} borderRadius={11} shimmerStyle={shimmerStyle} C={C} />
               </View>
-              <SkeletonBox width={200} height={18} shimmerStyle={shimmerStyle} />
+              <SkeletonBox width={200} height={18} shimmerStyle={shimmerStyle} C={C} />
               <View style={{ flexDirection: 'row', gap: 16 }}>
-                <SkeletonBox width={60} height={12} shimmerStyle={shimmerStyle} />
-                <SkeletonBox width={60} height={12} shimmerStyle={shimmerStyle} />
-                <SkeletonBox width={60} height={12} shimmerStyle={shimmerStyle} />
+                <SkeletonBox width={60} height={12} shimmerStyle={shimmerStyle} C={C} />
+                <SkeletonBox width={60} height={12} shimmerStyle={shimmerStyle} C={C} />
+                <SkeletonBox width={60} height={12} shimmerStyle={shimmerStyle} C={C} />
               </View>
-              <SkeletonBox height={4} borderRadius={2} shimmerStyle={shimmerStyle} style={{ alignSelf: 'stretch' }} />
+              <SkeletonBox height={4} borderRadius={2} shimmerStyle={shimmerStyle} style={{ alignSelf: 'stretch' }} C={C} />
               <View style={{ flexDirection: 'row', gap: 10 }}>
-                <SkeletonBox height={50} borderRadius={14} shimmerStyle={shimmerStyle} style={{ flex: 1 }} />
-                <SkeletonBox height={50} borderRadius={14} shimmerStyle={shimmerStyle} style={{ flex: 1.4 }} />
+                <SkeletonBox height={50} borderRadius={14} shimmerStyle={shimmerStyle} style={{ flex: 1 }} C={C} />
+                <SkeletonBox height={50} borderRadius={14} shimmerStyle={shimmerStyle} style={{ flex: 1.4 }} C={C} />
               </View>
             </View>
           ) : activeTrip ? (
             <View>
               <View style={ss.cardTopRow}>
                 <Text style={ss.cardLabel}>ACTIVE TRIP</Text>
-                <StatusBadge status={activeTrip.status} />
+                <StatusBadge status={activeTrip.status} ss={ss} C={C} />
               </View>
               <Text style={ss.tripIdText}>Trip #{activeTrip.id}</Text>
               <View style={ss.routeRow}>
@@ -493,7 +496,7 @@ export default function HomeScreen() {
                 </View>
                 <View style={{ flex: 1.4 }}>
                   <PressableScale
-                    onPress={() => router.push(`/(driver)/trip/${activeTrip.id}_2`)}
+                    onPress={() => router.push(`/(driver)/trip/${activeTrip.id}`)}
                     style={ss.continueBtn}
                   >
                     <Feather name="arrow-right" size={16} color="#fff" />
@@ -504,7 +507,7 @@ export default function HomeScreen() {
 
               {/* View full trip details (available before the trip is started) */}
               <PressableScale
-                onPress={() => router.push(`/(driver)/trip/${activeTrip.id}_2`)}
+                onPress={() => router.push(`/(driver)/trip/${activeTrip.id}`)}
                 style={ss.detailsBtn}
               >
                 <Feather name="file-text" size={15} color={C.teal} />
@@ -529,27 +532,27 @@ export default function HomeScreen() {
           </Text>
           <View style={ss.qaRow}>
             <QuickActionTile
-              icon="camera" label="Take photo"
-              bg="#EEF3FB" borderColor="#DBEAFE" iconColor={C.navyPrimary}
+              icon="camera" label="Take photo" ss={ss}
+              bg={C.accentSoft} borderColor={C.accentSoft} iconColor={C.navyPrimary}
               onPress={() => activeTrip
-                ? router.push({ pathname: '/(driver)/delivery/pre-dispatch/[id]_3', params: { id: activeTrip.id } })
+                ? router.push(`/(driver)/delivery/pre-dispatch/${activeTrip.id}`)
                 : showToastMsg('No active trip', 'warn')}
             />
             <QuickActionTile
-              icon="alert-triangle" label="Report issue"
-              bg="#FEF2F2" borderColor="#FECACA" iconColor={C.red}
+              icon="alert-triangle" label="Report issue" ss={ss}
+              bg={C.redLight} borderColor={C.redLight} iconColor={C.red}
               onPress={() => activeTrip
-                ? router.push({ pathname: '/(driver)/incident/report/[tripId]_3', params: { tripId: activeTrip.id } })
+                ? router.push(`/(driver)/incident/report/${activeTrip.id}`)
                 : showToastMsg('No active trip', 'warn')}
             />
             <QuickActionTile
-              icon="check-circle" label="Mark arrived"
-              bg="#ECFDF5" borderColor="#A7F3D0" iconColor={C.green}
+              icon="check-circle" label="Mark arrived" ss={ss}
+              bg={C.greenLight} borderColor={C.greenLight} iconColor={C.green}
               onPress={handleMarkArrived}
             />
             <QuickActionTile
-              icon="phone" label="Call dispatch"
-              bg="#FFFBEB" borderColor="#FDE68A" iconColor={C.amber}
+              icon="phone" label="Call dispatch" ss={ss}
+              bg={C.amberLight} borderColor={C.amberLight} iconColor={C.amber}
               onPress={() => Linking.openURL(`tel:${DISPATCH_PHONE}`)}
             />
           </View>
@@ -562,7 +565,7 @@ export default function HomeScreen() {
           </Text>
           {trips.length === 0 ? (
             <View style={ss.emptyBox}>
-              <Feather name="inbox" size={32} color="#D1D5DB" />
+              <Feather name="inbox" size={32} color={C.text3} />
               <Text style={ss.emptyTitle}>No trips today</Text>
               <Text style={ss.emptySub}>Completed trips will appear here</Text>
             </View>
@@ -572,11 +575,10 @@ export default function HomeScreen() {
                 <TripRow
                   key={trip.id}
                   trip={trip}
+                  ss={ss}
+                  C={C}
                   isLast={i === Math.min(trips.length, 8) - 1}
-                  onPress={() => router.push({
-                    pathname: '/(driver)/trip/[id]_2',
-                    params: { id: trip.id },
-                  })}
+                  onPress={() => router.push(`/(driver)/trip/${trip.id}`)}
                 />
               ))}
             </View>
@@ -622,10 +624,10 @@ export default function HomeScreen() {
 
 /* ─── styles ─────────────────────────────────────────────────────── */
 
-const ss = StyleSheet.create({
-  /* header */
+const makeStyles = (C) => StyleSheet.create({
+  /* header — always the deep navy hero bar */
   header: {
-    backgroundColor: '#0F2347',
+    backgroundColor: C.navyDark,
     paddingTop: 56,
     paddingHorizontal: 20,
     paddingBottom: 28,
@@ -664,7 +666,7 @@ const ss = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#0D9488',
+    backgroundColor: C.teal,
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.30)',
     alignItems: 'center',
@@ -720,7 +722,7 @@ const ss = StyleSheet.create({
   card: {
     marginHorizontal: 16,
     marginTop: -20,
-    backgroundColor: '#fff',
+    backgroundColor: C.surface,
     borderRadius: 20,
     padding: 18,
     shadowColor: '#000',
@@ -775,7 +777,7 @@ const ss = StyleSheet.create({
   routeArrow: {
     fontFamily: 'Inter-Bold',
     fontSize: 18,
-    color: '#0D9488',
+    color: C.teal,
   },
   routeDest: {
     fontFamily: 'Inter-Bold',
@@ -801,7 +803,7 @@ const ss = StyleSheet.create({
   },
   progressTrack: {
     height: 4,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: C.bg,
     borderRadius: 2,
     overflow: 'hidden',
     marginBottom: 16,
@@ -923,7 +925,7 @@ const ss = StyleSheet.create({
   tripsCard: {
     marginHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: C.surface,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOpacity: 0.07,
@@ -940,7 +942,7 @@ const ss = StyleSheet.create({
   },
   tripRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: C.border,
   },
   tripRowIconWrap: {
     width: 40,
@@ -974,7 +976,7 @@ const ss = StyleSheet.create({
   emptySub: {
     fontFamily: 'Inter-Regular',
     fontSize: 13,
-    color: '#9CA3AF',
+    color: C.text3,
     marginTop: 4,
     textAlign: 'center',
   },
@@ -1012,7 +1014,7 @@ const ss = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#fff',
+    backgroundColor: C.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
@@ -1022,7 +1024,7 @@ const ss = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: C.border,
     alignSelf: 'center',
     marginBottom: 16,
   },
@@ -1050,7 +1052,7 @@ const ss = StyleSheet.create({
     justifyContent: 'center',
   },
   sheetBtnCancel: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: C.bg,
   },
   sheetBtnCancelText: {
     fontFamily: 'Inter-SemiBold',
@@ -1058,7 +1060,7 @@ const ss = StyleSheet.create({
     color: C.text2,
   },
   sheetBtnConfirm: {
-    backgroundColor: '#DC2626',
+    backgroundColor: C.red,
   },
   sheetBtnConfirmText: {
     fontFamily: 'Inter-SemiBold',

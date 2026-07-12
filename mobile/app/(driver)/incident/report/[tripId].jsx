@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, SafeAreaView, KeyboardAvoidingView, Platform, Animated,
@@ -7,16 +7,18 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import api from '../../../../services/api_1';
-import { C } from '../../../../constants/colors';
+import { useTheme } from '../../../../theme/ThemeContext';
 
-const TYPES = [
-  { key: 'ACCIDENT',  label: 'Accident',  icon: 'alert-triangle',  color: C.red,     bg: '#FEE2E2' },
-  { key: 'BREAKDOWN', label: 'Breakdown', icon: 'tool',            color: C.amber,   bg: '#FEF3C7' },
-  { key: 'DELAY',     label: 'Delay',     icon: 'clock',           color: C.navyMid, bg: '#EEF2FF' },
-  { key: 'OTHER',     label: 'Other',     icon: 'more-horizontal', color: C.text3,   bg: '#F3F4F6' },
+// `value` is the backend IncidentType enum this option maps to (the UI `key` stays
+// unique so tile selection works; several UI options can share an enum value).
+const incidentTypes = (C) => [
+  { key: 'ACCIDENT',  label: 'Accident',  value: 'ACCIDENT',          icon: 'alert-triangle',  color: C.red,     bg: C.redLight },
+  { key: 'BREAKDOWN', label: 'Breakdown', value: 'VEHICLE_BREAKDOWN', icon: 'tool',            color: C.amber,   bg: C.amberLight },
+  { key: 'DELAY',     label: 'Delay',     value: 'OTHER',             icon: 'clock',           color: C.navyMid, bg: C.accentSoft },
+  { key: 'OTHER',     label: 'Other',     value: 'OTHER',             icon: 'more-horizontal', color: C.text3,   bg: C.bg },
 ];
 
-const URGENCIES = [
+const urgencyLevels = (C) => [
   { key: 'LOW',    label: 'Low',    color: C.green },
   { key: 'MEDIUM', label: 'Medium', color: C.amber },
   { key: 'HIGH',   label: 'High',   color: C.red },
@@ -24,6 +26,10 @@ const URGENCIES = [
 
 export default function IncidentReportScreen() {
   const router   = useRouter();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
+  const TYPES = useMemo(() => incidentTypes(C), [C]);
+  const URGENCIES = useMemo(() => urgencyLevels(C), [C]);
   const { tripId } = useLocalSearchParams();
   const actualTripId = String(tripId).replace('_3', '');
 
@@ -61,9 +67,12 @@ export default function IncidentReportScreen() {
     setLoading(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      await api.post(`/trips/${actualTripId}/incidents`, {
-        type,
-        urgency,
+      // incident-service exposes POST /incidents and expects the enum-shaped body.
+      const incidentType = TYPES.find((t) => t.key === type)?.value || 'OTHER';
+      await api.post('/incidents', {
+        tripId: Number(actualTripId),
+        incidentType,
+        severity: urgency,
         description: description.trim(),
       });
       setSuccess(true);
@@ -119,7 +128,7 @@ export default function IncidentReportScreen() {
               return (
                 <TouchableOpacity
                   key={t.key}
-                  style={[styles.typeCard, selected && { borderColor: t.color, backgroundColor: t.bg + 'CC' }]}
+                  style={[styles.typeCard, selected && { borderColor: t.color, backgroundColor: t.bg }]}
                   onPress={() => { setType(t.key); Haptics.selectionAsync(); }}
                 >
                   <View style={[styles.typeIcon, { backgroundColor: t.bg }]}>
@@ -185,7 +194,7 @@ export default function IncidentReportScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   header: { backgroundColor: C.navyDark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 20, gap: 6 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
   backText: { fontFamily: 'Inter-Medium', fontSize: 14, color: 'rgba(255,255,255,0.7)' },
@@ -194,7 +203,7 @@ const styles = StyleSheet.create({
   form: { padding: 20, gap: 4 },
   errorBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEF2F2', borderRadius: 10,
+    backgroundColor: C.redLight, borderRadius: 10,
     paddingHorizontal: 14, marginBottom: 8,
   },
   errorText: { fontFamily: 'Inter-Medium', fontSize: 13, color: C.red, flex: 1 },
@@ -202,7 +211,7 @@ const styles = StyleSheet.create({
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   typeCard: {
     width: '47%', flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14,
+    backgroundColor: C.surface, borderRadius: 14, padding: 14,
     borderWidth: 1.5, borderColor: C.border, position: 'relative',
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
@@ -210,9 +219,9 @@ const styles = StyleSheet.create({
   typeLabel: { fontFamily: 'Inter-SemiBold', fontSize: 13, color: C.text1 },
   typeCheck: { position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   urgencyRow: { flexDirection: 'row', gap: 10 },
-  urgencyBtn: { flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border, backgroundColor: '#fff' },
+  urgencyBtn: { flex: 1, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.border, backgroundColor: C.surface },
   urgencyText: { fontFamily: 'Inter-SemiBold', fontSize: 13 },
-  textareaWrap: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1.5, borderColor: C.border, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 },
+  textareaWrap: { backgroundColor: C.surface, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, paddingHorizontal: 14, paddingTop: 10, paddingBottom: 10 },
   textareaFocused: { borderColor: C.navyPrimary },
   textarea: { fontFamily: 'Inter-Regular', fontSize: 15, color: C.text1, minHeight: 120, lineHeight: 22 },
   charCount: { fontFamily: 'Inter-Regular', fontSize: 11, color: C.text3, textAlign: 'right', marginTop: 4 },
