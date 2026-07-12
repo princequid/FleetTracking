@@ -20,6 +20,11 @@ eureka:
 jwt:
   secret: ${JWT_SECRET:dev-only-change-this-to-a-long-random-string-before-prod}
 
+# Shared secret the gateway stamps on every downstream request; services require it.
+internal:
+  service:
+    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+
 gateway:
   public-paths:
     - /auth/login
