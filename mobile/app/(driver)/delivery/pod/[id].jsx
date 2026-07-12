@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
   Image, Animated,
@@ -14,7 +14,7 @@ import RAnimated, {
 } from 'react-native-reanimated';
 import { mediaService } from '../../../../services/mediaService_3';
 import { useTripStore } from '../../../../store/tripStore_2';
-import { C } from '../../../../constants/colors';
+import { useTheme } from '../../../../theme/ThemeContext';
 
 const AnimatedImage  = Animated.createAnimatedComponent(Image);
 const AnimatedCircle = RAnimated.createAnimatedComponent(Circle);
@@ -22,8 +22,8 @@ const AnimatedCircle = RAnimated.createAnimatedComponent(Circle);
 const RING_R = 44;
 const RING_C = 2 * Math.PI * RING_R;
 
-// ─── SVG circular progress ring ───────────────────────────────────────────────
-function ProgressRing({ percent, step, done }) {
+// ─── SVG circular progress ring (always shown over a dark upload overlay) ──────
+function ProgressRing({ percent, step, done, C, ringStyles }) {
   const offset = useSharedValue(RING_C);
 
   useEffect(() => {
@@ -75,13 +75,13 @@ function ProgressRing({ percent, step, done }) {
   );
 }
 
-const ringStyles = StyleSheet.create({
+const makeRingStyles = (C) => StyleSheet.create({
   wrap:        { alignItems: 'center', gap: 14 },
   percent:     { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
   step:        { fontFamily: 'Inter-Medium', fontSize: 13, color: 'rgba(255,255,255,0.85)' },
   checkCircle: {
     width: 88, height: 88, borderRadius: 44,
-    backgroundColor: C.greenLight, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(52,211,153,0.22)', alignItems: 'center', justifyContent: 'center',
   },
   doneText:    { fontFamily: 'Inter-SemiBold', fontSize: 16, color: '#fff' },
 });
@@ -89,6 +89,9 @@ const ringStyles = StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function PODScreen() {
   const router = useRouter();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
+  const ringStyles = useMemo(() => makeRingStyles(C), [C]);
   const { id }  = useLocalSearchParams();
   const tripId  = String(id).replace('_3', '');
   const setPodUploaded = useTripStore((s) => s.setPodUploaded);
@@ -270,6 +273,8 @@ export default function PODScreen() {
             percent={uploadProgress.percent}
             step={uploadProgress.step}
             done={uploadDone}
+            C={C}
+            ringStyles={ringStyles}
           />
         </View>
       )}
@@ -277,7 +282,7 @@ export default function PODScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   permWrap:     { flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
   permTitle:    { fontFamily: 'Inter-SemiBold', fontSize: 18, color: C.text1 },
   permSub:      { fontFamily: 'Inter-Regular',  fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
@@ -309,7 +314,7 @@ const styles = StyleSheet.create({
   errorToast: {
     position: 'absolute', top: 180, alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEF2F2', borderRadius: 10,
+    backgroundColor: C.surface, borderRadius: 10,
     paddingHorizontal: 16, paddingVertical: 10,
     shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
   },

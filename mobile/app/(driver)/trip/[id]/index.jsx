@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Dimensions, SafeAreaView, Animated, Easing,
@@ -6,9 +6,9 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import api from '../../../services/api_1';
-import { useTripStore } from '../../../store/tripStore_2';
-import { C } from '../../../constants/colors';
+import api from '../../../../services/api_1';
+import { useTripStore } from '../../../../store/tripStore_2';
+import { useTheme } from '../../../../theme/ThemeContext';
 
 const { width } = Dimensions.get('window');
 
@@ -20,6 +20,13 @@ const STEPS = [
   { key: 'complete',     label: 'Complete trip',      icon: 'check-circle' },
 ];
 
+// Trim a location name to its first few words so the header stays tidy.
+function shortLocation(name, max = 3) {
+  if (!name) return '';
+  const words = String(name).trim().split(/\s+/);
+  return words.length <= max ? name : words.slice(0, max).join(' ') + '…';
+}
+
 function statusToStep(status) {
   if (!status) return 0;
   if (status === 'ASSIGNED') return 0;
@@ -28,7 +35,7 @@ function statusToStep(status) {
   return 4;
 }
 
-function PulsingRing({ color = C.teal }) {
+function PulsingRing({ color, styles }) {
   const scale   = useRef(new Animated.Value(0.7)).current;
   const opacity = useRef(new Animated.Value(1)).current;
 
@@ -50,7 +57,7 @@ function PulsingRing({ color = C.teal }) {
   );
 }
 
-function StepCard({ step, index, activeIndex }) {
+function StepCard({ step, index, activeIndex, styles, C }) {
   const isDone   = index < activeIndex;
   const isActive = index === activeIndex;
   const breathe  = useRef(new Animated.Value(1)).current;
@@ -74,7 +81,7 @@ function StepCard({ step, index, activeIndex }) {
     }
   }, [isActive]);
 
-  const bg = isDone ? '#F0FDF4' : isActive ? '#EEF3FB' : C.bg;
+  const bg = isDone ? C.greenLight : isActive ? C.accentSoft : C.bg;
   const opacity = !isDone && !isActive ? 0.4 : 1;
 
   return (
@@ -102,7 +109,7 @@ function StepCard({ step, index, activeIndex }) {
 }
 
 // One point in the trip's route timeline (start / a stop / destination).
-function RouteStop({ color, tag, name, description, number, last }) {
+function RouteStop({ color, tag, name, description, number, last, styles }) {
   return (
     <View style={styles.routeRow}>
       <View style={styles.routeGutter}>
@@ -122,6 +129,8 @@ function RouteStop({ color, tag, name, description, number, last }) {
 
 export default function TripDetailScreen() {
   const router = useRouter();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
   const { id } = useLocalSearchParams();
   const tripId = String(id).replace('_2', '');
 
@@ -186,9 +195,9 @@ export default function TripDetailScreen() {
         </View>
 
         <Text style={styles.headerRoute}>
-          {trip?.origin || '–'}{'\n'}
+          {shortLocation(trip?.origin) || '–'}{'\n'}
           <Text style={{ color: C.tealLight }}>  ↓{'\n'}</Text>
-          {trip?.destination || '–'}
+          {shortLocation(trip?.destination) || '–'}
         </Text>
 
         <View style={styles.statRow}>
@@ -207,7 +216,7 @@ export default function TripDetailScreen() {
 
       <ScrollView
         style={{ flex: 1, backgroundColor: C.bg }}
-        contentContainerStyle={{ padding: 16, gap: 16 }}
+        contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 130 }}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.miniMap}>
@@ -217,7 +226,7 @@ export default function TripDetailScreen() {
             ))}
           </View>
           <View style={styles.mapCenter}>
-            <PulsingRing color={C.teal} />
+            <PulsingRing color={C.teal} styles={styles} />
             <View style={styles.vehicleMarker}>
               <Feather name="navigation-2" size={14} color="#fff" />
             </View>
@@ -242,6 +251,7 @@ export default function TripDetailScreen() {
               tag="START"
               name={trip?.origin || 'Origin'}
               description={trip?.originDescription || trip?.originNote}
+              styles={styles}
             />
             {(trip?.stops || []).map((s, i) => (
               <RouteStop
@@ -251,6 +261,7 @@ export default function TripDetailScreen() {
                 number={i + 1}
                 name={s.name || s.locationName || `Stop ${i + 1}`}
                 description={s.description || s.note}
+                styles={styles}
               />
             ))}
             <RouteStop
@@ -259,6 +270,7 @@ export default function TripDetailScreen() {
               name={trip?.destination || 'Destination'}
               description={trip?.destinationDescription || trip?.destNote}
               last
+              styles={styles}
             />
           </View>
         </View>
@@ -277,7 +289,7 @@ export default function TripDetailScreen() {
           <Text style={styles.sectionLabel}>TRIP PROGRESS</Text>
           <View style={styles.stepsCol}>
             {STEPS.map((step, i) => (
-              <StepCard key={step.key} step={step} index={i} activeIndex={activeStep} />
+              <StepCard key={step.key} step={step} index={i} activeIndex={activeStep} styles={styles} C={C} />
             ))}
           </View>
         </View>
@@ -289,7 +301,7 @@ export default function TripDetailScreen() {
               if (trip.status === 'ASSIGNED') handleAction('start');
               else if (['STARTED', 'EN_ROUTE'].includes(trip.status)) handleAction('arrive');
               else if (trip.status === 'ARRIVED') {
-                if (!podUploaded) router.push(`/(driver)/delivery/pod/${tripId}_3`);
+                if (!podUploaded) router.push(`/(driver)/delivery/pod/${tripId}`);
                 else handleAction('complete');
               }
             }}
@@ -300,11 +312,11 @@ export default function TripDetailScreen() {
         )}
 
         <View style={styles.cameraRow}>
-          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pre-dispatch/${tripId}_3`)}>
+          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pre-dispatch/${tripId}`)}>
             <Feather name="camera" size={16} color={C.teal} />
             <Text style={styles.cameraBtnText}>Pre-dispatch</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pod/${tripId}_3`)}>
+          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pod/${tripId}`)}>
             <Feather name="image" size={16} color={C.green} />
             <Text style={styles.cameraBtnText}>Capture POD</Text>
           </TouchableOpacity>
@@ -313,7 +325,7 @@ export default function TripDetailScreen() {
         <View style={styles.dangerCard}>
           <Text style={styles.dangerTitle}>Having a problem?</Text>
           <Text style={styles.dangerSub}>Report any issues or incidents during this trip</Text>
-          <TouchableOpacity style={styles.reportBtn} onPress={() => router.push(`/(driver)/incident/report/${tripId}_3`)}>
+          <TouchableOpacity style={styles.reportBtn} onPress={() => router.push(`/(driver)/incident/report/${tripId}`)}>
             <Text style={styles.reportBtnText}>Report incident</Text>
           </TouchableOpacity>
         </View>
@@ -322,7 +334,7 @@ export default function TripDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   header: { backgroundColor: C.navyDark, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20, gap: 12 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
   backText: { fontFamily: 'Inter-Medium', fontSize: 14, color: 'rgba(255,255,255,0.7)' },
@@ -340,7 +352,7 @@ const styles = StyleSheet.create({
   statBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, gap: 3 },
   statVal: { fontFamily: 'Inter-Bold', fontSize: 14, color: '#fff' },
   statLabel: { fontFamily: 'Inter-Regular', fontSize: 11, color: 'rgba(255,255,255,0.5)' },
-  miniMap: { height: 180, backgroundColor: '#E8EFF8', borderRadius: 16, overflow: 'hidden', position: 'relative', alignItems: 'center', justifyContent: 'center' },
+  miniMap: { height: 180, backgroundColor: C.accentSoft, borderRadius: 16, overflow: 'hidden', position: 'relative', alignItems: 'center', justifyContent: 'center' },
   mapGrid: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, flexDirection: 'row', justifyContent: 'space-around' },
   mapGridLine: { width: 1, backgroundColor: 'rgba(0,0,0,0.06)', height: '100%' },
   mapCenter: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
@@ -353,7 +365,7 @@ const styles = StyleSheet.create({
   mapPin: { position: 'absolute' },
   expandBtn: {
     position: 'absolute', bottom: 10, right: 10,
-    width: 30, height: 30, borderRadius: 8, backgroundColor: '#fff',
+    width: 30, height: 30, borderRadius: 8, backgroundColor: C.surface,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
@@ -362,13 +374,13 @@ const styles = StyleSheet.create({
 
   // Route timeline (start → stops → destination)
   routeCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 16,
+    backgroundColor: C.surface, borderRadius: 14, padding: 16,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   routeRow: { flexDirection: 'row' },
   routeGutter: { width: 26, alignItems: 'center' },
   routeDot: {
-    width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#fff',
+    width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: C.surface,
     alignItems: 'center', justifyContent: 'center', marginTop: 1,
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 2, elevation: 2,
   },
@@ -379,8 +391,8 @@ const styles = StyleSheet.create({
   routeName: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1, marginTop: 2 },
   routeDesc: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3, marginTop: 3, lineHeight: 18 },
   notesCard: {
-    flexDirection: 'row', gap: 10, backgroundColor: '#EEF3FB', borderRadius: 14, padding: 16,
-    borderWidth: 1, borderColor: '#DCE6F5',
+    flexDirection: 'row', gap: 10, backgroundColor: C.accentSoft, borderRadius: 14, padding: 16,
+    borderWidth: 1, borderColor: C.border,
   },
   notesText: { flex: 1, fontFamily: 'Inter-Regular', fontSize: 13, color: C.text2, lineHeight: 20 },
   stepCard: {
@@ -406,11 +418,11 @@ const styles = StyleSheet.create({
   cameraRow: { flexDirection: 'row', gap: 10 },
   cameraBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#fff', borderRadius: 12, paddingVertical: 14,
+    backgroundColor: C.surface, borderRadius: 12, paddingVertical: 14,
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
   },
   cameraBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 13, color: C.text1 },
-  dangerCard: { backgroundColor: '#FFF8F8', borderWidth: 1, borderColor: '#FECACA', borderRadius: 14, padding: 16, gap: 4 },
+  dangerCard: { backgroundColor: C.redLight, borderWidth: 1, borderColor: C.redLight, borderRadius: 14, padding: 16, gap: 4 },
   dangerTitle: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1 },
   dangerSub: { fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3, marginBottom: 10 },
   reportBtn: { borderWidth: 1.5, borderColor: C.red, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },

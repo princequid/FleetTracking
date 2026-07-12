@@ -1,13 +1,13 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Animated, Easing,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { C } from '../../../../constants/colors';
+import { useTheme } from '../../../../theme/ThemeContext';
 
-function ConfettiDot({ delay, left, color }) {
+function ConfettiDot({ delay, left, color, styles }) {
   const y       = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   const rotate  = y.interpolate({ inputRange: [0, 220], outputRange: ['0deg', '440deg'] });
@@ -34,7 +34,7 @@ function ConfettiDot({ delay, left, color }) {
   );
 }
 
-const CONFETTI = [
+const confettiPieces = (C) => [
   { delay: 0,   left: '10%', color: C.teal },
   { delay: 80,  left: '25%', color: C.amber },
   { delay: 30,  left: '40%', color: C.green },
@@ -47,7 +47,11 @@ const CONFETTI = [
 
 export default function TripCompleteScreen() {
   const router = useRouter();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
   const { id } = useLocalSearchParams();
+
+  const CONFETTI = useMemo(() => confettiPieces(C), [C]);
 
   const checkScale   = useRef(new Animated.Value(0)).current;
   const checkOpacity = useRef(new Animated.Value(0)).current;
@@ -88,7 +92,7 @@ export default function TripCompleteScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={styles.top}>
         <View style={styles.confettiLayer} pointerEvents="none">
-          {CONFETTI.map((c, i) => <ConfettiDot key={i} {...c} />)}
+          {CONFETTI.map((c, i) => <ConfettiDot key={i} {...c} styles={styles} />)}
         </View>
 
         <View style={styles.iconWrap}>
@@ -137,7 +141,7 @@ export default function TripCompleteScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   top: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 32, gap: 12, overflow: 'hidden', position: 'relative',
@@ -158,7 +162,7 @@ const styles = StyleSheet.create({
   congrats: { fontFamily: 'Inter-ExtraBold', fontSize: 28, color: C.text1, letterSpacing: -0.5 },
   subText: { fontFamily: 'Inter-Regular', fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
   card: {
-    marginHorizontal: 20, backgroundColor: '#fff', borderRadius: 20, padding: 20,
+    marginHorizontal: 20, backgroundColor: C.surface, borderRadius: 20, padding: 20,
     shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
