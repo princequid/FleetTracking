@@ -13,6 +13,7 @@
     ],
     "android": {
       "package": "com.fleettrack.mobile",
+      "googleServicesFile": "./google-services.json",
       "useNextNotificationsApi": true
     },
     "ios": {

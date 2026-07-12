@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions, StatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -17,7 +17,7 @@ import Animated, {
 import Svg, {
   Rect, Circle, G, Line, Defs, LinearGradient, Stop,
 } from 'react-native-svg';
-import { C } from '../constants/colors';
+import { useTheme } from '../theme/ThemeContext';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const TW = 120;
@@ -27,7 +27,7 @@ const TX = (SW - TW) / 2;   // left offset so truck is centered when translateX=
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 // ─── Truck SVG ────────────────────────────────────────────────────────────────
-function TruckSvg({ wheelAngle }) {
+function TruckSvg({ wheelAngle, C }) {
   // Use react-native-svg's numeric rotation/origin props rather than a `transform`
   // string. Android's Fabric renderer expects transform as an array and crashes on a
   // string ("String cannot be cast to ReadableArray"); iOS tolerates it. This is
@@ -95,7 +95,7 @@ function TruckSvg({ wheelAngle }) {
 }
 
 // ─── Track line (gradient fade at ends) ───────────────────────────────────────
-function TrackLine({ ty }) {
+function TrackLine({ ty, C, styles }) {
   return (
     <View style={[styles.trackWrap, { top: ty + TH - 3 }]} pointerEvents="none">
       <Svg width={SW} height={4}>
@@ -126,6 +126,8 @@ const SPEED_LINES = [
 export default function SplashScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
   // Truck sits at ~33% of the safe-area height, shifted down by the top inset
   const TY = insets.top + (SH - insets.top - insets.bottom) * 0.30;
 
@@ -248,7 +250,7 @@ export default function SplashScreen() {
       <StatusBar hidden />
 
       {/* Track line */}
-      <TrackLine ty={TY} />
+      <TrackLine ty={TY} C={C} styles={styles} />
 
       {/* Speed lines — static position, opacity animated */}
       <Animated.View
@@ -271,15 +273,15 @@ export default function SplashScreen() {
 
       {/* Ghost (motion blur) copies */}
       <Animated.View style={[styles.truckBase, { top: TY }, ghost2Style]} pointerEvents="none">
-        <TruckSvg wheelAngle={wheelAngle} />
+        <TruckSvg wheelAngle={wheelAngle} C={C} />
       </Animated.View>
       <Animated.View style={[styles.truckBase, { top: TY }, ghost1Style]} pointerEvents="none">
-        <TruckSvg wheelAngle={wheelAngle} />
+        <TruckSvg wheelAngle={wheelAngle} C={C} />
       </Animated.View>
 
       {/* Main truck */}
       <Animated.View style={[styles.truckBase, { top: TY }, mainTruckStyle]} pointerEvents="none">
-        <TruckSvg wheelAngle={wheelAngle} />
+        <TruckSvg wheelAngle={wheelAngle} C={C} />
       </Animated.View>
 
       {/* Brand text */}
@@ -306,7 +308,7 @@ export default function SplashScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: C.navyDark,

@@ -45,6 +45,10 @@ eureka:
   instance:
     prefer-ip-address: true
 
+internal:
+  service:
+    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+
 logging:
   level:
     com.fleettrack.gps: DEBUG
