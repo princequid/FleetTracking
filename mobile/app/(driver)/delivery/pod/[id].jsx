@@ -95,7 +95,7 @@ export default function PODScreen() {
   const styles = useMemo(() => makeStyles(C), [C]);
   const ringStyles = useMemo(() => makeRingStyles(C), [C]);
   const { id }  = useLocalSearchParams();
-  const tripId  = String(id).replace('_3', '');
+  const tripId  = String(id);
   const setPodUploaded = useTripStore((s) => s.setPodUploaded);
 
   const [permission, requestPermission] = useCameraPermissions();

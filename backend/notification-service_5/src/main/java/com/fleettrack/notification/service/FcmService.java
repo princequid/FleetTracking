@@ -23,10 +23,19 @@ import java.util.Map;
 @Slf4j
 public class FcmService {
 
+    // Transient FCM errors are worth a couple of quick retries; everything else
+    // (bad token, invalid argument, quota, auth, etc.) is permanent and should fail fast.
+    private static final int MAX_ATTEMPTS = 3;
+    private static final long RETRY_BACKOFF_MS = 250;
+
     private final DeviceTokenRepository deviceTokenRepository;
 
     private boolean pushEnabled() {
         return !FirebaseApp.getApps().isEmpty();
+    }
+
+    private boolean isRetryable(MessagingErrorCode code) {
+        return code == MessagingErrorCode.UNAVAILABLE || code == MessagingErrorCode.INTERNAL;
     }
 
     /**
@@ -48,39 +57,65 @@ public class FcmService {
         Map<String, String> payload = data != null ? new HashMap<>(data) : new HashMap<>();
 
         for (DeviceToken device : devices) {
-            try {
-                Message message = Message.builder()
-                        .setToken(device.getToken())
-                        .setNotification(Notification.builder()
-                                .setTitle(title)
-                                .setBody(body)
-                                .build())
-                        .putAllData(payload)
-                        .setAndroidConfig(AndroidConfig.builder()
-                                .setPriority(AndroidConfig.Priority.HIGH)
-                                .setNotification(AndroidNotification.builder()
-                                        .setChannelId("default")
-                                        .setSound("default")
-                                        .build())
-                                .build())
-                        .setApnsConfig(ApnsConfig.builder()
-                                .setAps(Aps.builder().setSound("default").build())
-                                .build())
-                        .build();
+            Message message = Message.builder()
+                    .setToken(device.getToken())
+                    .setNotification(Notification.builder()
+                            .setTitle(title)
+                            .setBody(body)
+                            .build())
+                    .putAllData(payload)
+                    .setAndroidConfig(AndroidConfig.builder()
+                            .setPriority(AndroidConfig.Priority.HIGH)
+                            .setNotification(AndroidNotification.builder()
+                                    .setChannelId("default")
+                                    .setSound("default")
+                                    .build())
+                            .build())
+                    .setApnsConfig(ApnsConfig.builder()
+                            .setAps(Aps.builder().setSound("default").build())
+                            .build())
+                    .build();
 
+            sendWithRetry(device, message, recipientId);
+        }
+    }
+
+    /** Sends a single message, retrying transient FCM errors a few times before giving up. */
+    private void sendWithRetry(DeviceToken device, Message message, Long recipientId) {
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
                 FirebaseMessaging.getInstance().send(message);
+                return;
             } catch (FirebaseMessagingException e) {
-                // Remove tokens FCM tells us are dead so we stop pushing to them.
                 MessagingErrorCode code = e.getMessagingErrorCode();
+                // Remove tokens FCM tells us are dead so we stop pushing to them.
                 if (code == MessagingErrorCode.UNREGISTERED || code == MessagingErrorCode.INVALID_ARGUMENT) {
                     deviceTokenRepository.deleteByToken(device.getToken());
                     log.info("Removed invalid device token for recipient {}", recipientId);
-                } else {
-                    log.warn("FCM send failed (code={}) for recipient {}", code, recipientId);
+                    return;
                 }
+                if (isRetryable(code) && attempt < MAX_ATTEMPTS) {
+                    log.warn("FCM send failed (code={}) for recipient {}, retrying (attempt {}/{})",
+                            code, recipientId, attempt, MAX_ATTEMPTS);
+                    sleepBeforeRetry(attempt);
+                    continue;
+                }
+                log.warn("FCM send failed (code={}) for recipient {} after {} attempt(s)",
+                        code, recipientId, attempt);
+                return;
             } catch (Exception e) {
                 log.warn("Unexpected error sending push to recipient {}: {}", recipientId, e.getMessage());
+                return;
             }
+        }
+    }
+
+    private void sleepBeforeRetry(int attempt) {
+        try {
+            // Simple linear backoff: 250ms, 500ms, ...
+            Thread.sleep(RETRY_BACKOFF_MS * attempt);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 }

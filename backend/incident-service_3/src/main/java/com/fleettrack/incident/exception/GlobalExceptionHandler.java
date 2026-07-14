@@ -1,4 +1,4 @@
-package com.fleettrack.driver.exception;
+package com.fleettrack.incident.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,11 +14,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, String>> handleResponseStatus(ResponseStatusException ex) {
         return ResponseEntity.status(ex.getStatusCode()).body(Map.of("error", ex.getReason()));
-    }
-
-    @ExceptionHandler(DriverNotFoundException.class)
-    public ResponseEntity<Map<String, String>> handleDriverNotFound(DriverNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
     }
 
     @ExceptionHandler(RuntimeException.class)

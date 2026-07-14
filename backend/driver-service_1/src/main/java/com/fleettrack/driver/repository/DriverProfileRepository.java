@@ -1,6 +1,7 @@
 package com.fleettrack.driver.repository;
 
 import com.fleettrack.driver.model.entity.DriverProfile;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -12,7 +13,7 @@ public interface DriverProfileRepository extends JpaRepository<DriverProfile, Lo
 
     Optional<DriverProfile> findByUserId(Long userId);
 
-    List<DriverProfile> findByIsActiveTrue();
+    List<DriverProfile> findByIsActiveTrue(Pageable pageable);
 
     boolean existsByUserId(Long userId);
 }
