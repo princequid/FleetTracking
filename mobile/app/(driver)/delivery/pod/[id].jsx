@@ -12,9 +12,11 @@ import Svg, { Circle } from 'react-native-svg';
 import RAnimated, {
   useSharedValue, useAnimatedProps, withTiming,
 } from 'react-native-reanimated';
+import api from '../../../../services/api_1';
 import { mediaService } from '../../../../services/mediaService_3';
 import { useTripStore } from '../../../../store/tripStore_2';
 import { useTheme } from '../../../../theme/ThemeContext';
+import { haversineMetres, GEOFENCE_RADIUS_M } from '../../../../utils/geo';
 
 const AnimatedImage  = Animated.createAnimatedComponent(Image);
 const AnimatedCircle = RAnimated.createAnimatedComponent(Circle);
@@ -103,6 +105,11 @@ export default function PODScreen() {
   const [uploadDone,     setUploadDone]     = useState(false);
   const [facing,         setFacing]         = useState('back');
   const [error,          setError]          = useState('');
+  const [trip,           setTrip]           = useState(null);
+
+  useEffect(() => {
+    api.get(`/trips/${tripId}`).then((r) => setTrip(r.data)).catch(() => {});
+  }, [tripId]);
 
   const cameraRef      = useRef(null);
   const btnScale       = useRef(new Animated.Value(1)).current;
@@ -158,6 +165,29 @@ export default function PODScreen() {
         const loc = await Location.getCurrentPositionAsync({});
         coords = loc.coords;
       }
+
+      // Fail closed: POD is proof of delivery at the destination, so a missing GPS fix
+      // blocks the upload rather than accepting an untagged (unverifiable) photo.
+      if (!coords) {
+        showError('Enable location services to submit this photo.');
+        setLoading(false);
+        setUploadProgress({ step: '', percent: 0 });
+        return;
+      }
+
+      if (trip?.destLat != null && trip?.destLng != null) {
+        const distance = haversineMetres(
+          coords.latitude, coords.longitude,
+          Number(trip.destLat), Number(trip.destLng),
+        );
+        if (distance > GEOFENCE_RADIUS_M) {
+          showError(`You must be within ${GEOFENCE_RADIUS_M}m of the destination to submit this photo. You're ${Math.round(distance)}m away.`);
+          setLoading(false);
+          setUploadProgress({ step: '', percent: 0 });
+          return;
+        }
+      }
+
       await mediaService.fullUploadFlow(
         parseInt(tripId), 'POD', photo, coords,
         (p) => setUploadProgress(p),

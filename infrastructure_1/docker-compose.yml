@@ -373,7 +373,7 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       # MUST be the dev machine's LAN IP (the value the phone uses for the API), NOT
       # localhost — the presigned upload URL is opened by the phone, not the server.
-      MINIO_EXTERNAL_ENDPOINT: http://172.20.10.4:9000
+      MINIO_EXTERNAL_ENDPOINT: http://10.6.8.229:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-fleettrack}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-fleettrack123}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/

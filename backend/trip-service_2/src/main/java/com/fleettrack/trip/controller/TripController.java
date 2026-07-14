@@ -3,6 +3,7 @@ package com.fleettrack.trip.controller;
 import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.model.dto.CreateTripRequest;
 import com.fleettrack.trip.model.dto.DriverResponse;
+import com.fleettrack.trip.model.dto.LocationRequest;
 import com.fleettrack.trip.model.dto.TripResponse;
 import com.fleettrack.trip.model.dto.TripStatusHistoryResponse;
 import com.fleettrack.trip.service.TripService;
@@ -69,17 +70,23 @@ public class TripController {
     }
 
     @PutMapping("/{id}/start")
-    public ResponseEntity<TripResponse> startTrip(@PathVariable Long id, HttpServletRequest httpRequest) {
+    public ResponseEntity<TripResponse> startTrip(
+            @PathVariable Long id,
+            @RequestBody(required = false) LocationRequest location,
+            HttpServletRequest httpRequest) {
         requireRole(httpRequest, TRANSITION_ROLES);
         Long userId = extractUserId(httpRequest);
-        return ResponseEntity.ok(tripService.startTrip(id, userId));
+        return ResponseEntity.ok(tripService.startTrip(id, userId, location));
     }
 
     @PutMapping("/{id}/arrive")
-    public ResponseEntity<TripResponse> markArrived(@PathVariable Long id, HttpServletRequest httpRequest) {
+    public ResponseEntity<TripResponse> markArrived(
+            @PathVariable Long id,
+            @RequestBody(required = false) LocationRequest location,
+            HttpServletRequest httpRequest) {
         requireRole(httpRequest, TRANSITION_ROLES);
         Long userId = extractUserId(httpRequest);
-        return ResponseEntity.ok(tripService.markArrived(id, userId));
+        return ResponseEntity.ok(tripService.markArrived(id, userId, location));
     }
 
     @PutMapping("/{id}/complete")

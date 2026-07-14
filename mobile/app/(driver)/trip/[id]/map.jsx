@@ -18,6 +18,7 @@ import Animated, {
 import { useTheme, useThemeMode } from '../../../../theme/ThemeContext';
 import api from '../../../../services/api_1';
 import { useNavStore } from '../../../../store/navStore_2';
+import { useTripStore } from '../../../../store/tripStore_2';
 
 const ARRIVE_RADIUS = 50;    // within this of the destination → "Mark arrived"
 const READY_RADIUS  = 50;    // within this of the trip start → "Ready" button
@@ -27,11 +28,13 @@ const READY_RADIUS  = 50;    // within this of the trip start → "Ready" button
 const OSRM_BASE     = process.env.EXPO_PUBLIC_OSRM_URL || 'https://router.project-osrm.org';
 const REROUTE_DIST  = 80;
 
-// Navigation phases:
+// Navigation phases — drive the single bottom button through the whole trip lifecycle:
 //   APPROACH — Leg 1: routing the driver to the trip's start point.
-//   AT_START — reached the start; trip route (origin→destination) loaded, awaiting Start.
+//   AT_START — reached the start; trip route (origin→destination) loaded. Next up:
+//              pre-dispatch photo, then Start.
 //   TRIP     — Leg 2: navigating the actual trip from start to destination.
-const PHASE = { APPROACH: 'APPROACH', AT_START: 'AT_START', TRIP: 'TRIP' };
+//   ARRIVED  — reached the destination; next up: POD photo, then Complete.
+const PHASE = { APPROACH: 'APPROACH', AT_START: 'AT_START', TRIP: 'TRIP', ARRIVED: 'ARRIVED' };
 
 // In-memory cache of a trip's resolved route/nav state, keyed by tripId. Survives
 // navigating away and back within the app session, so re-opening the map is instant
@@ -262,6 +265,12 @@ export default function LiveMapScreen() {
   const setStoreCamera  = useNavStore((s) => s.setCamera);
   const getStoreCamera  = useNavStore((s) => s.getCamera);
   const clearStoreCamera = useNavStore((s) => s.clearCamera);
+
+  // Trip-lifecycle flags shared with the pre-dispatch/POD camera screens, so this
+  // single button knows which step in the sequence to show next.
+  const podUploaded          = useTripStore((s) => s.podUploaded);
+  const preDispatchUploaded  = useTripStore((s) => s.preDispatchUploaded);
+  const resetTripStore       = useTripStore((s) => s.resetTripStore);
   // Snapshot whether a camera was already saved for this trip (decided once, on mount):
   // if so we restore that exact view instead of auto-zooming to the driver.
   const hasSavedCameraRef = useRef(null);
@@ -331,6 +340,7 @@ export default function LiveMapScreen() {
   const [phase,                setPhase]              = useState(PHASE.APPROACH);
   const [nearStart,            setNearStart]          = useState(false);
   const [isStarting,           setIsStarting]         = useState(false);
+  const [isCompleting,         setIsCompleting]       = useState(false);
   // Vehicle marker rasterisation: on briefly so Android captures a crisp icon, then off
   const [vehicleTracking,      setVehicleTracking]    = useState(true);
   const vehicleReadyRef = useRef(false);
@@ -1145,11 +1155,22 @@ export default function LiveMapScreen() {
       // ── Choose the starting leg + draw the route ──
       const status        = (tripData.status || '').toUpperCase();
       const alreadyStarted = status === 'STARTED' || status === 'EN_ROUTE';
+      const alreadyArrived = status === 'ARRIVED';
       // Backend status wins for STARTED; otherwise resume the saved local phase (e.g. the
-      // driver had tapped "Ready" and was at the start reviewing the trip route).
+      // driver had captured the pre-dispatch photo and was at the start reviewing the route).
       const resumeAtStart = !alreadyStarted && saved?.phase === PHASE.AT_START && originPt && destPt;
 
-      if (alreadyStarted || !originPt) {
+      if (alreadyArrived) {
+        // Backend says this trip already reached the destination (e.g. the app was
+        // killed and reopened between Mark arrived and Complete) — resume straight
+        // into the Capture POD / Complete step rather than re-running approach nav.
+        nav.current.phase = PHASE.ARRIVED;
+        setPhase(PHASE.ARRIVED);
+        nav.current.following = false;
+        setFollowing(false);
+        const wp = [originPt, ...stopCoords, destPt].filter(Boolean);
+        if (wp.length >= 2) await loadLeg(wp, destPt);
+      } else if (alreadyStarted || !originPt) {
         nav.current.phase = PHASE.TRIP;
         setPhase(PHASE.TRIP);
         nav.current.following = true;
@@ -1212,17 +1233,25 @@ export default function LiveMapScreen() {
     if (nav.current.voice) Speech.speak('You have arrived', { language: 'en-GB' });
     Speech.stop();
 
+    // Trip isn't over yet — stay on this screen and move to the next step in the
+    // sequence (Capture POD, then Complete). Full teardown + navigation now happens
+    // in handleCompleteTrip once the trip is actually DELIVERED.
     const finish = () => {
-      locSubRef.current?.remove?.();
-      clearInterval(etaTimerRef.current);
-      routeCache.delete(tripId);                                       // trip done — drop cache
-      clearStoreCamera(tripId);                                        // and the saved camera
-      SecureStore.deleteItemAsync(`ft_nav_${tripId}`).catch(() => {}); // and saved state
-      router.replace(`/(driver)/trip/${tripId}`);
+      nav.current.phase = PHASE.ARRIVED;
+      setPhase(PHASE.ARRIVED);
+      nav.current.following = false;
+      setFollowing(false);
+      setIsMarkingArrived(false);
     };
 
+    // Geofencing is enforced server-side; this screen only shows/enables "Mark
+    // arrived" once nearStart/within200m are already true, so the driver's current
+    // position should always satisfy it — but the backend still needs it in the body.
+    const pos = positionRef.current;
+    const locationBody = pos ? { lat: pos.latitude, lng: pos.longitude } : {};
+
     try {
-      await api.put(`/trips/${tripId}/arrive`);
+      await api.put(`/trips/${tripId}/arrive`, locationBody);
       finish();
     } catch (err) {
       const msg = err?.response?.data?.error || err?.response?.data?.message || '';
@@ -1231,8 +1260,16 @@ export default function LiveMapScreen() {
       const notStarted = err?.response?.status === 400 || /STARTED|EN_ROUTE|must be/i.test(msg);
       if (notStarted) {
         try {
-          await api.put(`/trips/${tripId}/start`);
-          await api.put(`/trips/${tripId}/arrive`);
+          // This is a bookkeeping backfill, not a fresh start — the driver has already
+          // physically driven the route and is confirming arrival right now. Use the
+          // trip's own origin point (not the driver's current, near-destination position)
+          // so this recovery step doesn't get rejected by the origin-proximity check.
+          // The security-relevant check is the arrival call right after, which DOES use
+          // the driver's real current position against the real destination.
+          const originPt = nav.current.originPt;
+          const startBody = originPt ? { lat: originPt.latitude, lng: originPt.longitude } : {};
+          await api.put(`/trips/${tripId}/start`, startBody);
+          await api.put(`/trips/${tripId}/arrive`, locationBody);
           finish();
           return;
         } catch (err2) {
@@ -1245,21 +1282,26 @@ export default function LiveMapScreen() {
       setIsMarkingArrived(false);
       showToast(msg || 'Could not confirm arrival. Please try again.');
     }
-  }, [tripId, isMarkingArrived, showToast, clearStoreCamera, router]);
+  }, [tripId, isMarkingArrived, showToast]);
 
-  // ── Ready: reached the start → load the actual trip route (origin → stops → dest) ──
-  const handleReady = useCallback(async () => {
+  // ── Capture pre-dispatch photo: reached the pickup → reveal the full trip route
+  //    (origin → stops → destination), same as the old "Ready" step, then open the
+  //    camera. Folded into one tap so there's no separate confirmation step. ──
+  const handleCapturePreDispatch = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    nav.current.phase = PHASE.AT_START;
-    setPhase(PHASE.AT_START);
-    nav.current.nearStart = false;
-    setNearStart(false);
-    // Show the trip route as an overview so the driver can review it before starting
-    nav.current.following = false;
-    setFollowing(false);
-    const wp = [nav.current.originPt, ...(nav.current.stopCoords ?? []), nav.current.destPt].filter(Boolean);
-    if (wp.length >= 2) await loadLeg(wp, nav.current.destPt);
-  }, [loadLeg]);
+    if (nav.current.phase === PHASE.APPROACH) {
+      nav.current.phase = PHASE.AT_START;
+      setPhase(PHASE.AT_START);
+      nav.current.nearStart = false;
+      setNearStart(false);
+      // Show the trip route as an overview so the driver can review it before starting
+      nav.current.following = false;
+      setFollowing(false);
+      const wp = [nav.current.originPt, ...(nav.current.stopCoords ?? []), nav.current.destPt].filter(Boolean);
+      if (wp.length >= 2) await loadLeg(wp, nav.current.destPt);
+    }
+    router.push(`/(driver)/delivery/pre-dispatch/${tripId}`);
+  }, [loadLeg, tripId, router]);
 
   // ── Start: begin the trip → mark STARTED on the backend + start turn-by-turn ──
   const handleStart = useCallback(async () => {
@@ -1267,7 +1309,8 @@ export default function LiveMapScreen() {
     setIsStarting(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
-      await api.put(`/trips/${tripId}/start`);
+      const pos = positionRef.current;
+      await api.put(`/trips/${tripId}/start`, pos ? { lat: pos.latitude, lng: pos.longitude } : {});
     } catch {
       // Non-fatal: still let the driver navigate; backend status can reconcile later
       showToast('Could not update trip status — navigating anyway.');
@@ -1281,6 +1324,51 @@ export default function LiveMapScreen() {
     if (pos) focusOnDriver(pos, 800);
     setIsStarting(false);
   }, [tripId, isStarting, showToast, focusOnDriver]);
+
+  // ── Capture POD: only opens the camera if the driver is actually near the
+  //    destination right now — mirrors the details-page check so this button can't
+  //    be used to submit a photo from anywhere. The camera screen re-checks again at
+  //    upload time (the driver could walk off after this check but before confirming). ──
+  const handleCapturePOD = useCallback(() => {
+    const pos = positionRef.current;
+    const destLat = nav.current.trip?.destLat;
+    const destLng = nav.current.trip?.destLng;
+    if (destLat != null && destLng != null) {
+      if (!pos) {
+        showToast('Enable location services to continue.');
+        return;
+      }
+      const distance = haversineMetres(pos.latitude, pos.longitude, Number(destLat), Number(destLng));
+      if (distance > ARRIVE_RADIUS) {
+        showToast(`You need to be within ${ARRIVE_RADIUS}m of the destination. You're ${Math.round(distance)}m away.`);
+        return;
+      }
+    }
+    router.push(`/(driver)/delivery/pod/${tripId}`);
+  }, [tripId, router, showToast]);
+
+  // ── Complete trip: the trip is genuinely over now — do the teardown that used to
+  //    happen right after "Mark arrived" (cache/camera/nav-state cleanup), reset the
+  //    pre-dispatch/POD flags for the next trip, then hand off to the celebration screen. ──
+  const handleCompleteTrip = useCallback(async () => {
+    if (isCompleting) return;
+    setIsCompleting(true);
+    try {
+      await api.put(`/trips/${tripId}/complete`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      locSubRef.current?.remove?.();
+      clearInterval(etaTimerRef.current);
+      routeCache.delete(tripId);
+      clearStoreCamera(tripId);
+      SecureStore.deleteItemAsync(`ft_nav_${tripId}`).catch(() => {});
+      resetTripStore();
+      router.replace(`/(driver)/trip/${tripId}/complete`);
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.response?.data?.message;
+      setIsCompleting(false);
+      showToast(msg || 'Could not complete trip. Please try again.');
+    }
+  }, [tripId, isCompleting, showToast, clearStoreCamera, resetTripStore, router]);
 
   // ── Map controls ──
   const handleReCenter = useCallback(() => {
@@ -1365,20 +1453,32 @@ export default function LiveMapScreen() {
   const nextDir     = directions[currentStepIndex + 1];
   const nextNextDir = directions[currentStepIndex + 2];
 
-  // Phase-aware primary button (bottom panel): Ready → Start → Mark arrived.
+  // Phase-aware primary button (bottom panel) — one button, walking the whole trip:
+  //   Move to pickup → Capture pre-dispatch photo → Start trip → (drive) →
+  //   Mark arrived → Capture POD → Complete trip.
+  // Each step is skipped automatically once its condition is already satisfied (e.g.
+  // a driver who opens the map already standing at the pickup goes straight to the
+  // pre-dispatch step — "Move to pickup" never shows).
   const primaryBtn = (() => {
+    if (phase === PHASE.ARRIVED) {
+      return podUploaded
+        ? { label: 'Complete trip', icon: 'check-circle', active: true, loading: isCompleting, onPress: handleCompleteTrip, bg: C.teal }
+        : { label: 'Capture POD', icon: 'image', active: true, onPress: handleCapturePOD, bg: C.green };
+    }
     if (phase === PHASE.TRIP) {
       return isWithin200m
         ? { label: 'Mark arrived', icon: 'map-pin', active: true,  loading: isMarkingArrived, onPress: handleMarkArrived, bg: C.green }
         : { label: `${formatDistance(distanceToDest)} to destination`, icon: 'navigation', active: false, onPress: null };
     }
     if (phase === PHASE.AT_START) {
-      return { label: 'Start trip', icon: 'play', active: true, loading: isStarting, onPress: handleStart, bg: C.green };
+      return preDispatchUploaded
+        ? { label: 'Start trip', icon: 'play', active: true, loading: isStarting, onPress: handleStart, bg: C.green }
+        : { label: 'Capture pre-dispatch photo', icon: 'camera', active: true, onPress: handleCapturePreDispatch, bg: C.navyPrimary };
     }
     // APPROACH
     return nearStart
-      ? { label: 'Ready', icon: 'check-circle', active: true, onPress: handleReady, bg: C.navyPrimary }
-      : { label: `${formatDistance(distanceToDest)} to start`, icon: 'navigation', active: false, onPress: null };
+      ? { label: 'Capture pre-dispatch photo', icon: 'camera', active: true, onPress: handleCapturePreDispatch, bg: C.navyPrimary }
+      : { label: `Move to pickup — ${formatDistance(distanceToDest)}`, icon: 'navigation', active: true, onPress: handleReCenter, bg: C.navyPrimary };
   })();
 
   // ─────────────────────────────────────────────────────────────────────────────
