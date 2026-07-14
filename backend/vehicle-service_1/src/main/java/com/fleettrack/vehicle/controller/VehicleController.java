@@ -7,6 +7,8 @@ import com.fleettrack.vehicle.service.VehicleService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,19 +33,22 @@ public class VehicleController {
     }
 
     @GetMapping
-    public ResponseEntity<List<VehicleResponse>> getAllVehicles(HttpServletRequest r) {
+    public ResponseEntity<List<VehicleResponse>> getAllVehicles(
+            @PageableDefault(size = 50) Pageable pageable, HttpServletRequest r) {
         requireRole(r, LIST_ROLES);
-        return ResponseEntity.ok(vehicleService.getAllVehicles());
+        return ResponseEntity.ok(vehicleService.getAllVehicles(pageable));
     }
 
     @GetMapping("/available")
-    public ResponseEntity<List<VehicleResponse>> getAvailableVehicles(HttpServletRequest r) {
+    public ResponseEntity<List<VehicleResponse>> getAvailableVehicles(
+            @PageableDefault(size = 50) Pageable pageable, HttpServletRequest r) {
         requireRole(r, AVAILABLE_ROLES);
-        return ResponseEntity.ok(vehicleService.getAvailableVehicles());
+        return ResponseEntity.ok(vehicleService.getAvailableVehicles(pageable));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<VehicleResponse> getVehicleById(@PathVariable Long id) {
+    public ResponseEntity<VehicleResponse> getVehicleById(@PathVariable Long id, HttpServletRequest r) {
+        requireRole(r, LIST_ROLES);
         return ResponseEntity.ok(vehicleService.getVehicleById(id));
     }
 
@@ -56,8 +61,18 @@ public class VehicleController {
 
     @PutMapping("/{id}/status")
     public ResponseEntity<VehicleResponse> updateStatus(
-            @PathVariable Long id, @RequestBody Map<String, String> body) {
-        VehicleStatus status = VehicleStatus.valueOf(body.get("status").toUpperCase());
+            @PathVariable Long id, @RequestBody Map<String, String> body, HttpServletRequest r) {
+        requireRole(r, WRITE_ROLES);
+        String rawStatus = body.get("status");
+        if (rawStatus == null || rawStatus.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
+        }
+        VehicleStatus status;
+        try {
+            status = VehicleStatus.valueOf(rawStatus.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status value: " + rawStatus);
+        }
         return ResponseEntity.ok(vehicleService.updateStatus(id, status));
     }
 

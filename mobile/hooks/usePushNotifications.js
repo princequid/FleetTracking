@@ -13,7 +13,7 @@ function routeForNotification(data) {
   const tripId = data.tripId;
   switch (data.type) {
     case 'TRIP_ASSIGNED':
-      return tripId ? `/(driver)/trip/${tripId}_2` : '/(driver)/notifications_5';
+      return tripId ? `/(driver)/trip/${tripId}` : '/(driver)/notifications_5';
     case 'TRIP_STARTED':
     case 'NAVIGATION':
       return tripId ? { pathname: '/(driver)/trip/[id]/map', params: { id: tripId } } : '/(driver)/notifications_5';

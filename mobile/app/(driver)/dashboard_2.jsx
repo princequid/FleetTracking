@@ -339,17 +339,17 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [loadData]);
 
-  const handleMarkArrived = useCallback(async () => {
+  // "Mark arrived" is a geofence-gated action — hand off to the live map screen,
+  // which confirms the driver's current location is within range of the destination
+  // before allowing the arrive action, rather than flipping the trip status here with
+  // no location check.
+  const handleMarkArrived = useCallback(() => {
     if (!activeTrip) { showToastMsg('No active trip to mark as arrived', 'warn'); return; }
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await api.put(`/trips/${activeTrip.id}/arrive`);
-      showToastMsg('Marked as arrived!', 'success');
-      loadData();
-    } catch {
-      showToastMsg('Could not mark as arrived', 'error');
-    }
-  }, [activeTrip, loadData]);
+    router.push({
+      pathname: '/(driver)/trip/[id]/map',
+      params: { id: activeTrip.id },
+    });
+  }, [activeTrip, router, showToastMsg]);
 
   const initials = driverName
     ? driverName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()

@@ -37,27 +37,53 @@ public class AuthService {
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final int LOCK_DURATION_MINUTES = 15;
 
+    // Fixed placeholder hash used to equalize timing when an email lookup fails,
+    // so a BCrypt comparison always happens regardless of whether the user exists.
+    // Lazily computed (via the real PasswordEncoder) so its cost factor always
+    // matches whatever the encoder is actually configured with.
+    private volatile String dummyPasswordHash;
+
+    private String getDummyPasswordHash() {
+        String hash = dummyPasswordHash;
+        if (hash == null) {
+            synchronized (this) {
+                hash = dummyPasswordHash;
+                if (hash == null) {
+                    hash = passwordEncoder.encode("dummy-password-for-timing-equalization");
+                    dummyPasswordHash = hash;
+                }
+            }
+        }
+        return hash;
+    }
+
     @Transactional
     public User registerUser(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new RuntimeException("Email already registered");
         }
-        Role role = request.getRole() != null ? request.getRole() : Role.DRIVER;
+        // SECURITY: this endpoint is public/unauthenticated (see SecurityConfig).
+        // Never trust a client-supplied role here — always register as DRIVER,
+        // regardless of what request.getRole() contains, to prevent privilege escalation.
         User user = User.builder()
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .role(role)
+                .role(Role.DRIVER)
                 .build();
         return userRepository.save(user);
     }
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Invalid credentials"));
+        User user = userRepository.findByEmail(request.getEmail()).orElse(null);
 
-        if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
-            throw new AccountLockedException("Account is locked until " + user.getLockedUntil());
+        if (user == null) {
+            // No such user: still perform a BCrypt comparison against a fixed
+            // placeholder hash so the timing matches the "wrong password" path
+            // below, and use the same generic message so the response body
+            // doesn't leak whether the email is registered.
+            passwordEncoder.matches(request.getPassword(), getDummyPasswordHash());
+            throw new RuntimeException("Invalid email or password");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
@@ -67,7 +93,14 @@ public class AuthService {
                 user.setLockedUntil(Instant.now().plus(LOCK_DURATION_MINUTES, ChronoUnit.MINUTES));
             }
             userRepository.save(user);
-            throw new RuntimeException("Invalid credentials");
+            throw new RuntimeException("Invalid email or password");
+        }
+
+        // Only reveal lock status once the caller has proven they know the
+        // correct password — otherwise an attacker without valid credentials
+        // could probe account lock state.
+        if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
+            throw new AccountLockedException("Account is locked until " + user.getLockedUntil());
         }
 
         user.setFailedAttempts(0);

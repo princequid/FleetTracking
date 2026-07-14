@@ -122,6 +122,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # NOTE: eureka-server_1 has no spring-boot-starter-actuator dependency (so no
+    # /actuator/health), and its runtime image (eclipse-temurin:17-jre-alpine) has no
+    # curl. Alpine's busybox does ship wget, and Eureka's default (unsecured) dashboard
+    # at "/" returns 200 once the server is actually serving requests, so that's the
+    # cheapest reliable readiness signal without touching eureka-server_1 itself.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8761/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -157,7 +168,7 @@ services:
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -180,7 +191,7 @@ services:
       JAVA_OPTS: "-Xmx256m -Xms128m"
     depends_on:
       eureka-server:
-        condition: service_started
+        condition: service_healthy
       auth-service:
         condition: service_started
     deploy:
@@ -230,7 +241,7 @@ services:
       postgres:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -256,7 +267,7 @@ services:
       postgres:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -287,7 +298,7 @@ services:
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -319,7 +330,7 @@ services:
       redis:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -350,7 +361,7 @@ services:
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -384,7 +395,7 @@ services:
       minio:
         condition: service_started
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -414,13 +425,54 @@ services:
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
           memory: 512M
           cpus: "0.5"
     restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ../backend
+      dockerfile: notification-service_5/Dockerfile
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8088"
+    environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
+    # NOTE: Firebase push is loaded from a classpath resource (firebase-service-account.json
+    # under notification-service_5/src/main/resources), guarded by FirebaseConfig to no-op
+    # if that file is absent/placeholder — see FirebaseConfig.java. No such file exists in
+    # the repo today, so no volume mount is added here; push simply stays disabled. If real
+    # push credentials are ever added, prefer a volume mount over baking the key into the
+    # image/committed resources.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    restart: unless-stopped
+
+  # analytics-service_5 intentionally has no entry here: per the infra audit it is a 100%
+  # unimplemented stub (no pom.xml, no main class) and cannot run. Add an entry once it's
+  # actually implemented.
 
 volumes:
   postgres-data:

@@ -5,10 +5,9 @@ import TripStatusBadge from "./TripStatusBadge";
 import LoadingTable from "../common/LoadingTable";
 import { MoreVerticalIcon } from "../common/Icons";
 import { cancelTrip } from "../../services/tripService";
+import { isTripCancellable } from "../../constants/tripStatus";
 
 const COLUMNS = ["Trip ID", "Driver", "Vehicle", "Origin", "Destination", "Status", "ETA", "Actions"];
-
-const CANCELLABLE_STATUSES = new Set(["PENDING", "ASSIGNED", "STARTED", "IN_PROGRESS", "ACTIVE"]);
 
 function shortLocation(location) {
   if (!location) return "—";
@@ -148,7 +147,7 @@ export default function TripTable({ trips, driversById, vehiclesById, loading, o
           >
             View Details
           </button>
-          {CANCELLABLE_STATUSES.has(trips.find((t) => t.id === openMenuId)?.status) && (
+          {isTripCancellable(trips.find((t) => t.id === openMenuId)?.status) && (
             <button
               className="trip-kebab-item trip-kebab-item-danger"
               role="menuitem"

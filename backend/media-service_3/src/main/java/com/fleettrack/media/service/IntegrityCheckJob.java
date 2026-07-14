@@ -34,8 +34,7 @@ public class IntegrityCheckJob {
         log.info("Starting nightly photo integrity check");
         
         Instant sevenDaysAgo = Instant.now().minusSeconds(7 * 24 * 60 * 60);
-        List<Photo> recentPhotos = photoRepository.findAll().stream()
-                .filter(photo -> photo.getUploadedAt() != null && photo.getUploadedAt().isAfter(sevenDaysAgo))
+        List<Photo> recentPhotos = photoRepository.findByUploadedAtAfter(sevenDaysAgo).stream()
                 .filter(photo -> photo.getSha256Hash() != null && !photo.getSha256Hash().isBlank())
                 .filter(photo -> photo.getPhotoKey() != null && !photo.getPhotoKey().isBlank())
                 .toList();
