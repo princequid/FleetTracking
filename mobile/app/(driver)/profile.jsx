@@ -12,7 +12,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { useAuthStore } from '../../store/authStore_1';
-import api from '../../services/api_1';
+import { useDriverStore } from '../../store/driverStore_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { ThemeToggle } from '../../components/ThemeToggle';
 
@@ -86,8 +86,14 @@ export default function ProfileScreen() {
     (s) => ({ userId: s.userId, email: s.email, clearAuth: s.clearAuth })
   );
 
-  const [driver, setDriver] = useState(null);
-  const [stats,  setStats]  = useState({ trips: 0, onTime: 100 });
+  // Read straight from the shared driver cache — already populated by splash's
+  // prefetch or the dashboard's own fetch, so this screen can paint real data
+  // on first render instead of showing placeholders while it re-fetches.
+  const driver = useDriverStore((s) => s.driver);
+  const stats  = useDriverStore((s) => s.stats) || { trips: 0, onTime: 100 };
+  const fetchProfile = useDriverStore((s) => s.fetchProfile);
+  const fetchStats   = useDriverStore((s) => s.fetchStats);
+  const clearDriver  = useDriverStore((s) => s.clearDriver);
   const [showSignOut, setShowSignOut] = useState(false);
 
   /* avatar entrance */
@@ -125,6 +131,7 @@ export default function ProfileScreen() {
     await SecureStore.deleteItemAsync('ft_access_token');
     await SecureStore.deleteItemAsync('ft_refresh_token');
     clearAuth();
+    clearDriver();
     router.replace('/(auth)/login_1');
   };
 
@@ -133,14 +140,13 @@ export default function ProfileScreen() {
     avatarOpacity.value = withTiming(1, { duration: 300 });
 
     if (!userId) return;
-    api.get(`/drivers/user/${userId}`)
-      .then((r) => {
-        setDriver(r.data);
-        return api.get(`/drivers/${r.data.id}/stats`);
-      })
-      .then((r) => setStats(r.data))
+    // Only the stats call is truly sequential (it needs the driver's internal
+    // id) — but fetchProfile resolves near-instantly from cache when splash or
+    // the dashboard already fetched it, so this rarely waits on a real request.
+    fetchProfile(userId)
+      .then((d) => (d?.id ? fetchStats(d.id) : null))
       .catch(() => {});
-  }, [userId]);
+  }, [userId, fetchProfile, fetchStats]);
 
   const driverName = driver?.fullName || 'Driver';
 

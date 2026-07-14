@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -119,6 +120,32 @@ public class MediaService {
 
     public boolean hasPOD(Long tripId) {
         return photoRepository.existsByTripIdAndPhotoType(tripId, PhotoType.POD);
+    }
+
+    // Fresh, time-limited read link for viewing a photo (admin portal, etc.). Generated
+    // on demand from presignMinioClient (already configured with the correct external
+    // host), rather than trusting a URL baked in at upload time — that URL would go
+    // stale the same way the upload URL did whenever this machine's network changes.
+    // The bucket stays private; this is the only way to view a photo without direct
+    // MinIO credentials.
+    public String getPhotoViewUrl(String photoKey) {
+        try {
+            return presignMinioClient.getPresignedObjectUrl(
+                    GetPresignedObjectUrlArgs.builder()
+                            .method(Method.GET)
+                            .bucket(bucketName)
+                            .object(photoKey)
+                            .expiry((int) Duration.ofHours(1).toSeconds())
+                            .build()
+            );
+        } catch (Exception e) {
+            log.error("Failed to generate view URL for key: {}", photoKey, e);
+            return null;
+        }
+    }
+
+    public Optional<Photo> getPodPhoto(Long tripId) {
+        return photoRepository.findFirstByTripIdAndPhotoTypeOrderByUploadedAtDesc(tripId, PhotoType.POD);
     }
 
     public List<Photo> getPhotosByTrip(Long tripId) {

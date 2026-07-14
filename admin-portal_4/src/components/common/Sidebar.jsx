@@ -41,7 +41,7 @@ function getInitials(email) {
   return email.split("@")[0].slice(0, 2).toUpperCase();
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const role = useAuthStore((state) => state.role) || "";
   const email = useAuthStore((state) => state.email);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -67,6 +67,7 @@ export default function Sidebar() {
   const sidebarClass = [
     "sidebar",
     mounted ? "sidebar-mounted" : "",
+    isOpen ? "sidebar-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -103,6 +104,9 @@ export default function Sidebar() {
                       } else if (import.meta.env.DEV) {
                         console.log(`[Nav] navigate → "${item.to}"`);
                       }
+                      // Close the off-canvas menu on mobile — Layout also closes on
+                      // pathname change, but that doesn't fire for a same-route click.
+                      onClose?.();
                     }}
                     className={({ isActive }) =>
                       `sidebar-link ${isActive ? "sidebar-link-active" : ""}`

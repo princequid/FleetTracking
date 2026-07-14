@@ -7,6 +7,7 @@ import { getTripPodStatus, getTripPhotos } from "../services/mediaService";
 import { useAuthStore } from "../store/authStore";
 import TripStatusBadge from "../components/trips/TripStatusBadge";
 import TripTimeline from "../components/trips/TripTimeline";
+import TripRouteMap from "../components/map/TripRouteMap";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import { ArrowLeftIcon } from "../components/common/Icons";
@@ -259,6 +260,8 @@ export default function TripDetailPage() {
                 showLine={false}
               />
             </div>
+
+            <TripRouteMap trip={trip} />
           </div>
 
           {/* ── Meta grid (driver / vehicle / ETA / created) ── */}

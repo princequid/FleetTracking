@@ -6,7 +6,7 @@ import { router } from 'expo-router';
 // EXPO_PUBLIC_API_URL in a .env file (e.g. EXPO_PUBLIC_API_URL=http://192.168.1.20:8080).
 // The phone MUST be on the same network as the machine running the backend, and that
 // IP must be reachable from the phone. 172.20.10.x is an iPhone hotspot subnet.
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.5:8080';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.137.1:8080';
 
 // Auth endpoints that must never trigger the refresh interceptor
 const AUTH_PATHS = ['/auth/login', '/auth/logout', '/auth/refresh'];
@@ -60,7 +60,9 @@ api.interceptors.response.use(
         try {
           // Lazy-import to avoid circular dep at module load time
           const { useAuthStore } = await import('../store/authStore_1');
+          const { useDriverStore } = await import('../store/driverStore_1');
           useAuthStore.getState().clearAuth();
+          useDriverStore.getState().clearDriver();
         } catch {}
         router.replace('/(auth)/login_1');
       }

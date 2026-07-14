@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAuthStore } from '../../store/authStore_1';
 import { useTripStore } from '../../store/tripStore_2';
+import { useDriverStore } from '../../store/driverStore_1';
 import api from '../../services/api_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { DISPATCH_PHONE } from '../../constants/config';
@@ -192,7 +193,13 @@ export default function HomeScreen() {
   const { userId }   = useAuthStore();
   const { activeTrip, setActiveTrip } = useTripStore();
 
-  const [driverName, setDriverName] = useState('Driver');
+  // Read straight from the shared driver cache so a name already fetched by
+  // splash (prefetch) or a prior visit renders instantly, with no local-state
+  // hop needed once loadData's fetchProfile call resolves.
+  const cachedDriverName = useDriverStore((s) => s.driver?.fullName);
+  const fetchDriverProfile = useDriverStore((s) => s.fetchProfile);
+
+  const [driverName, setDriverName] = useState(cachedDriverName || 'Driver');
   const [trips, setTrips]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -280,15 +287,15 @@ export default function HomeScreen() {
   }, []);
 
   /* data */
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (force = false) => {
     try {
       const [profileRes, tripsRes] = await Promise.allSettled([
-        api.get(`/drivers/user/${userId}`),
+        fetchDriverProfile(userId, { force }),
         api.get('/trips'),
       ]);
 
-      if (profileRes.status === 'fulfilled') {
-        setDriverName(profileRes.value.data?.fullName || 'Driver');
+      if (profileRes.status === 'fulfilled' && profileRes.value) {
+        setDriverName(profileRes.value.fullName || 'Driver');
       }
 
       if (tripsRes.status === 'fulfilled') {
@@ -311,7 +318,7 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, fetchDriverProfile]);
 
   useEffect(() => {
     // Animate the shell in immediately so the screen appears instantly (skeleton first),
@@ -328,7 +335,7 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(true);
     setRefreshing(false);
   }, [loadData]);
 

@@ -41,6 +41,10 @@ public class TripService {
     private final OutboxPublisherService outboxPublisherService;
     private final EtaService etaService;
 
+    // Geofence radius for start/arrive/POD proximity checks.
+    private static final double GEOFENCE_RADIUS_METERS = 50.0;
+    private static final double EARTH_RADIUS_METERS = 6_371_000.0;
+
     @Transactional
     public TripResponse createTrip(CreateTripRequest request) {
         DriverResponse driver = driverServiceClient.getDriver(request.getDriverId());
@@ -111,9 +115,10 @@ public class TripService {
     }
 
     @Transactional
-    public TripResponse startTrip(Long tripId, Long userId) {
+    public TripResponse startTrip(Long tripId, Long userId, LocationRequest location) {
         Trip trip = findTrip(tripId);
         validateStatus(trip, TripStatus.ASSIGNED, "start");
+        requireWithinGeofence(location, trip.getOriginLat(), trip.getOriginLng(), "pickup location");
 
         TripStatus oldStatus = trip.getStatus();
         trip.setStatus(TripStatus.STARTED);
@@ -132,11 +137,12 @@ public class TripService {
     }
 
     @Transactional
-    public TripResponse markArrived(Long tripId, Long userId) {
+    public TripResponse markArrived(Long tripId, Long userId, LocationRequest location) {
         Trip trip = findTrip(tripId);
         if (trip.getStatus() != TripStatus.STARTED && trip.getStatus() != TripStatus.EN_ROUTE) {
             throw new RuntimeException("Trip must be STARTED or EN_ROUTE to mark as arrived (current: " + trip.getStatus() + ")");
         }
+        requireWithinGeofence(location, trip.getDestLat(), trip.getDestLng(), "destination");
 
         TripStatus oldStatus = trip.getStatus();
         trip.setStatus(TripStatus.ARRIVED);
@@ -152,16 +158,31 @@ public class TripService {
         Trip trip = findTrip(tripId);
         validateStatus(trip, TripStatus.ARRIVED, "complete");
 
+        MediaPodStatusResponse podStatus;
         try {
-            boolean hasPod = mediaServiceClient.hasPodPhoto(tripId);
-            if (!hasPod) {
-                throw new RuntimeException("POD photo required before completing trip");
-            }
-        } catch (RuntimeException e) {
-            if (e.getMessage().contains("POD photo required")) {
-                throw e;
-            }
+            podStatus = mediaServiceClient.getPodStatus(tripId);
+        } catch (Exception e) {
             throw new RuntimeException("POD photo required before completing trip (media-service unavailable)");
+        }
+
+        if (!Boolean.TRUE.equals(podStatus.getHasPOD())) {
+            throw new RuntimeException("POD photo required before completing trip");
+        }
+
+        // Verify the POD photo's OWN geotag was actually captured near the destination —
+        // closes the gap where a photo taken from anywhere would satisfy "has POD".
+        // Skipped if either coordinate is missing (legacy photo predating this check, or
+        // the trip's destination was never geocoded) — nothing to validate against.
+        if (podStatus.getLat() != null && podStatus.getLng() != null
+                && trip.getDestLat() != null && trip.getDestLng() != null) {
+            double distance = haversineMetres(
+                    podStatus.getLat(), podStatus.getLng(),
+                    trip.getDestLat().doubleValue(), trip.getDestLng().doubleValue());
+            if (distance > GEOFENCE_RADIUS_METERS) {
+                throw new RuntimeException(String.format(
+                        "The POD photo was taken %.0fm from the destination — you must be within %.0fm to complete this trip.",
+                        distance, GEOFENCE_RADIUS_METERS));
+            }
         }
 
         TripStatus oldStatus = trip.getStatus();
@@ -254,6 +275,40 @@ public class TripService {
         if (trip.getStatus() != expected) {
             throw new RuntimeException("Trip must be " + expected + " to " + action + " (current: " + trip.getStatus() + ")");
         }
+    }
+
+    // Rejects the action unless the supplied location is within GEOFENCE_RADIUS_METERS of
+    // the given target coordinates. Fails CLOSED: missing driver location is always
+    // rejected. If the trip itself has no stored coordinates for the target (e.g. it was
+    // dispatched with only a typed address, never geocoded), there is nothing to check
+    // against — that's a dispatch data gap, not a driver location violation, so the check
+    // is skipped rather than blocking the driver for something outside their control.
+    private void requireWithinGeofence(LocationRequest location, BigDecimal targetLat, BigDecimal targetLng, String placeLabel) {
+        if (targetLat == null || targetLng == null) return;
+
+        if (location == null || location.getLat() == null || location.getLng() == null) {
+            throw new RuntimeException("Location is required — enable location services and try again.");
+        }
+
+        double distance = haversineMetres(
+                location.getLat(), location.getLng(),
+                targetLat.doubleValue(), targetLng.doubleValue());
+
+        if (distance > GEOFENCE_RADIUS_METERS) {
+            throw new RuntimeException(String.format(
+                    "You must be within %.0fm of the %s to do this (currently %.0fm away).",
+                    GEOFENCE_RADIUS_METERS, placeLabel, distance));
+        }
+    }
+
+    private static double haversineMetres(double lat1, double lng1, double lat2, double lng2) {
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return EARTH_RADIUS_METERS * c;
     }
 
     private void recordStatusChange(Long tripId, TripStatus oldStatus, TripStatus newStatus, Long userId) {

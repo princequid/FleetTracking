@@ -46,9 +46,17 @@ public class MediaController {
     }
 
     @GetMapping("/photos/trips/{id}/status")
-    public ResponseEntity<Map<String, Boolean>> getTripPhotoStatus(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> getTripPhotoStatus(@PathVariable Long id) {
         boolean hasPOD = mediaService.hasPOD(id);
-        return ResponseEntity.ok(Map.of("hasPOD", hasPOD));
+        // Include the POD photo's own geotag (if any) so trip-service can verify it was
+        // actually captured near the destination before allowing trip completion.
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("hasPOD", hasPOD);
+        mediaService.getPodPhoto(id).ifPresent(photo -> {
+            body.put("lat", photo.getLat());
+            body.put("lng", photo.getLng());
+        });
+        return ResponseEntity.ok(body);
     }
 
     @GetMapping("/photos/trips/{id}")
@@ -80,10 +88,14 @@ public class MediaController {
     }
 
     private PhotoResponse toResponse(Photo photo) {
+        // Generate a fresh, correctly-hosted view link on every request rather than
+        // trusting the URL stored at upload time — falls back to the stored value only
+        // if MinIO is unreachable, so a transient hiccup doesn't blank out the photo list.
+        String viewUrl = mediaService.getPhotoViewUrl(photo.getPhotoKey());
         return PhotoResponse.builder()
                 .id(photo.getId())
                 .tripId(photo.getTripId())
-                .photoUrl(photo.getPhotoUrl())
+                .photoUrl(viewUrl != null ? viewUrl : photo.getPhotoUrl())
                 .photoType(photo.getPhotoType())
                 .sha256Hash(photo.getSha256Hash())
                 .uploadedAt(photo.getUploadedAt())
