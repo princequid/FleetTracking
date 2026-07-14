@@ -1,4 +1,4 @@
-export const FILTER_TABS = ["All", "Assigned", "Started", "Arrived", "Delivered", "Cancelled"];
+export const FILTER_TABS = ["All", "Assigned", "Started", "En Route", "Rerouted", "Arrived", "Delivered", "Cancelled"];
 
 export const STATUS_STYLES = {
   ASSIGNED: { background: "#DBEAFE", color: "#2563EB" },
@@ -12,4 +12,13 @@ export const STATUS_STYLES = {
 
 export function getStatusStyle(status) {
   return STATUS_STYLES[status] || { background: "#F3F4F6", color: "#374151" };
+}
+
+// Statuses that can no longer be cancelled — a trip is cancellable unless it's
+// already reached one of these terminal states. Shared by TripDetailPage and
+// TripTable so both surfaces agree on which trips can be cancelled.
+export const NON_CANCELLABLE_STATUSES = new Set(["DELIVERED", "CANCELLED"]);
+
+export function isTripCancellable(status) {
+  return !!status && !NON_CANCELLABLE_STATUSES.has(status);
 }

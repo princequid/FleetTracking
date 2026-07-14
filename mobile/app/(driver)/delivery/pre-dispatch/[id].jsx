@@ -98,7 +98,7 @@ export default function PreDispatchScreen() {
   const styles = useMemo(() => makeStyles(C), [C]);
   const ringStyles = useMemo(() => makeRingStyles(C), [C]);
   const { id }  = useLocalSearchParams();
-  const tripId  = String(id).replace('_3', '');
+  const tripId  = String(id);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const setPreDispatchUploaded = useTripStore((s) => s.setPreDispatchUploaded);
 

@@ -3,6 +3,7 @@ package com.fleettrack.trip.service;
 import com.fleettrack.trip.model.dto.StopRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -19,8 +20,19 @@ public class EtaService {
     @Value("${osrm.base-url:http://localhost:5000}")
     private String osrmBaseUrl;
 
+    private static final int CONNECT_TIMEOUT_MS = 5_000;
+    private static final int READ_TIMEOUT_MS = 10_000;
+
     // Plain RestTemplate — not @LoadBalanced, so it can call external IPs directly.
-    private final RestTemplate restTemplate = new RestTemplate();
+    // Explicit timeouts so a hung OSRM instance can't block trip creation forever.
+    private final RestTemplate restTemplate = buildRestTemplate();
+
+    private static RestTemplate buildRestTemplate() {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        requestFactory.setReadTimeout(READ_TIMEOUT_MS);
+        return new RestTemplate(requestFactory);
+    }
 
     /**
      * Calls OSRM to get the driving duration for origin → stops → destination.

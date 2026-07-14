@@ -1,6 +1,6 @@
 package com.fleettrack.media.client;
 
-import com.fleettrack.media.model.dto.TripResponse;
+import com.fleettrack.media.model.dto.DriverResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -9,30 +9,32 @@ import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-// Used by MediaService to verify photo ownership: a driver may only upload/view
-// photos for a trip they are actually assigned to.
+// Minimal client — only what MediaService needs to map the authenticated caller's
+// X-User-Id (an auth-service user id) onto their driver-profile id, mirroring
+// trip-service's own DriverServiceClient#getDriverByUserId. Trips (and therefore
+// photo ownership) are keyed by driver-profile id, not auth-service user id.
 @Component
 @RequiredArgsConstructor
-public class TripServiceClient {
+public class DriverServiceClient {
 
     private final RestTemplate restTemplate;
 
     @Value("${internal.service.secret}")
     private String internalServiceSecret;
 
-    public TripResponse getTrip(Long tripId) {
+    public DriverResponse getDriverByUserId(Long userId) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.set("X-Internal-Service-Key", internalServiceSecret);
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             return restTemplate.exchange(
-                    "http://trip-service/" + tripId,
+                    "http://driver-service/user/" + userId,
                     HttpMethod.GET,
                     entity,
-                    TripResponse.class
+                    DriverResponse.class
             ).getBody();
         } catch (Exception e) {
-            throw new RuntimeException("Trip not found or trip-service unavailable");
+            return null;
         }
     }
 }

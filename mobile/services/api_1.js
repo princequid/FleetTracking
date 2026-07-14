@@ -12,6 +12,12 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.137.1:80
 const AUTH_PATHS = ['/auth/login', '/auth/logout', '/auth/refresh'];
 const isAuthEndpoint = (url = '') => AUTH_PATHS.some((p) => url.includes(p));
 
+// Shared in-flight refresh call — when several requests 401 concurrently, they all
+// await this ONE /auth/refresh call instead of each firing their own. With rotating
+// refresh tokens, concurrent independent refresh calls can race and invalidate a
+// sibling's just-issued token, causing spurious forced logouts.
+let refreshPromise = null;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
@@ -43,14 +49,24 @@ api.interceptors.response.use(
     if (is401 && !alreadyTried && !skipRefresh) {
       original._retry = true;
       try {
-        const refreshToken = await SecureStore.getItemAsync('ft_refresh_token');
-        if (!refreshToken) throw new Error('no_refresh_token');
+        // If a refresh is already in flight (triggered by a sibling request that
+        // 401'd first), await that ONE call instead of starting a new /auth/refresh —
+        // otherwise two concurrent refreshes can race and invalidate each other's
+        // rotated token.
+        if (!refreshPromise) {
+          refreshPromise = (async () => {
+            const refreshToken = await SecureStore.getItemAsync('ft_refresh_token');
+            if (!refreshToken) throw new Error('no_refresh_token');
 
-        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
+            const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
 
-        await SecureStore.setItemAsync('ft_access_token',  data.accessToken);
-        await SecureStore.setItemAsync('ft_refresh_token', data.refreshToken);
+            await SecureStore.setItemAsync('ft_access_token',  data.accessToken);
+            await SecureStore.setItemAsync('ft_refresh_token', data.refreshToken);
+            return data;
+          })().finally(() => { refreshPromise = null; });
+        }
 
+        const data = await refreshPromise;
         original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch {

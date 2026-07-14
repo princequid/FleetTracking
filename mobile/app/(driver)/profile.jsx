@@ -6,13 +6,13 @@ import {
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as SecureStore from 'expo-secure-store';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming,
   runOnJS,
 } from 'react-native-reanimated';
 import { useAuthStore } from '../../store/authStore_1';
 import { useDriverStore } from '../../store/driverStore_1';
+import authService from '../../services/authService_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { ThemeToggle } from '../../components/ThemeToggle';
 
@@ -128,8 +128,10 @@ export default function ProfileScreen() {
 
   const confirmSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await SecureStore.deleteItemAsync('ft_access_token');
-    await SecureStore.deleteItemAsync('ft_refresh_token');
+    // authService.logout() POSTs /auth/logout to revoke the refresh token server-side,
+    // then deletes both tokens from SecureStore — so we no longer need to delete them
+    // here ourselves.
+    await authService.logout();
     clearAuth();
     clearDriver();
     router.replace('/(auth)/login_1');

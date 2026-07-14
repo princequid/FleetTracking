@@ -135,7 +135,7 @@ export default function TripDetailScreen() {
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const { id } = useLocalSearchParams();
-  const tripId = String(id).replace('_2', '');
+  const tripId = String(id);
 
   const [trip, setTrip] = useState(null);
 

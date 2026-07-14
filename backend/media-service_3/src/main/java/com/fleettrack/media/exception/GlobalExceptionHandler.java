@@ -1,4 +1,4 @@
-package com.fleettrack.driver.exception;
+package com.fleettrack.media.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -10,25 +10,16 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
-
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<Map<String, String>> handleResponseStatus(ResponseStatusException ex) {
         return ResponseEntity.status(ex.getStatusCode()).body(Map.of("error", ex.getReason()));
     }
-
-    @ExceptionHandler(DriverNotFoundException.class)
-    public ResponseEntity<Map<String, String>> handleDriverNotFound(DriverNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
-    }
-
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, String>> handleRuntimeException(RuntimeException ex) {
+    public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
         return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
     }
-
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleException(Exception ex) {
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "An unexpected error occurred"));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", ex.getClass().getSimpleName() + ": " + ex.getMessage()));
     }
 }
