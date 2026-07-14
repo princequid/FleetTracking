@@ -18,14 +18,38 @@ public class RabbitMQConfig {
     public static final String EXCHANGE = "fleettrack.events";
     public static final String NOTIFICATION_QUEUE = "notification-service.queue";
 
+    // Dead-letter routing: messages the listener nacks with requeue=false (malformed
+    // payloads) land here instead of being discarded, so they can be inspected/replayed
+    // rather than silently lost.
+    public static final String DLX = "notification-service.dlx";
+    public static final String DEAD_LETTER_QUEUE = "notification-service.queue.dlq";
+
     @Bean
     public TopicExchange fleettrackExchange() {
         return new TopicExchange(EXCHANGE, true, false);
     }
 
     @Bean
+    public DirectExchange notificationDlx() {
+        return new DirectExchange(DLX, true, false);
+    }
+
+    @Bean
     public Queue notificationQueue() {
-        return QueueBuilder.durable(NOTIFICATION_QUEUE).build();
+        return QueueBuilder.durable(NOTIFICATION_QUEUE)
+                .withArgument("x-dead-letter-exchange", DLX)
+                .withArgument("x-dead-letter-routing-key", DEAD_LETTER_QUEUE)
+                .build();
+    }
+
+    @Bean
+    public Queue notificationDeadLetterQueue() {
+        return QueueBuilder.durable(DEAD_LETTER_QUEUE).build();
+    }
+
+    @Bean
+    public Binding notificationDeadLetterBinding(Queue notificationDeadLetterQueue, DirectExchange notificationDlx) {
+        return BindingBuilder.bind(notificationDeadLetterQueue).to(notificationDlx).with(DEAD_LETTER_QUEUE);
     }
 
     // Only trip lifecycle events drive driver notifications

@@ -8,6 +8,7 @@ import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.client.MediaServiceClient;
 import com.fleettrack.trip.client.VehicleServiceClient;
 import com.fleettrack.trip.event.TripEventPublisher;
+import com.fleettrack.trip.exception.TripNotFoundException;
 import com.fleettrack.trip.model.dto.*;
 import com.fleettrack.trip.model.entity.Trip;
 import com.fleettrack.trip.model.entity.TripStop;
@@ -17,8 +18,15 @@ import com.fleettrack.trip.repository.TripRepository;
 import com.fleettrack.trip.repository.TripStatusHistoryRepository;
 import com.fleettrack.trip.repository.TripStopRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -29,6 +37,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TripService {
 
     private final TripRepository tripRepository;
@@ -57,8 +66,6 @@ public class TripService {
             throw new RuntimeException("Vehicle is not available (status: " +
                     (vehicle != null ? vehicle.getStatus() : "unknown") + ")");
         }
-
-        vehicleServiceClient.updateVehicleStatus(request.getVehicleId(), "IN_USE");
 
         BigDecimal originLat = toBigDecimal(request.getOriginLat());
         BigDecimal originLng = toBigDecimal(request.getOriginLng());
@@ -111,12 +118,43 @@ public class TripService {
                 trip.getOrigin(), trip.getDestination(), trip.getEta());
         outboxPublisherService.saveToOutbox("trip.assigned", assignedEvent);
 
+        // Mark the vehicle IN_USE only AFTER the DB transaction commits. Doing this call
+        // before persisting (the old behavior) meant a DB failure would roll back the trip
+        // while the vehicle-service call had already gone through and stayed IN_USE with no
+        // trip to show for it. Deferring to afterCommit keeps the blocking network call out
+        // of the transaction and avoids that partial-failure state.
+        Long tripIdForCallback = trip.getId();
+        Long vehicleIdForCallback = request.getVehicleId();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    try {
+                        vehicleServiceClient.updateVehicleStatus(vehicleIdForCallback, "IN_USE");
+                    } catch (Exception e) {
+                        log.error("Trip {} committed but failed to mark vehicle {} IN_USE — " +
+                                "vehicle status may be stale and require manual reconciliation",
+                                tripIdForCallback, vehicleIdForCallback, e);
+                    }
+                }
+            });
+        } else {
+            // Should not happen (method is @Transactional), but never silently skip the call.
+            try {
+                vehicleServiceClient.updateVehicleStatus(vehicleIdForCallback, "IN_USE");
+            } catch (Exception e) {
+                log.error("Trip {} created but failed to mark vehicle {} IN_USE",
+                        tripIdForCallback, vehicleIdForCallback, e);
+            }
+        }
+
         return mapToResponse(trip);
     }
 
     @Transactional
-    public TripResponse startTrip(Long tripId, Long userId, LocationRequest location) {
+    public TripResponse startTrip(Long tripId, Long userId, LocationRequest location, Long requesterDriverId) {
         Trip trip = findTrip(tripId);
+        checkOwnership(trip, requesterDriverId);
         validateStatus(trip, TripStatus.ASSIGNED, "start");
         requireWithinGeofence(location, trip.getOriginLat(), trip.getOriginLng(), "pickup location");
 
@@ -137,8 +175,9 @@ public class TripService {
     }
 
     @Transactional
-    public TripResponse markArrived(Long tripId, Long userId, LocationRequest location) {
+    public TripResponse markArrived(Long tripId, Long userId, LocationRequest location, Long requesterDriverId) {
         Trip trip = findTrip(tripId);
+        checkOwnership(trip, requesterDriverId);
         if (trip.getStatus() != TripStatus.STARTED && trip.getStatus() != TripStatus.EN_ROUTE) {
             throw new RuntimeException("Trip must be STARTED or EN_ROUTE to mark as arrived (current: " + trip.getStatus() + ")");
         }
@@ -154,8 +193,9 @@ public class TripService {
     }
 
     @Transactional
-    public TripResponse completeTrip(Long tripId, Long userId) {
+    public TripResponse completeTrip(Long tripId, Long userId, Long requesterDriverId) {
         Trip trip = findTrip(tripId);
+        checkOwnership(trip, requesterDriverId);
         validateStatus(trip, TripStatus.ARRIVED, "complete");
 
         MediaPodStatusResponse podStatus;
@@ -224,38 +264,43 @@ public class TripService {
             vehicleServiceClient.updateVehicleStatus(trip.getVehicleId(), "AVAILABLE");
         } catch (Exception e) {
             // Vehicle service might be down — logged, will reconcile later
+            log.warn("Trip {} cancelled but failed to mark vehicle {} AVAILABLE — " +
+                    "vehicle status may be stale and require manual reconciliation",
+                    trip.getId(), trip.getVehicleId(), e);
         }
 
         return mapToResponse(trip);
     }
 
-    public List<TripResponse> getAllTrips(String status) {
-        List<Trip> trips;
+    public List<TripResponse> getAllTrips(String status, Pageable pageable) {
+        Page<Trip> trips;
         if (status != null && !status.isBlank()) {
-            trips = tripRepository.findByStatus(TripStatus.valueOf(status.toUpperCase()));
+            trips = tripRepository.findByStatus(parseStatus(status), pageable);
         } else {
-            trips = tripRepository.findAll();
+            trips = tripRepository.findAll(pageable);
         }
-        return mapTripsWithStops(trips);
+        return mapTripsWithStops(trips.getContent());
     }
 
-    public List<TripResponse> getTripsByDriver(Long driverId, String status) {
-        List<Trip> trips;
+    public List<TripResponse> getTripsByDriver(Long driverId, String status, Pageable pageable) {
+        Page<Trip> trips;
         if (status != null && !status.isBlank()) {
-            trips = tripRepository.findByDriverIdAndStatus(driverId, TripStatus.valueOf(status.toUpperCase()));
+            trips = tripRepository.findByDriverIdAndStatus(driverId, parseStatus(status), pageable);
         } else {
-            trips = tripRepository.findByDriverId(driverId);
+            trips = tripRepository.findByDriverId(driverId, pageable);
         }
-        return mapTripsWithStops(trips);
+        return mapTripsWithStops(trips.getContent());
     }
 
-    public TripResponse getTripById(Long id) {
-        return tripRepository.findById(id)
-                .map(this::mapToResponse)
-                .orElseThrow(() -> new RuntimeException("Trip not found"));
+    public TripResponse getTripById(Long id, Long requesterDriverId) {
+        Trip trip = findTrip(id);
+        checkOwnership(trip, requesterDriverId);
+        return mapToResponse(trip);
     }
 
-    public List<TripStatusHistoryResponse> getTripStatusHistory(Long tripId) {
+    public List<TripStatusHistoryResponse> getTripStatusHistory(Long tripId, Long requesterDriverId) {
+        Trip trip = findTrip(tripId);
+        checkOwnership(trip, requesterDriverId);
         return statusHistoryRepository.findByTripIdOrderByChangedAtAsc(tripId).stream()
                 .map(h -> TripStatusHistoryResponse.builder()
                         .oldStatus(h.getOldStatus())
@@ -268,7 +313,24 @@ public class TripService {
 
     private Trip findTrip(Long tripId) {
         return tripRepository.findById(tripId)
-                .orElseThrow(() -> new RuntimeException("Trip not found"));
+                .orElseThrow(() -> new TripNotFoundException("Trip not found: " + tripId));
+    }
+
+    // Enforces trip ownership for DRIVER callers. requesterDriverId is null for
+    // non-driver (admin/dispatcher) callers and internal-service calls — those are not
+    // restricted here since role/internal-key checks already happened in the controller.
+    private void checkOwnership(Trip trip, Long requesterDriverId) {
+        if (requesterDriverId != null && !requesterDriverId.equals(trip.getDriverId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to this trip");
+        }
+    }
+
+    private TripStatus parseStatus(String status) {
+        try {
+            return TripStatus.valueOf(status.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid status: " + status);
+        }
     }
 
     private void validateStatus(Trip trip, TripStatus expected, String action) {

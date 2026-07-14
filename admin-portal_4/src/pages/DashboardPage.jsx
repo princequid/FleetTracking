@@ -159,7 +159,9 @@ export default function DashboardPage() {
   ).length;
   const deliveriesToday = trips.filter((t) => t.status === "DELIVERED").length;
   const openIncidents = incidents.filter((i) => i.status === "OPEN").length;
-  const onTimeRate = deliveriesToday > 0 ? "87.5%" : "—";
+  const closedTrips = trips.filter((t) => ["DELIVERED", "CANCELLED"].includes(t.status)).length;
+  const onTimeRate =
+    closedTrips > 0 ? `${Math.round((deliveriesToday / closedTrips) * 100)}%` : "—";
 
   const vehicleBreakdown = useMemo(() => {
     const counts = {};

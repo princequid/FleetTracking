@@ -19,6 +19,7 @@ import { useTheme, useThemeMode } from '../../../../theme/ThemeContext';
 import api from '../../../../services/api_1';
 import { useNavStore } from '../../../../store/navStore_2';
 import { useTripStore } from '../../../../store/tripStore_2';
+import tripService from '../../../../services/tripService_2';
 
 const ARRIVE_RADIUS = 50;    // within this of the destination → "Mark arrived"
 const READY_RADIUS  = 50;    // within this of the trip start → "Ready" button
@@ -411,6 +412,15 @@ export default function LiveMapScreen() {
     const t = setTimeout(() => setMapMounted(true), 80);
     return () => clearTimeout(t);
   }, []);
+
+  // Flush any GPS pings that failed to send and were queued offline (e.g. after a
+  // network blip). Runs once on mount and again whenever this screen regains focus
+  // (the closest signal we have to "reconnected", since NetInfo isn't wired up here).
+  useFocusEffect(
+    useCallback(() => {
+      tripService.flushOfflinePings().catch(() => {});
+    }, []),
+  );
 
   // Once the vehicle marker first has a position, keep it rasterising just long enough
   // for the truck glyph to render, then stop so the icon stays crisp (Android fix).
@@ -903,8 +913,10 @@ export default function LiveMapScreen() {
       }, { duration: 900 });
     }
 
-    // GPS ping — fire and forget
-    api.post(`/gps/trips/${tripId}/ping`, {
+    // GPS ping — fire and forget. Routed through tripService so a failed ping is
+    // persisted to the offline queue and retried later (flushOfflinePings), instead
+    // of silently dropping on a network blip.
+    tripService.sendGpsPing(tripId, {
       lat:        latitude,
       lng:        longitude,
       speedKmh:   Math.round(speedKmh),

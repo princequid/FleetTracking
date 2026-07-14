@@ -6,6 +6,7 @@ import com.fleettrack.vehicle.model.entity.Vehicle;
 import com.fleettrack.vehicle.model.enums.VehicleStatus;
 import com.fleettrack.vehicle.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -28,12 +29,12 @@ public class VehicleService {
         return mapToResponse(vehicleRepository.save(v));
     }
 
-    public List<VehicleResponse> getAllVehicles() {
-        return vehicleRepository.findAll().stream().map(this::mapToResponse).toList();
+    public List<VehicleResponse> getAllVehicles(Pageable pageable) {
+        return vehicleRepository.findAll(pageable).getContent().stream().map(this::mapToResponse).toList();
     }
 
-    public List<VehicleResponse> getAvailableVehicles() {
-        return vehicleRepository.findByStatus(VehicleStatus.AVAILABLE).stream().map(this::mapToResponse).toList();
+    public List<VehicleResponse> getAvailableVehicles(Pageable pageable) {
+        return vehicleRepository.findByStatus(VehicleStatus.AVAILABLE, pageable).stream().map(this::mapToResponse).toList();
     }
 
     public VehicleResponse getVehicleById(Long id) {
