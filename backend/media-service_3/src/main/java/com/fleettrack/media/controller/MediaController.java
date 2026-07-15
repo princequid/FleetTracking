@@ -121,6 +121,7 @@ public class MediaController {
         return PhotoResponse.builder()
                 .id(photo.getId())
                 .tripId(photo.getTripId())
+                .stopId(photo.getStopId())
                 .photoUrl(viewUrl != null ? viewUrl : photo.getPhotoUrl())
                 .photoType(photo.getPhotoType())
                 .sha256Hash(photo.getSha256Hash())

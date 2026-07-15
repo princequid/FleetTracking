@@ -138,15 +138,37 @@ export default function TripDetailScreen() {
   const tripId = String(id);
 
   const [trip, setTrip] = useState(null);
+  // Another of the driver's trips that's already in progress (started but not finished).
+  // Only one trip may be STARTED at a time, so an ASSIGNED trip can't be started while
+  // this is set — the driver can still view it, just not move to pickup / start it.
+  const [otherActiveTrip, setOtherActiveTrip] = useState(null);
 
   useEffect(() => {
     api.get(`/trips/${tripId}`)
       .then((r) => setTrip(r.data))
       .catch(() => {});
+
+    // /trips is scoped to the signed-in driver server-side, so this only sees their trips.
+    api.get('/trips')
+      .then((r) => {
+        const raw = r.data;
+        const all = Array.isArray(raw) ? raw
+          : Array.isArray(raw?.content) ? raw.content
+          : Array.isArray(raw?.data) ? raw.data
+          : [];
+        const other = all.find((t) =>
+          String(t.id) !== tripId && ['STARTED', 'EN_ROUTE', 'ARRIVED'].includes(t.status)
+        );
+        setOtherActiveTrip(other || null);
+      })
+      .catch(() => {});
   }, [tripId]);
 
   const activeStep = trip ? statusToStep(trip.status) : 0;
   const canOpenNav = trip && !['DELIVERED', 'CANCELLED'].includes(trip.status);
+  // Block starting THIS trip only while it's still ASSIGNED and another trip is running.
+  // Once this trip is itself the active one, the button becomes "Continue navigation".
+  const blockedByOtherTrip = trip?.status === 'ASSIGNED' && !!otherActiveTrip;
 
   const navButtonLabel = (() => {
     if (!trip) return 'Open live navigation';
@@ -275,13 +297,26 @@ export default function TripDetailScreen() {
         </View>
 
         {canOpenNav && (
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: tripId } })}
-          >
-            <Feather name="navigation" size={16} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.actionBtnText}>{navButtonLabel}</Text>
-          </TouchableOpacity>
+          blockedByOtherTrip ? (
+            <View>
+              <View style={[styles.actionBtn, styles.actionBtnDisabled]}>
+                <Feather name="lock" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                <Text style={[styles.actionBtnText, { color: '#9CA3AF' }]}>Finish your active trip first</Text>
+              </View>
+              <Text style={styles.blockedHint}>
+                You already have trip #{otherActiveTrip.id} in progress. You can view this trip’s
+                details, but you can only start one trip at a time.
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: tripId } })}
+            >
+              <Feather name="navigation" size={16} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.actionBtnText}>{navButtonLabel}</Text>
+            </TouchableOpacity>
+          )
         )}
 
         <View style={styles.dangerCard}>
@@ -378,6 +413,11 @@ const makeStyles = (C) => StyleSheet.create({
     shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
   actionBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff', letterSpacing: -0.2 },
+  actionBtnDisabled: { backgroundColor: C.border, shadowOpacity: 0, elevation: 0 },
+  blockedHint: {
+    fontFamily: 'Inter-Regular', fontSize: 12.5, color: C.text3,
+    textAlign: 'center', lineHeight: 18, marginTop: 8, paddingHorizontal: 8,
+  },
   dangerCard: { backgroundColor: C.redLight, borderWidth: 1, borderColor: C.redLight, borderRadius: 14, padding: 16, gap: 4 },
   dangerTitle: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1 },
   dangerSub: { fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3, marginBottom: 10 },
