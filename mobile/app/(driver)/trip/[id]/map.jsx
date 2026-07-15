@@ -272,6 +272,8 @@ export default function LiveMapScreen() {
   const podUploaded          = useTripStore((s) => s.podUploaded);
   const preDispatchUploaded  = useTripStore((s) => s.preDispatchUploaded);
   const resetTripStore       = useTripStore((s) => s.resetTripStore);
+  // Stops that already have an optional POD captured this trip — hides the button once done.
+  const stopPods             = useTripStore((s) => s.stopPods);
   // Snapshot whether a camera was already saved for this trip (decided once, on mount):
   // if so we restore that exact view instead of auto-zooming to the driver.
   const hasSavedCameraRef = useRef(null);
@@ -1133,7 +1135,15 @@ export default function LiveMapScreen() {
       ]);
       if (originGeo) { originLat = originGeo.latitude; originLng = originGeo.longitude; }
       if (destGeo)   { destLat   = destGeo.latitude;   destLng   = destGeo.longitude; }
-      const stopCoords = stopGeos.filter(Boolean);
+      // Keep each stop's id/name alongside its coords (zipped by index BEFORE filtering,
+      // so nulls don't misalign) — the map needs them to offer/tag an optional per-stop POD.
+      const stopCoords = stopGeos
+        .map((coord, i) => (coord ? {
+          ...coord,
+          id:   rawStops[i]?.id ?? null,
+          name: rawStops[i]?.name || rawStops[i]?.locationName || null,
+        } : null))
+        .filter(Boolean);
 
       // Patch trip + endpoints, stash for reroutes
       tripData.originLat = originLat; tripData.originLng = originLng;
@@ -1319,6 +1329,28 @@ export default function LiveMapScreen() {
   const handleStart = useCallback(async () => {
     if (isStarting) return;
     setIsStarting(true);
+
+    // Enforce one-started-trip-at-a-time. If another of the driver's trips is already
+    // in progress, block starting this one. Fail-open on a network error so a legitimate
+    // start isn't blocked when offline (the details screen guards this too, and start is
+    // best-effort — backend status reconciles).
+    try {
+      const res = await api.get('/trips');
+      const raw = res.data;
+      const all = Array.isArray(raw) ? raw
+        : Array.isArray(raw?.content) ? raw.content
+        : Array.isArray(raw?.data) ? raw.data
+        : [];
+      const blocking = all.find((t) =>
+        String(t.id) !== tripId && ['STARTED', 'EN_ROUTE', 'ARRIVED'].includes(t.status)
+      );
+      if (blocking) {
+        showToast(`Finish trip #${blocking.id} before starting another.`);
+        setIsStarting(false);
+        return;
+      }
+    } catch { /* fail-open — proceed with start */ }
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
       const pos = positionRef.current;
@@ -1492,6 +1524,24 @@ export default function LiveMapScreen() {
       ? { label: 'Capture pre-dispatch photo', icon: 'camera', active: true, onPress: handleCapturePreDispatch, bg: C.navyPrimary }
       : { label: `Move to pickup — ${formatDistance(distanceToDest)}`, icon: 'navigation', active: true, onPress: handleReCenter, bg: C.navyPrimary };
   })();
+
+  // Optional per-stop POD: while driving (TRIP phase), if the driver is within the
+  // geofence of a stop that doesn't yet have a POD, surface a skippable "Deliver POD"
+  // button. Derived from live position so it appears/disappears as they pass each stop,
+  // without touching the hot GPS callback. A stop with no id can't be de-duped/tagged,
+  // so it's skipped here.
+  const nearStop = useMemo(() => {
+    if (phase !== PHASE.TRIP || !currentPosition || !stopMarkers.length) return null;
+    for (const s of stopMarkers) {
+      if (s.id == null || stopPods.includes(s.id)) continue;
+      const d = haversineMetres(
+        currentPosition.latitude, currentPosition.longitude,
+        Number(s.latitude), Number(s.longitude),
+      );
+      if (d <= ARRIVE_RADIUS) return s;
+    }
+    return null;
+  }, [phase, currentPosition, stopMarkers, stopPods]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // PERMISSION DENIED SCREEN
@@ -1887,6 +1937,28 @@ export default function LiveMapScreen() {
             </View>
           )}
 
+          {/* Optional per-stop POD — only while near an as-yet-undelivered stop */}
+          {nearStop && (
+            <Pressable
+              style={styles.stopPodBtn}
+              onPress={() => router.push({
+                pathname: '/(driver)/delivery/pod/[id]',
+                params: {
+                  id: tripId,
+                  stopId:  String(nearStop.id),
+                  stopLat: String(nearStop.latitude),
+                  stopLng: String(nearStop.longitude),
+                  stopName: nearStop.name || '',
+                },
+              })}
+            >
+              <Feather name="camera" size={16} color={C.navyPrimary} />
+              <Text style={styles.stopPodBtnText} numberOfLines={1}>
+                Deliver POD{nearStop.name ? ` — ${nearStop.name}` : ' for this stop'} (optional)
+              </Text>
+            </Pressable>
+          )}
+
           {/* Phase-aware primary button: (distance hint) → Ready → Start → Mark arrived */}
           <Animated.View style={arrivedBtnStyle}>
             <Pressable
@@ -2133,6 +2205,15 @@ const makeStyles = (C) => StyleSheet.create({
     shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
   },
   arriveBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 15, letterSpacing: -0.2 },
+
+  // Optional per-stop POD button (secondary — sits above the primary action)
+  stopPodBtn: {
+    height: 46, borderRadius: 14, borderWidth: 1.5, borderColor: C.navyPrimary,
+    backgroundColor: C.accentSoft,
+    flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10, paddingHorizontal: 12,
+  },
+  stopPodBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.navyPrimary, flexShrink: 1 },
 
   // Incident button
   incidentBtn: {
