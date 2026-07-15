@@ -12,9 +12,11 @@ import Svg, { Circle } from 'react-native-svg';
 import RAnimated, {
   useSharedValue, useAnimatedProps, withTiming,
 } from 'react-native-reanimated';
+import api from '../../../../services/api_1';
 import { mediaService } from '../../../../services/mediaService_3';
 import { useTripStore } from '../../../../store/tripStore_2';
 import { useTheme } from '../../../../theme/ThemeContext';
+import { haversineMetres, GEOFENCE_RADIUS_M } from '../../../../utils/geo';
 
 const AnimatedImage  = Animated.createAnimatedComponent(Image);
 const AnimatedCircle = RAnimated.createAnimatedComponent(Circle);
@@ -92,9 +94,19 @@ export default function PODScreen() {
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const ringStyles = useMemo(() => makeRingStyles(C), [C]);
-  const { id }  = useLocalSearchParams();
-  const tripId  = String(id).replace('_3', '');
+  const { id, stopId, stopLat, stopLng, stopName } = useLocalSearchParams();
+  const tripId  = String(id);
   const setPodUploaded = useTripStore((s) => s.setPodUploaded);
+  const addStopPod     = useTripStore((s) => s.addStopPod);
+
+  // Stop mode: an OPTIONAL proof-of-delivery for an intermediate stop, launched from
+  // the map when the driver is near that stop. Geofenced to the stop (not the final
+  // destination), uploaded as STOP_POD, and it never unlocks final trip completion.
+  const isStopMode = stopId != null && String(stopId) !== '';
+  const stopIdNum  = isStopMode ? Number(stopId) : null;
+  const stopCoords = isStopMode && stopLat != null && stopLng != null
+    ? { lat: Number(stopLat), lng: Number(stopLng) }
+    : null;
 
   const [permission, requestPermission] = useCameraPermissions();
   const [photo,          setPhoto]          = useState(null);
@@ -103,6 +115,11 @@ export default function PODScreen() {
   const [uploadDone,     setUploadDone]     = useState(false);
   const [facing,         setFacing]         = useState('back');
   const [error,          setError]          = useState('');
+  const [trip,           setTrip]           = useState(null);
+
+  useEffect(() => {
+    api.get(`/trips/${tripId}`).then((r) => setTrip(r.data)).catch(() => {});
+  }, [tripId]);
 
   const cameraRef      = useRef(null);
   const btnScale       = useRef(new Animated.Value(1)).current;
@@ -158,12 +175,45 @@ export default function PODScreen() {
         const loc = await Location.getCurrentPositionAsync({});
         coords = loc.coords;
       }
+
+      // Fail closed: POD is proof of delivery at a location, so a missing GPS fix
+      // blocks the upload rather than accepting an untagged (unverifiable) photo.
+      if (!coords) {
+        showError('Enable location services to submit this photo.');
+        setLoading(false);
+        setUploadProgress({ step: '', percent: 0 });
+        return;
+      }
+
+      // Geofence against the stop (stop mode) or the final destination (normal POD).
+      const target = isStopMode
+        ? stopCoords
+        : (trip?.destLat != null && trip?.destLng != null
+            ? { lat: Number(trip.destLat), lng: Number(trip.destLng) }
+            : null);
+      if (target != null) {
+        const distance = haversineMetres(
+          coords.latitude, coords.longitude, target.lat, target.lng,
+        );
+        if (distance > GEOFENCE_RADIUS_M) {
+          const where = isStopMode ? 'this stop' : 'the destination';
+          showError(`You must be within ${GEOFENCE_RADIUS_M}m of ${where} to submit this photo. You're ${Math.round(distance)}m away.`);
+          setLoading(false);
+          setUploadProgress({ step: '', percent: 0 });
+          return;
+        }
+      }
+
       await mediaService.fullUploadFlow(
-        parseInt(tripId), 'POD', photo, coords,
+        parseInt(tripId), isStopMode ? 'STOP_POD' : 'POD', photo, coords,
         (p) => setUploadProgress(p),
+        isStopMode ? { stopId: stopIdNum } : undefined,
       );
       setUploadDone(true);
-      setPodUploaded(true);
+      // A stop POD is optional and must NOT satisfy the final-destination POD gate —
+      // only mark it as a captured stop; the required POD still sets podUploaded.
+      if (isStopMode) addStopPod(stopIdNum);
+      else setPodUploaded(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => router.back(), 950);
     } catch {
@@ -214,14 +264,25 @@ export default function PODScreen() {
           <Feather name="x" size={20} color="#fff" />
         </TouchableOpacity>
         <View style={styles.stepInfo}>
-          <Text style={styles.stepBadge}>Step 4 of 5</Text>
+          <Text style={styles.stepBadge}>{isStopMode ? 'Stop delivery' : 'Step 4 of 5'}</Text>
           <Text style={styles.stepTitle}>Proof of Delivery</Text>
-          <Text style={styles.stepHint}>Photo of the delivered cargo / signed receipt</Text>
+          <Text style={styles.stepHint}>
+            {isStopMode
+              ? (stopName ? `Delivery at ${stopName}` : 'Delivery at this stop')
+              : 'Photo of the delivered cargo / signed receipt'}
+          </Text>
         </View>
-        <View style={styles.podBadge}>
-          <Feather name="shield-off" size={12} color={C.amber} />
-          <Text style={styles.podBadgeText}>Required to complete trip</Text>
-        </View>
+        {isStopMode ? (
+          <View style={[styles.podBadge, { backgroundColor: 'rgba(5,150,105,0.2)' }]}>
+            <Feather name="check-circle" size={12} color={C.green} />
+            <Text style={[styles.podBadgeText, { color: C.green }]}>Optional — you can skip this</Text>
+          </View>
+        ) : (
+          <View style={styles.podBadge}>
+            <Feather name="shield-off" size={12} color={C.amber} />
+            <Text style={styles.podBadgeText}>Required to complete trip</Text>
+          </View>
+        )}
       </View>
 
       {/* Error toast */}

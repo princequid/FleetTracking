@@ -31,7 +31,7 @@ export default function IncidentReportScreen() {
   const TYPES = useMemo(() => incidentTypes(C), [C]);
   const URGENCIES = useMemo(() => urgencyLevels(C), [C]);
   const { tripId } = useLocalSearchParams();
-  const actualTripId = String(tripId).replace('_3', '');
+  const actualTripId = String(tripId);
 
   const [type, setType]       = useState('');
   const [urgency, setUrgency] = useState('');

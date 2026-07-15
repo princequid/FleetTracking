@@ -1,6 +1,8 @@
 package com.fleettrack.trip.model.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.util.List;
@@ -26,5 +28,7 @@ public class CreateTripRequest {
     private Double destLng;
 
     /** Optional ordered waypoints between origin and destination (max 7). */
+    @Valid
+    @Size(max = 7, message = "A trip may have at most 7 stops")
     private List<StopRequest> stops;
 }

@@ -12,12 +12,16 @@ public class MediaServiceClient {
     private final RestTemplate restTemplate;
 
     public boolean hasPodPhoto(Long tripId) {
+        return Boolean.TRUE.equals(getPodStatus(tripId).getHasPOD());
+    }
+
+    public MediaPodStatusResponse getPodStatus(Long tripId) {
         try {
             MediaPodStatusResponse response = restTemplate.getForObject(
                     "http://media-service/photos/trips/" + tripId + "/status",
                     MediaPodStatusResponse.class
             );
-            return response != null && Boolean.TRUE.equals(response.getHasPOD());
+            return response != null ? response : new MediaPodStatusResponse();
         } catch (Exception e) {
             throw new RuntimeException("Media service unavailable — cannot verify POD photo");
         }

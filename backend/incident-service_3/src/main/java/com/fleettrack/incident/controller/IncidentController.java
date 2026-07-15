@@ -8,6 +8,8 @@ import com.fleettrack.incident.service.IncidentService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,15 +33,21 @@ public class IncidentController {
             HttpServletRequest httpRequest) {
         requireRole(httpRequest, CREATE_ROLES);
         Long driverId = extractUserId(httpRequest);
+        // NOTE: tripId ownership is not validated here — this service has no client for
+        // trip-service (only a MediaServiceClient stub exists), so there is currently no
+        // low-risk way to verify request.getTripId() actually belongs to driverId. Any
+        // DRIVER caller can report an incident against an arbitrary tripId until a
+        // trip-service client is wired up.
         return ResponseEntity.status(HttpStatus.CREATED).body(incidentService.reportIncident(request, driverId));
     }
 
     @GetMapping
     public ResponseEntity<List<IncidentResponse>> getIncidents(
             @RequestParam(required = false) IncidentStatus status,
+            @PageableDefault(size = 50) Pageable pageable,
             HttpServletRequest httpRequest) {
         requireRole(httpRequest, LIST_ROLES);
-        return ResponseEntity.ok(incidentService.getAllIncidents(status));
+        return ResponseEntity.ok(incidentService.getAllIncidents(status, pageable));
     }
 
     @GetMapping("/trips/{tripId}")

@@ -9,6 +9,7 @@ import com.fleettrack.media.service.MediaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +23,9 @@ import java.util.Map;
 public class MediaController {
 
     private final MediaService mediaService;
+
+    @Value("${internal.service.secret}")
+    private String internalServiceSecret;
 
     private static final List<String> DRIVER_ROLES = List.of("DRIVER");
     private static final List<String> ADMIN_DISPATCHER_ROLES = List.of("ADMIN", "DISPATCHER");
@@ -46,9 +50,20 @@ public class MediaController {
     }
 
     @GetMapping("/photos/trips/{id}/status")
-    public ResponseEntity<Map<String, Boolean>> getTripPhotoStatus(@PathVariable Long id) {
+    public ResponseEntity<Map<String, Object>> getTripPhotoStatus(
+            @PathVariable Long id,
+            HttpServletRequest httpRequest) {
+        requireRoleOrInternal(httpRequest, ADMIN_DISPATCHER_ROLES);
         boolean hasPOD = mediaService.hasPOD(id);
-        return ResponseEntity.ok(Map.of("hasPOD", hasPOD));
+        // Include the POD photo's own geotag (if any) so trip-service can verify it was
+        // actually captured near the destination before allowing trip completion.
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("hasPOD", hasPOD);
+        mediaService.getPodPhoto(id).ifPresent(photo -> {
+            body.put("lat", photo.getLat());
+            body.put("lng", photo.getLng());
+        });
+        return ResponseEntity.ok(body);
     }
 
     @GetMapping("/photos/trips/{id}")
@@ -79,11 +94,35 @@ public class MediaController {
         }
     }
 
+    // Allows trusted internal service-to-service calls (e.g. trip-service checking
+    // POD status before completing a trip) which carry no X-User-Role, in addition
+    // to normal gateway-proxied requests from an allowed role.
+    //
+    // NOTE: the gateway stamps X-Internal-Service-Key on EVERY proxied request,
+    // including a normal end user's own request, so the key alone can't distinguish
+    // a genuine bare service-to-service call from a gateway-proxied end-user request
+    // (which always also carries X-User-Role, per JwtAuthFilter). Both conditions are
+    // required, or this check is silently bypassed by any authenticated caller.
+    private void requireRoleOrInternal(HttpServletRequest request, List<String> allowedRoles) {
+        String internalKey = request.getHeader("X-Internal-Service-Key");
+        String role = request.getHeader("X-User-Role");
+        boolean genuinelyInternal = internalServiceSecret.equals(internalKey) && (role == null || role.isBlank());
+        if (genuinelyInternal) {
+            return;
+        }
+        requireRole(request, allowedRoles);
+    }
+
     private PhotoResponse toResponse(Photo photo) {
+        // Generate a fresh, correctly-hosted view link on every request rather than
+        // trusting the URL stored at upload time — falls back to the stored value only
+        // if MinIO is unreachable, so a transient hiccup doesn't blank out the photo list.
+        String viewUrl = mediaService.getPhotoViewUrl(photo.getPhotoKey());
         return PhotoResponse.builder()
                 .id(photo.getId())
                 .tripId(photo.getTripId())
-                .photoUrl(photo.getPhotoUrl())
+                .stopId(photo.getStopId())
+                .photoUrl(viewUrl != null ? viewUrl : photo.getPhotoUrl())
                 .photoType(photo.getPhotoType())
                 .sha256Hash(photo.getSha256Hash())
                 .uploadedAt(photo.getUploadedAt())
