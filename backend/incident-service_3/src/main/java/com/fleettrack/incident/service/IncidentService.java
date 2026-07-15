@@ -8,6 +8,7 @@ import com.fleettrack.incident.model.entity.Incident;
 import com.fleettrack.incident.model.enums.IncidentStatus;
 import com.fleettrack.incident.repository.IncidentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,11 +39,11 @@ public class IncidentService {
         return toResponse(saved);
     }
 
-    public List<IncidentResponse> getAllIncidents(IncidentStatus status) {
+    public List<IncidentResponse> getAllIncidents(IncidentStatus status, Pageable pageable) {
         if (status == null) {
-            return incidentRepository.findAll().stream().map(this::toResponse).toList();
+            return incidentRepository.findAll(pageable).getContent().stream().map(this::toResponse).toList();
         }
-        return incidentRepository.findByStatus(status).stream().map(this::toResponse).toList();
+        return incidentRepository.findByStatus(status, pageable).stream().map(this::toResponse).toList();
     }
 
     public List<IncidentResponse> getIncidentsByTrip(Long tripId) {

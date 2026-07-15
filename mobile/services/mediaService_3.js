@@ -41,16 +41,18 @@ export const mediaService = {
     return true;
   },
 
-  async registerPhoto(tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt) {
+  async registerPhoto(tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt, stopId) {
     const response = await api.post('/media/photos', {
-      tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt,
+      tripId, stopId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt,
     });
     return response.data;
   },
 
   // Main entry point called by camera screens.
   // onProgress: ({ step: string, percent: number }) => void
-  async fullUploadFlow(tripId, photoType, fileUri, location, onProgress) {
+  // options.stopId: set only for an (optional) STOP_POD captured at an intermediate stop.
+  async fullUploadFlow(tripId, photoType, fileUri, location, onProgress, options = {}) {
+    const { stopId = null } = options;
     try {
       onProgress?.({ step: 'Preparing upload...', percent: 10 });
 
@@ -67,7 +69,7 @@ export const mediaService = {
       const { latitude, longitude } = location || {};
       const result = await this.registerPhoto(
         tripId, photoKey, photoType, 'image/jpeg',
-        fileInfo.size || 0, latitude, longitude, new Date().toISOString(),
+        fileInfo.size || 0, latitude, longitude, new Date().toISOString(), stopId,
       );
 
       onProgress?.({ step: 'Complete', percent: 100 });
@@ -77,7 +79,7 @@ export const mediaService = {
       try {
         const queue = await readQueue();
         queue.push({
-          tripId, photoType, fileUri,
+          tripId, photoType, fileUri, stopId,
           lat: location?.latitude, lng: location?.longitude,
           takenAt: new Date().toISOString(),
           retryCount: 0,
@@ -103,6 +105,7 @@ export const mediaService = {
           item.tripId, item.photoType, item.fileUri,
           item.lat ? { latitude: item.lat, longitude: item.lng } : null,
           null,
+          { stopId: item.stopId ?? null },
         );
       } catch {
         remaining.push({ ...item, retryCount: (item.retryCount || 0) + 1 });

@@ -5,9 +5,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import api from '../../../../services/api_1';
-import { useTripStore } from '../../../../store/tripStore_2';
 import { useTheme } from '../../../../theme/ThemeContext';
 
 const { width } = Dimensions.get('window');
@@ -127,54 +125,58 @@ function RouteStop({ color, tag, name, description, number, last, styles }) {
   );
 }
 
+// This screen is now READ-ONLY regarding trip progression — Start/Arrive/Capture
+// photos/Complete all live on the live-navigation map as one sequential button, so
+// there's a single source of truth for those (location-gated) actions instead of two
+// screens that could drift out of sync. This page shows route/status/instructions
+// and hands off to the map for anything that advances the trip.
 export default function TripDetailScreen() {
   const router = useRouter();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const { id } = useLocalSearchParams();
-  const tripId = String(id).replace('_2', '');
+  const tripId = String(id);
 
-  const { podUploaded } = useTripStore();
-  const [trip, setTrip]           = useState(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [trip, setTrip] = useState(null);
+  // Another of the driver's trips that's already in progress (started but not finished).
+  // Only one trip may be STARTED at a time, so an ASSIGNED trip can't be started while
+  // this is set — the driver can still view it, just not move to pickup / start it.
+  const [otherActiveTrip, setOtherActiveTrip] = useState(null);
 
   useEffect(() => {
     api.get(`/trips/${tripId}`)
       .then((r) => setTrip(r.data))
       .catch(() => {});
+
+    // /trips is scoped to the signed-in driver server-side, so this only sees their trips.
+    api.get('/trips')
+      .then((r) => {
+        const raw = r.data;
+        const all = Array.isArray(raw) ? raw
+          : Array.isArray(raw?.content) ? raw.content
+          : Array.isArray(raw?.data) ? raw.data
+          : [];
+        const other = all.find((t) =>
+          String(t.id) !== tripId && ['STARTED', 'EN_ROUTE', 'ARRIVED'].includes(t.status)
+        );
+        setOtherActiveTrip(other || null);
+      })
+      .catch(() => {});
   }, [tripId]);
 
   const activeStep = trip ? statusToStep(trip.status) : 0;
+  const canOpenNav = trip && !['DELIVERED', 'CANCELLED'].includes(trip.status);
+  // Block starting THIS trip only while it's still ASSIGNED and another trip is running.
+  // Once this trip is itself the active one, the button becomes "Continue navigation".
+  const blockedByOtherTrip = trip?.status === 'ASSIGNED' && !!otherActiveTrip;
 
-  const handleAction = async (action) => {
-    if (actionLoading) return;
-    setActionLoading(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    try {
-      if (action === 'start')   await api.put(`/trips/${tripId}/start`);
-      if (action === 'arrive')  await api.put(`/trips/${tripId}/arrive`);
-      if (action === 'complete') {
-        if (!podUploaded) return;
-        await api.put(`/trips/${tripId}/complete`);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.push(`/(driver)/trip/${tripId}/complete`);
-        return;
-      }
-      const r = await api.get(`/trips/${tripId}`);
-      setTrip(r.data);
-    } catch (_) {}
-    finally { setActionLoading(false); }
-  };
-
-  const actionLabel = (() => {
-    if (!trip) return '–';
-    if (trip.status === 'ASSIGNED') return 'Start trip';
-    if (trip.status === 'STARTED' || trip.status === 'EN_ROUTE') return 'Mark arrived';
-    if (trip.status === 'ARRIVED') return podUploaded ? 'Complete trip' : 'Capture POD first';
-    return 'View summary';
+  const navButtonLabel = (() => {
+    if (!trip) return 'Open live navigation';
+    if (trip.status === 'ASSIGNED') return 'Move to pickup';
+    if (trip.status === 'STARTED' || trip.status === 'EN_ROUTE') return 'Continue navigation';
+    if (trip.status === 'ARRIVED') return 'Continue to complete trip';
+    return 'Open live navigation';
   })();
-
-  const canAct = trip && !['DELIVERED', 'CANCELLED'].includes(trip.status);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.navyDark }}>
@@ -294,33 +296,28 @@ export default function TripDetailScreen() {
           </View>
         </View>
 
-        {canAct && (
-          <TouchableOpacity
-            style={[styles.actionBtn, actionLoading && { opacity: 0.7 }]}
-            onPress={() => {
-              if (trip.status === 'ASSIGNED') handleAction('start');
-              else if (['STARTED', 'EN_ROUTE'].includes(trip.status)) handleAction('arrive');
-              else if (trip.status === 'ARRIVED') {
-                if (!podUploaded) router.push(`/(driver)/delivery/pod/${tripId}`);
-                else handleAction('complete');
-              }
-            }}
-            disabled={actionLoading}
-          >
-            <Text style={styles.actionBtnText}>{actionLoading ? '...' : actionLabel}</Text>
-          </TouchableOpacity>
+        {canOpenNav && (
+          blockedByOtherTrip ? (
+            <View>
+              <View style={[styles.actionBtn, styles.actionBtnDisabled]}>
+                <Feather name="lock" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                <Text style={[styles.actionBtnText, { color: '#9CA3AF' }]}>Finish your active trip first</Text>
+              </View>
+              <Text style={styles.blockedHint}>
+                You already have trip #{otherActiveTrip.id} in progress. You can view this trip’s
+                details, but you can only start one trip at a time.
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: tripId } })}
+            >
+              <Feather name="navigation" size={16} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.actionBtnText}>{navButtonLabel}</Text>
+            </TouchableOpacity>
+          )
         )}
-
-        <View style={styles.cameraRow}>
-          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pre-dispatch/${tripId}`)}>
-            <Feather name="camera" size={16} color={C.teal} />
-            <Text style={styles.cameraBtnText}>Pre-dispatch</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.cameraBtn} onPress={() => router.push(`/(driver)/delivery/pod/${tripId}`)}>
-            <Feather name="image" size={16} color={C.green} />
-            <Text style={styles.cameraBtnText}>Capture POD</Text>
-          </TouchableOpacity>
-        </View>
 
         <View style={styles.dangerCard}>
           <Text style={styles.dangerTitle}>Having a problem?</Text>
@@ -409,19 +406,18 @@ const makeStyles = (C) => StyleSheet.create({
   stepDoneText:   { fontFamily: 'Inter-Regular', fontSize: 12, color: C.green, marginTop: 2 },
   stepActiveText: { fontFamily: 'Inter-Medium', fontSize: 12, color: C.navyPrimary, marginTop: 2 },
   actionBtn: {
+    flexDirection: 'row',
     backgroundColor: C.teal, borderRadius: 14, height: 54,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: C.teal, shadowOpacity: 0.25, shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
   actionBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff', letterSpacing: -0.2 },
-  cameraRow: { flexDirection: 'row', gap: 10 },
-  cameraBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: C.surface, borderRadius: 12, paddingVertical: 14,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  actionBtnDisabled: { backgroundColor: C.border, shadowOpacity: 0, elevation: 0 },
+  blockedHint: {
+    fontFamily: 'Inter-Regular', fontSize: 12.5, color: C.text3,
+    textAlign: 'center', lineHeight: 18, marginTop: 8, paddingHorizontal: 8,
   },
-  cameraBtnText: { fontFamily: 'Inter-SemiBold', fontSize: 13, color: C.text1 },
   dangerCard: { backgroundColor: C.redLight, borderWidth: 1, borderColor: C.redLight, borderRadius: 14, padding: 16, gap: 4 },
   dangerTitle: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1 },
   dangerSub: { fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3, marginBottom: 10 },

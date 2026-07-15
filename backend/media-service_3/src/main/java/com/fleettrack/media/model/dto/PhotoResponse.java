@@ -11,6 +11,7 @@ import java.time.Instant;
 public class PhotoResponse {
     private Long id;
     private Long tripId;
+    private Long stopId;
     private String photoUrl;
     private PhotoType photoType;
     private String sha256Hash;

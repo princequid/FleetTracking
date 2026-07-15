@@ -43,6 +43,12 @@ public class NotificationService {
         });
     }
 
+    /** Used by the controller to authorize PUT /{id}/read against the calling user. */
+    @Transactional(readOnly = true)
+    public boolean belongsToRecipient(Long id, Long recipientId) {
+        return notificationRepository.existsByIdAndRecipientId(id, recipientId);
+    }
+
     @Transactional
     public void markAllRead(Long recipientId) {
         List<Notification> unread = notificationRepository.findByRecipientIdAndIsReadFalse(recipientId);

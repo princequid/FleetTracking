@@ -77,44 +77,6 @@ export default function IncidentsPage() {
       incidents.filter((i) => {
         if (incidentIdFilter && String(i.id) !== String(incidentIdFilter)) return false;
         if (severityFilter !== "All" && i.severity !== severityFilter) return false;
-        const SEVERITIES = ["All", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
-        const STATUSES = ["All", "OPEN", "UNDER_REVIEW", "RESOLVED", "DISMISSED"];
-
-        const SEVERITY_BADGE = {
-          LOW: "default",
-          MEDIUM: "info",
-          HIGH: "warning",
-          CRITICAL: "danger",
-        };
-
-        const STATUS_BADGE = {
-          OPEN: "danger",
-          UNDER_REVIEW: "warning",
-          RESOLVED: "success",
-          DISMISSED: "default",
-        };
-
-        const STATUS_LABELS = {
-          OPEN: "Open",
-          UNDER_REVIEW: "Under Review",
-          RESOLVED: "Resolved",
-          DISMISSED: "Dismissed",
-        };
-
-        function timeAgo(iso) {
-          if (!iso) return "—";
-          const diff = Date.now() - new Date(iso).getTime();
-          const m = Math.floor(diff / 60000);
-          if (m < 60) return `${m}m ago`;
-          const h = Math.floor(m / 60);
-          if (h < 24) return `${h}h ago`;
-          return `${Math.floor(h / 24)}d ago`;
-        }
-
-        function labelify(str) {
-          if (!str) return "—";
-          return str.charAt(0) + str.slice(1).toLowerCase().replace(/_/g, " ");
-        }
         if (statusFilter !== "All" && i.status !== statusFilter) return false;
         return true;
       }),

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useLocation } from "react-router-dom";
 import NotificationBell from "./NotificationBell";
 import ThemeToggle from "./ThemeToggle";
-import { SearchIcon } from "./Icons";
+import { SearchIcon, MenuIcon } from "./Icons";
 import GlobalSearchModal from "./GlobalSearchModal";
 
 const PAGE_TITLES = {
@@ -22,7 +22,7 @@ function getPageTitle(pathname) {
   return PAGE_TITLES[base] || "FleetTrack";
 }
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick }) {
   const location = useLocation();
   const title = getPageTitle(location.pathname);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -31,6 +31,14 @@ export default function Navbar() {
     <>
       <header className="navbar">
         <div className="navbar-left">
+          <button
+            className="navbar-hamburger"
+            type="button"
+            aria-label="Open navigation menu"
+            onClick={onMenuClick}
+          >
+            <MenuIcon size={20} />
+          </button>
           <span className="navbar-title">{title}</span>
         </div>
         <div className="navbar-actions">

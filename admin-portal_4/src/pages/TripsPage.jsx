@@ -49,14 +49,19 @@ export default function TripsPage() {
   const counts = useMemo(() => {
     const base = { All: trips.length };
     trips.forEach((trip) => {
-      const label = FILTER_TABS.find((tab) => tab !== "All" && tab.toUpperCase() === trip.status);
+      const label = FILTER_TABS.find(
+        (tab) => tab !== "All" && tab.toUpperCase().replace(/\s+/g, "_") === trip.status
+      );
       if (label) base[label] = (base[label] || 0) + 1;
     });
     return base;
   }, [trips]);
 
   const filteredTrips = useMemo(() => {
-    let result = filter === "All" ? trips : trips.filter((t) => t.status === filter.toUpperCase());
+    let result =
+      filter === "All"
+        ? trips
+        : trips.filter((t) => t.status === filter.toUpperCase().replace(/\s+/g, "_"));
     const q = debouncedSearch.trim().toLowerCase();
     if (q) {
       result = result.filter((t) => {

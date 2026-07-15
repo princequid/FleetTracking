@@ -13,8 +13,10 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class JwtAuthFilter implements GlobalFilter, Ordered {
@@ -54,6 +56,7 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 .header("X-Internal-Service-Key", internalServiceSecret)
                 .retrieve()
                 .bodyToMono(Map.class)
+                .timeout(Duration.ofSeconds(5))
                 .flatMap(body -> {
                     String userId = String.valueOf(body.get("userId"));
                     String role = (String) body.get("role");
@@ -72,6 +75,10 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 })
                 .onErrorResume(WebClientResponseException.Unauthorized.class, ex -> {
                     log.debug("Token validation returned 401");
+                    return unauthorized(exchange);
+                })
+                .onErrorResume(TimeoutException.class, ex -> {
+                    log.warn("Token validation timed out for path: {}", path);
                     return unauthorized(exchange);
                 })
                 .onErrorResume(ex -> {
