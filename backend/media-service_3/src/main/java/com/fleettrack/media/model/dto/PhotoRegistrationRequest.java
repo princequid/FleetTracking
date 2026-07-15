@@ -13,6 +13,10 @@ public class PhotoRegistrationRequest {
     @NotNull
     private Long tripId;
 
+    // Optional — only sent for STOP_POD photos, to record which intermediate stop the
+    // proof-of-delivery belongs to. Ignored (null) for destination POD / pre-dispatch.
+    private Long stopId;
+
     @NotNull
     private String photoKey;
 

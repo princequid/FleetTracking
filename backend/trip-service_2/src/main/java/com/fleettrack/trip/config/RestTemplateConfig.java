@@ -5,6 +5,7 @@ import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
@@ -15,10 +16,19 @@ public class RestTemplateConfig {
     @Value("${internal.service.secret}")
     private String internalServiceSecret;
 
+    // A hung/slow driver-service, vehicle-service, or media-service call must not block
+    // the calling thread indefinitely — cap connect and read waits explicitly.
+    private static final int CONNECT_TIMEOUT_MS = 5_000;
+    private static final int READ_TIMEOUT_MS = 10_000;
+
     @Bean
     @LoadBalanced
     public RestTemplate restTemplate() {
-        RestTemplate restTemplate = new RestTemplate();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        requestFactory.setReadTimeout(READ_TIMEOUT_MS);
+
+        RestTemplate restTemplate = new RestTemplate(requestFactory);
         restTemplate.setInterceptors(List.of(internalServiceKeyInterceptor()));
         return restTemplate;
     }

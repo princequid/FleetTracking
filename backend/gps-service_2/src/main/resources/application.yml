@@ -49,6 +49,14 @@ internal:
   service:
     secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
 
+app:
+  cors:
+    # Origins allowed to open the /ws STOMP endpoint. Mirrors api-gateway_1's CorsConfig
+    # (admin-portal_4 Vite dev server on 5173, plus the 3000 fallback already allowed
+    # there). Override with a comma-separated list via APP_CORS_ALLOWED_ORIGINS once a
+    # deployed origin exists.
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000}
+
 logging:
   level:
     com.fleettrack.gps: DEBUG

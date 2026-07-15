@@ -682,10 +682,31 @@ h1 {
     min-height: 100vh;
   }
 
+  /* Off-canvas nav: slides in over the content instead of dumping the full menu
+     inline above the page. Toggled by the navbar hamburger; Layout owns the state. */
   .sidebar {
-    position: relative;
-    width: 100%;
-    height: auto;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    max-width: 85vw;
+    height: 100vh;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform var(--transition-base);
+    box-shadow: var(--shadow-xl);
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 47, 0.5);
+    z-index: 190;
+    animation: fadeSlideUp var(--transition-fast) both;
   }
 
   .app-main {
@@ -698,6 +719,24 @@ h1 {
 
   .navbar {
     padding: 0 16px;
+  }
+
+  .navbar-hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--color-navy-dark);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+  }
+
+  .navbar-hamburger:hover {
+    background: var(--color-surface);
   }
 
   .navbar-actions {
@@ -892,6 +931,38 @@ h1 {
   justify-content: center;
   background: var(--color-white);
   padding: 2rem;
+}
+
+/* Stack on narrow screens instead of squashing a fixed 55/45 split. The form (login-
+   right) is reordered ahead of the marketing panel so it's usable without scrolling. */
+@media (max-width: 768px) {
+  .login-split {
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .login-right {
+    order: -1;
+    flex-basis: auto;
+    padding: 2rem 1.5rem;
+  }
+
+  .login-left {
+    flex-basis: auto;
+    padding: 2.5rem 1.5rem;
+  }
+
+  .login-features {
+    gap: 0.85rem;
+  }
+}
+
+@media (max-width: 420px) {
+  /* On very small phones, the marketing panel is pure secondary content —
+     collapse it so the form is front and center without extra scrolling. */
+  .login-left {
+    display: none;
+  }
 }
 
 .login-card {
@@ -2324,6 +2395,52 @@ h1 {
   display: flex;
   flex-direction: column;
 }
+
+/* Geographic mini-map: origin/stops/destination as colored pins + route line,
+   mirroring the driver app's live map so the product reads consistently. */
+.trip-route-map {
+  height: 260px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-top: var(--space-5);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--transition-base);
+}
+
+.trip-route-map:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.trip-route-map--loading,
+.trip-route-map--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 100%;
+  background: var(--color-surface);
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.trip-map-pin {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--color-white);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-white);
+}
+
+.trip-map-pin--start { background: var(--color-success); }
+.trip-map-pin--stop  { background: var(--color-navy); }
+.trip-map-pin--dest  { background: var(--color-danger); }
 
 .trip-route-node {
   display: flex;

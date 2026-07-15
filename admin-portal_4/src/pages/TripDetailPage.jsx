@@ -5,8 +5,10 @@ import { getDrivers } from "../services/driverService";
 import { getVehicles } from "../services/vehicleService";
 import { getTripPodStatus, getTripPhotos } from "../services/mediaService";
 import { useAuthStore } from "../store/authStore";
+import { isTripCancellable } from "../constants/tripStatus";
 import TripStatusBadge from "../components/trips/TripStatusBadge";
 import TripTimeline from "../components/trips/TripTimeline";
+import TripRouteMap from "../components/map/TripRouteMap";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import { ArrowLeftIcon } from "../components/common/Icons";
@@ -184,9 +186,7 @@ export default function TripDetailPage() {
   }
 
   const canCancel =
-    (role === "ADMIN" || role === "SUPER_ADMIN") &&
-    trip.status !== "CANCELLED" &&
-    trip.status !== "DELIVERED";
+    (role === "ADMIN" || role === "SUPER_ADMIN") && isTripCancellable(trip.status);
 
   return (
     <div className="trip-detail-layout">
@@ -259,6 +259,8 @@ export default function TripDetailPage() {
                 showLine={false}
               />
             </div>
+
+            <TripRouteMap trip={trip} />
           </div>
 
           {/* ── Meta grid (driver / vehicle / ETA / created) ── */}

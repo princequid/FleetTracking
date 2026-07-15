@@ -7,11 +7,16 @@ import com.fleettrack.gps.model.entity.GpsPing;
 import com.fleettrack.gps.repository.GpsPingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
@@ -26,12 +31,31 @@ public class GpsService {
     private final PlausibilityCheckService plausibilityCheckService;
     private final DeviationDetectionService deviationDetectionService;
 
+    // Cap for GET /trips/{tripId}/route — protects against pulling a trip's entire,
+    // unbounded ping history into memory in one response.
+    private static final int DEFAULT_ROUTE_LIMIT = 1000;
+    private static final int MAX_ROUTE_LIMIT = 5000;
+
     @Transactional
     public GpsPingResponse savePing(Long tripId, GpsPingRequest request, Long driverId) {
         if (request.getAccuracyM() != null && request.getAccuracyM() > 50) {
             throw new RuntimeException("Ping discarded — accuracy too low (" + request.getAccuracyM() + "m)");
         }
+        return processPing(tripId, request, driverId, false);
+    }
 
+    // Runs the same plausibility-check / deviation-detection / Redis-publish path as
+    // savePing for every ping in the batch (single shared helper, single surrounding
+    // @Transactional for the whole batch — not a per-ping transaction, and not a loop
+    // calling savePing(), which would re-open a transaction per ping).
+    @Transactional
+    public List<GpsPingResponse> saveBulkPings(Long tripId, List<GpsPingRequest> requests, Long driverId) {
+        return requests.stream()
+                .map(req -> processPing(tripId, req, driverId, true))
+                .toList();
+    }
+
+    private GpsPingResponse processPing(Long tripId, GpsPingRequest request, Long driverId, boolean isOfflinePing) {
         GpsPing ping = GpsPing.builder()
                 .tripId(tripId)
                 .driverId(driverId)
@@ -41,6 +65,7 @@ public class GpsService {
                 .heading(toBigDecimal(request.getHeading()))
                 .accuracyM(toBigDecimal(request.getAccuracyM()))
                 .recordedAt(request.getRecordedAt())
+                .isOfflinePing(isOfflinePing)
                 .build();
 
         GpsPing savedPing = gpsPingRepository.save(ping);
@@ -63,30 +88,13 @@ public class GpsService {
         return response;
     }
 
-    @Transactional
-    public List<GpsPingResponse> saveBulkPings(Long tripId, List<GpsPingRequest> requests, Long driverId) {
-        return requests.stream()
-                .map(req -> {
-                    GpsPing ping = GpsPing.builder()
-                            .tripId(tripId)
-                            .driverId(driverId)
-                            .lat(BigDecimal.valueOf(req.getLat()))
-                            .lng(BigDecimal.valueOf(req.getLng()))
-                            .speedKmh(toBigDecimal(req.getSpeedKmh()))
-                            .heading(toBigDecimal(req.getHeading()))
-                            .accuracyM(toBigDecimal(req.getAccuracyM()))
-                            .recordedAt(req.getRecordedAt())
-                            .isOfflinePing(true)
-                            .build();
-                    return mapToResponse(gpsPingRepository.save(ping));
-                })
-                .toList();
-    }
-
-    public List<GpsPingResponse> getRoute(Long tripId) {
-        return gpsPingRepository.findByTripIdOrderByRecordedAtAsc(tripId).stream()
-                .map(this::mapToResponse)
-                .toList();
+    public List<GpsPingResponse> getRoute(Long tripId, Integer limit) {
+        int cap = (limit != null && limit > 0) ? Math.min(limit, MAX_ROUTE_LIMIT) : DEFAULT_ROUTE_LIMIT;
+        List<GpsPing> pings = gpsPingRepository
+                .findByTripIdOrderByRecordedAtDesc(tripId, PageRequest.of(0, cap))
+                .getContent();
+        Collections.reverse(pings); // restore chronological (ascending) order for the route timeline
+        return pings.stream().map(this::mapToResponse).toList();
     }
 
     public GpsPingResponse getLatestPing(Long tripId) {
@@ -96,8 +104,8 @@ public class GpsService {
     }
 
     public List<GpsPingResponse> getActivePositions() {
-        Set<String> keys = redisTemplate.keys("trip:latest-ping:*");
-        if (keys == null || keys.isEmpty()) return List.of();
+        Set<String> keys = scanKeys("trip:latest-ping:*");
+        if (keys.isEmpty()) return List.of();
 
         List<GpsPingResponse> positions = new ArrayList<>();
         for (String key : keys) {
@@ -111,6 +119,22 @@ public class GpsService {
             }
         }
         return positions;
+    }
+
+    // Non-blocking cursor-based SCAN instead of KEYS — KEYS is an O(N) blocking scan of
+    // the entire keyspace and can stall Redis under load; SCAN walks it incrementally.
+    private Set<String> scanKeys(String pattern) {
+        Set<String> keys = new HashSet<>();
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(200).build();
+        redisTemplate.execute((RedisCallback<Object>) connection -> {
+            try (Cursor<byte[]> cursor = connection.scan(options)) {
+                while (cursor.hasNext()) {
+                    keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
+                }
+            }
+            return null;
+        });
+        return keys;
     }
 
     private void publishToRedis(Long tripId, GpsPingResponse response) {

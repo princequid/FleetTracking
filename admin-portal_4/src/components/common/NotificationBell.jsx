@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
+import { useFleetWebSocket } from "../../hooks/useFleetWebSocket";
 import {
   getNotifications,
   getUnreadCount,
@@ -10,7 +11,7 @@ import {
 } from "../../services/notificationService";
 import { BellIcon } from "./Icons";
 
-const WS_URL = "http://localhost:8080/ws";
+const NOTIFICATIONS_TOPIC = "/topic/admin/notifications";
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -104,12 +105,11 @@ function sortNotifications(items) {
 
 export default function NotificationBell() {
   const userId = useAuthStore((state) => state.userId);
-  const accessToken = useAuthStore((state) => state.accessToken);
   const navigate = useNavigate();
   const location = useLocation();
   const buttonRef = useRef(null);
   const panelRef = useRef(null);
-  const clientRef = useRef(null);
+  const { subscribeTopic, unsubscribeTopic } = useFleetWebSocket();
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -135,57 +135,27 @@ export default function NotificationBell() {
   }, [userId]);
 
   useEffect(() => {
-    if (!userId || !accessToken) return undefined;
+    if (!userId) return undefined;
 
-    let active = true;
-
-    // The realtime libs (stomp + sockjs) power a background connection, not first
-    // paint — load them dynamically so they stay off the critical path.
-    Promise.all([import("@stomp/stompjs"), import("sockjs-client")]).then(
-      ([{ Client }, sockjs]) => {
-        if (!active) return;
-        const SockJS = sockjs.default;
-
-        const client = new Client({
-          webSocketFactory: () => new SockJS(WS_URL),
-          connectHeaders: { Authorization: `Bearer ${accessToken}` },
-          reconnectDelay: 5000,
-          onConnect: () => {
-            client.subscribe("/topic/admin/notifications", (message) => {
-              try {
-                const incoming = JSON.parse(message.body);
-                const payload = Array.isArray(incoming) ? incoming : [incoming];
-                setNotifications((prev) => {
-                  const next = [...prev];
-                  payload.forEach((notification) => {
-                    if (!notification?.id) return;
-                    const index = next.findIndex((item) => item.id === notification.id);
-                    if (index >= 0) next[index] = { ...next[index], ...notification };
-                    else next.unshift(notification);
-                  });
-                  return sortNotifications(next);
-                });
-                setUnreadCount((count) => count + payload.filter(isUnread).length);
-              } catch {
-                // ignore malformed payloads
-              }
-            });
-          },
+    subscribeTopic(NOTIFICATIONS_TOPIC, (incoming) => {
+      const payload = Array.isArray(incoming) ? incoming : [incoming];
+      setNotifications((prev) => {
+        const next = [...prev];
+        payload.forEach((notification) => {
+          if (!notification?.id) return;
+          const index = next.findIndex((item) => item.id === notification.id);
+          if (index >= 0) next[index] = { ...next[index], ...notification };
+          else next.unshift(notification);
         });
-
-        client.activate();
-        clientRef.current = client;
-      }
-    );
+        return sortNotifications(next);
+      });
+      setUnreadCount((count) => count + payload.filter(isUnread).length);
+    });
 
     return () => {
-      active = false;
-      if (clientRef.current) {
-        clientRef.current.deactivate();
-        clientRef.current = null;
-      }
+      unsubscribeTopic(NOTIFICATIONS_TOPIC);
     };
-  }, [accessToken, userId]);
+  }, [userId, subscribeTopic, unsubscribeTopic]);
 
   useEffect(() => {
     if (!open || !userId) return undefined;

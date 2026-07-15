@@ -25,12 +25,6 @@ internal:
   service:
     secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
 
-gateway:
-  public-paths:
-    - /auth/login
-    - /auth/register
-    - /auth/refresh
-
 logging:
   level:
     org.springframework.cloud.gateway: INFO

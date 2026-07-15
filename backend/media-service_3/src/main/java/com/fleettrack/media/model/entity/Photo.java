@@ -25,6 +25,11 @@ public class Photo {
     @Column(name = "trip_id", nullable = false)
     private Long tripId;
 
+    // Set only for STOP_POD photos — identifies which intermediate stop the proof-of-
+    // delivery was captured at. Null for destination POD / pre-dispatch / other types.
+    @Column(name = "stop_id")
+    private Long stopId;
+
     @Column(name = "driver_id", nullable = false)
     private Long driverId;
 
