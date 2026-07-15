@@ -136,6 +136,7 @@ public class MediaService {
             // Save Photo entity
             Photo photo = Photo.builder()
                     .tripId(request.getTripId())
+                    .stopId(request.getStopId())
                     .driverId(userId)
                     .photoKey(request.getPhotoKey())
                     .photoUrl(buildStoredPhotoUrl(request.getPhotoKey()))
