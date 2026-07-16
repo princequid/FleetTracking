@@ -103,6 +103,7 @@ html.theme-transition * {
    dark mode — map markers are intentionally excluded (they sit on light tiles). */
 :root[data-theme="dark"] .navbar-title,
 :root[data-theme="dark"] .navbar-icon-btn,
+:root[data-theme="dark"] .navbar-hamburger,
 :root[data-theme="dark"] .placeholder-icon,
 :root[data-theme="dark"] .placeholder-title,
 :root[data-theme="dark"] .map-modal-title,
@@ -2719,6 +2720,43 @@ h1 {
 
 .trip-pod-image:hover {
   opacity: 0.9;
+}
+
+/* Delivery photos grid (pre-dispatch / stop PODs / destination POD) */
+.trip-photos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-4);
+}
+
+.trip-photo-item {
+  margin: 0;
+  cursor: zoom-in;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.trip-photo-item:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.trip-photo-thumb {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+}
+
+.trip-photo-caption {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-2);
 }
 
 .trip-detail-sidebar {
