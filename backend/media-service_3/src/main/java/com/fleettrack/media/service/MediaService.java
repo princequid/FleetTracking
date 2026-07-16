@@ -198,7 +198,7 @@ public class MediaService {
     // actually assigned to the trip they're uploading a photo for/about. Without this,
     // any authenticated driver could read or forge photos (including POD geotags) for
     // any other driver's trip just by guessing/incrementing the tripId.
-    private void verifyDriverOwnsTrip(Long tripId, Long userId) {
+    public void verifyDriverOwnsTrip(Long tripId, Long userId) {
         DriverResponse driverProfile = driverServiceClient.getDriverByUserId(userId);
         if (driverProfile == null || driverProfile.getId() == null) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");

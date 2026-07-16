@@ -70,7 +70,15 @@ public class MediaController {
     public ResponseEntity<List<PhotoResponse>> getTripPhotos(
             @PathVariable Long id,
             HttpServletRequest httpRequest) {
-        requireRole(httpRequest, ADMIN_DISPATCHER_ROLES);
+        // Admins/dispatchers may view any trip's photos; a DRIVER may view only their
+        // OWN trip's photos (so the driver app can show what they uploaded), verified
+        // by trip ownership — never another driver's trip.
+        String role = httpRequest.getHeader("X-User-Role");
+        if ("DRIVER".equals(role)) {
+            mediaService.verifyDriverOwnsTrip(id, extractUserId(httpRequest));
+        } else {
+            requireRole(httpRequest, ADMIN_DISPATCHER_ROLES);
+        }
         List<Photo> photos = mediaService.getPhotosByTrip(id);
         return ResponseEntity.ok(photos.stream().map(this::toResponse).toList());
     }
