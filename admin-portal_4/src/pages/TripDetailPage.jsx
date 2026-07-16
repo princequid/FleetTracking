@@ -209,6 +209,7 @@ export default function TripDetailPage() {
     .filter((p) => PHOTO_META[p.photoType])
     .sort((a, b) => PHOTO_META[a.photoType].order - PHOTO_META[b.photoType].order);
 
+
   return (
     <div className="trip-detail-layout">
       <div className="trip-detail-main">

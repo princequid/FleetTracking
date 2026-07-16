@@ -173,6 +173,7 @@ export default function TripDetailScreen() {
       .then(setPhotos)
       .catch(() => {});
 
+
     // /trips is scoped to the signed-in driver server-side, so this only sees their trips.
     api.get('/trips')
       .then((r) => {
@@ -199,6 +200,7 @@ export default function TripDetailScreen() {
   const displayPhotos = photos
     .filter((p) => PHOTO_ORDER[p.photoType])
     .sort((a, b) => PHOTO_ORDER[a.photoType] - PHOTO_ORDER[b.photoType]);
+
 
   const navButtonLabel = (() => {
     if (!trip) return 'Open live navigation';
