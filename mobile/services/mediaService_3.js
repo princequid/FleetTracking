@@ -41,6 +41,13 @@ export const mediaService = {
     return true;
   },
 
+  // Photos already uploaded for a trip (pre-dispatch / POD / stop PODs), each with a
+  // fresh presigned view URL. The backend authorizes a DRIVER to read only their OWN trip.
+  async getTripPhotos(tripId) {
+    const res = await api.get(`/media/photos/trips/${tripId}`);
+    return Array.isArray(res.data) ? res.data : [];
+  },
+
   async registerPhoto(tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt, stopId) {
     const response = await api.post('/media/photos', {
       tripId, stopId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt,

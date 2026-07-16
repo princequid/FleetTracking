@@ -48,6 +48,9 @@ minio:
   # The endpoint baked into presigned upload URLs — opened by the phone, so it must be
   # the dev machine's LAN IP (same host the app uses for the API), not localhost.
   external-endpoint: ${MINIO_EXTERNAL_ENDPOINT:http://172.20.10.4:9000}
-  accessKey: fleettrack
-  secretKey: fleettrack123
-  bucket: fleettrack-media
+  # Env-overridable (docker-compose passes MINIO_ACCESS_KEY / MINIO_SECRET_KEY). The
+  # defaults match local dev; a real deployment MUST set these to the actual MinIO creds
+  # — otherwise media would keep using the dev password even after MinIO's is changed.
+  accessKey: ${MINIO_ACCESS_KEY:fleettrack}
+  secretKey: ${MINIO_SECRET_KEY:fleettrack123}
+  bucket: ${MINIO_BUCKET:fleettrack-media}
