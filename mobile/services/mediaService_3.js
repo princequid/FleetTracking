@@ -48,6 +48,7 @@ export const mediaService = {
     return Array.isArray(res.data) ? res.data : [];
   },
 
+
   async registerPhoto(tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt, stopId) {
     const response = await api.post('/media/photos', {
       tripId, stopId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt,
