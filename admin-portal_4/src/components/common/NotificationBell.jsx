@@ -1,17 +1,17 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
-import { useFleetWebSocket } from "../../hooks/useFleetWebSocket";
+
 import {
-  getNotifications,
-  getUnreadCount,
-  isNotificationRead,
-  markAllNotificationsRead,
-  markNotificationRead,
+  getDerivedNotifications,
+  getLastSeenTs,
+  markSeen,
 } from "../../services/notificationService";
 import { BellIcon } from "./Icons";
 
-const NOTIFICATIONS_TOPIC = "/topic/admin/notifications";
+// Poll the derived feed (incidents + recent trip events) so the bell stays live
+// without a manual refresh. 20s keeps it responsive without hammering the backend.
+const POLL_MS = 20000;
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -21,6 +21,7 @@ function timeAgo(iso) {
   if (!iso) return "—";
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
@@ -28,79 +29,11 @@ function timeAgo(iso) {
 }
 
 function notificationTone(notification) {
-  const severity = normalize(notification?.severity || notification?.priority || notification?.level);
+  const severity = normalize(notification?.severity);
   if (severity === "critical") return "critical";
   if (severity === "warning") return "warning";
   if (severity === "success") return "success";
   return "info";
-}
-
-function notificationTitle(notification) {
-  if (notification?.title) return notification.title;
-  const type = normalize(notification?.type || notification?.notificationType);
-  if (type.includes("trip") && type.includes("assigned")) return "New trip assigned";
-  if (type.includes("trip") && type.includes("started")) return "Driver started a trip";
-  if (type.includes("trip") && type.includes("arriv")) return "Vehicle arrived at destination";
-  if (type.includes("trip") && type.includes("complete")) return "Trip completed with POD";
-  if (type.includes("route") || type.includes("deviat")) return "Trip deviated from route";
-  if (type.includes("incident") && notificationTone(notification) === "critical") {
-    return "Incident reported - CRITICAL";
-  }
-  if (type.includes("incident")) return "Incident reported - HIGH";
-  if (type.includes("gps") && type.includes("lost")) return "GPS signal lost";
-  if (type.includes("overdue")) return "Trip overdue";
-  return notification?.subject || notification?.event || "Fleet notification";
-}
-
-function notificationDescription(notification) {
-  return (
-    notification?.description ||
-    notification?.message ||
-    notification?.details ||
-    notification?.body ||
-    "No additional details provided."
-  );
-}
-
-function notificationRoute(notification) {
-  const type = normalize(notification?.type || notification?.notificationType);
-  const entityType = normalize(notification?.entityType || notification?.targetType);
-  const tripId = notification?.tripId || notification?.entityId || notification?.targetId;
-  const incidentId = notification?.incidentId || (entityType === "incident" ? tripId : null);
-
-  if (incidentId || type.includes("incident")) {
-    return `/incidents${incidentId ? `?incidentId=${incidentId}` : ""}`;
-  }
-
-  if (tripId && (type.includes("trip") || entityType === "trip")) {
-    return `/trips/${tripId}`;
-  }
-
-  if (type.includes("driver") || entityType === "driver") {
-    return notification?.driverId ? `/drivers/${notification.driverId}` : "/drivers";
-  }
-
-  if (type.includes("vehicle") || entityType === "vehicle") {
-    return "/vehicles";
-  }
-
-  if (type.includes("map") || type.includes("gps")) {
-    return "/map";
-  }
-
-  return "/dashboard";
-}
-
-function isUnread(notification) {
-  return !isNotificationRead(notification);
-}
-
-function sortNotifications(items) {
-  return [...items].sort(
-    (a, b) =>
-      new Date(b.createdAt || b.updatedAt || 0).getTime() -
-      new Date(a.createdAt || a.updatedAt || 0).getTime()
-  );
 }
 
 export default function NotificationBell() {
@@ -109,12 +42,20 @@ export default function NotificationBell() {
   const location = useLocation();
   const buttonRef = useRef(null);
   const panelRef = useRef(null);
-  const { subscribeTopic, unsubscribeTopic } = useFleetWebSocket();
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+
+
   const [notifications, setNotifications] = useState([]);
+  const [lastSeen, setLastSeen] = useState(() => getLastSeenTs(userId));
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");
+
+  const isUnread = useCallback((n) => (n?.createdTs || 0) > lastSeen, [lastSeen]);
+
+  const unreadCount = useMemo(
+    () => notifications.filter(isUnread).length,
+    [notifications, isUnread]
+  );
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter((notification) => {
@@ -122,113 +63,78 @@ export default function NotificationBell() {
       if (filter === "Critical") return notificationTone(notification) === "critical";
       return true;
     });
-  }, [notifications, filter]);
+  }, [notifications, filter, isUnread]);
 
+  // Reset the "last seen" baseline when the signed-in admin changes.
   useEffect(() => {
-    let cancelled = false;
-    getUnreadCount(userId).then((count) => {
-      if (!cancelled) setUnreadCount(count);
-    });
+    setLastSeen(getLastSeenTs(userId));
+  }, [userId]);
+
+  // Poll the feed on mount and every POLL_MS; also refetches when auth changes.
+  useEffect(() => {
+    let alive = true;
+    let firstLoad = true;
+
+    const load = () =>
+      getDerivedNotifications()
+        .then((items) => {
+          if (alive) setNotifications(items);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (alive && firstLoad) {
+            firstLoad = false;
+            setLoading(false);
+          }
+        });
+
+    // Delay the first fetch slightly so it doesn't compete with the initial page
+    // load's own requests on the (resource-tight) backend.
+    const initialTimer = setTimeout(load, 1500);
+    const interval = setInterval(load, POLL_MS);
     return () => {
-      cancelled = true;
+      alive = false;
+      clearTimeout(initialTimer);
+      clearInterval(interval);
     };
   }, [userId]);
 
-  useEffect(() => {
-    if (!userId) return undefined;
+  const markAllSeen = useCallback(() => {
+    const now = Date.now();
+    markSeen(userId, now);
+    setLastSeen(now);
+  }, [userId]);
 
-    subscribeTopic(NOTIFICATIONS_TOPIC, (incoming) => {
-      const payload = Array.isArray(incoming) ? incoming : [incoming];
-      setNotifications((prev) => {
-        const next = [...prev];
-        payload.forEach((notification) => {
-          if (!notification?.id) return;
-          const index = next.findIndex((item) => item.id === notification.id);
-          if (index >= 0) next[index] = { ...next[index], ...notification };
-          else next.unshift(notification);
-        });
-        return sortNotifications(next);
-      });
-      setUnreadCount((count) => count + payload.filter(isUnread).length);
-    });
-
-    return () => {
-      unsubscribeTopic(NOTIFICATIONS_TOPIC);
-    };
-  }, [userId, subscribeTopic, unsubscribeTopic]);
-
-  useEffect(() => {
-    if (!open || !userId) return undefined;
-
-    let cancelled = false;
-    setLoading(true);
-    getNotifications(userId)
-      .then((items) => {
-        if (cancelled) return;
-        const sorted = sortNotifications(items);
-        setNotifications(sorted);
-        setUnreadCount(sorted.filter(isUnread).length);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, userId]);
+  const closePanel = useCallback(() => {
+    setOpen(false);
+    markAllSeen();
+  }, [markAllSeen]);
 
   useEffect(() => {
     function handleOutsideClick(event) {
       if (!open) return;
       if (panelRef.current?.contains(event.target) || buttonRef.current?.contains(event.target)) return;
-      setOpen(false);
+      closePanel();
     }
-
     function handleEscape(event) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape" && open) closePanel();
     }
-
     document.addEventListener("mousedown", handleOutsideClick);
     document.addEventListener("keydown", handleEscape);
     return () => {
       document.removeEventListener("mousedown", handleOutsideClick);
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [open]);
+  }, [open, closePanel]);
 
   useEffect(() => {
-    if (!open) return;
-    if (location.pathname === "/login") setOpen(false);
+    if (open && location.pathname === "/login") setOpen(false);
   }, [location.pathname, open]);
 
-  async function handleNotificationClick(notification) {
-    if (notification?.id && isUnread(notification)) {
-      await markNotificationRead(notification.id);
-      setNotifications((prev) =>
-        prev.map((item) =>
-          item.id === notification.id
-            ? { ...item, isRead: true, read: true, readAt: new Date().toISOString() }
-            : item
-        )
-      );
-      setUnreadCount((count) => Math.max(0, count - 1));
-    }
+  function handleNotificationClick(notification) {
     setOpen(false);
-    navigate(notificationRoute(notification));
-  }
-
-  async function handleMarkAllRead() {
-    await markAllNotificationsRead(userId, notifications);
-    setNotifications((prev) =>
-      prev.map((notification) => ({
-        ...notification,
-        isRead: true,
-        read: true,
-        readAt: notification.readAt || new Date().toISOString(),
-      }))
-    );
-    setUnreadCount(0);
+    markAllSeen();
+    if (notification?.route) navigate(notification.route);
   }
 
   return (
@@ -240,7 +146,7 @@ export default function NotificationBell() {
         aria-label="Notifications"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => (open ? closePanel() : setOpen(true))}
       >
         <BellIcon size={18} />
         {unreadCount > 0 && <span className="notification-dot" />}
@@ -253,15 +159,15 @@ export default function NotificationBell() {
               <div className="notification-panel-title">Notifications</div>
               <div className="notification-panel-subtitle">
                 {unreadCount > 0
-                  ? `${unreadCount} unread alert${unreadCount === 1 ? "" : "s"}`
+                  ? `${unreadCount} new alert${unreadCount === 1 ? "" : "s"}`
                   : "All caught up"}
               </div>
             </div>
             <button
               className="notification-mark-all"
               type="button"
-              onClick={handleMarkAllRead}
-              disabled={!notifications.some(isUnread)}
+              onClick={markAllSeen}
+              disabled={unreadCount === 0}
             >
               Mark all read
             </button>
@@ -289,7 +195,7 @@ export default function NotificationBell() {
                 const unread = isUnread(notification);
                 return (
                   <button
-                    key={`${notification.id || "new"}-${notification.createdAt || notification.updatedAt || "0"}`}
+                    key={notification.id}
                     type="button"
                     className={`notification-row notification-row-${tone}${unread ? " notification-row-unread" : ""}`}
                     onClick={() => handleNotificationClick(notification)}
@@ -298,12 +204,10 @@ export default function NotificationBell() {
                       <BellIcon size={14} />
                     </span>
                     <span className="notification-copy">
-                      <span className="notification-title">{notificationTitle(notification)}</span>
-                      <span className="notification-description">{notificationDescription(notification)}</span>
+                      <span className="notification-title">{notification.title}</span>
+                      <span className="notification-description">{notification.description}</span>
                     </span>
-                    <span className="notification-time">
-                      {timeAgo(notification.createdAt || notification.updatedAt)}
-                    </span>
+                    <span className="notification-time">{timeAgo(notification.createdAt)}</span>
                   </button>
                 );
               })

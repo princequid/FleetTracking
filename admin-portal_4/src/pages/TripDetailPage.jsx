@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getTripById, cancelTrip, getTripHistory } from "../services/tripService";
 import { getDrivers } from "../services/driverService";
 import { getVehicles } from "../services/vehicleService";
-import { getTripPodStatus, getTripPhotos } from "../services/mediaService";
+import { getTripPhotos } from "../services/mediaService";
 import { useAuthStore } from "../store/authStore";
 import { isTripCancellable } from "../constants/tripStatus";
 import TripStatusBadge from "../components/trips/TripStatusBadge";
@@ -12,6 +12,26 @@ import TripRouteMap from "../components/map/TripRouteMap";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import { ArrowLeftIcon } from "../components/common/Icons";
+
+// Delivery-photo types shown on the trip, in capture order. Incident/profile photos
+// are intentionally excluded here — this section is about the delivery proof trail.
+const PHOTO_META = {
+  PRE_DISPATCH: { order: 1, label: "Pre-dispatch" },
+  STOP_POD:     { order: 2, label: "Stop POD" },
+  POD:          { order: 3, label: "Proof of delivery" },
+};
+
+function labelForPhoto(photo, trip) {
+  if (photo.photoType === "STOP_POD") {
+    const idx = trip?.stops?.findIndex((s) => s.id === photo.stopId);
+    if (idx != null && idx >= 0) {
+      const name = trip.stops[idx].name;
+      return `Stop ${idx + 1}${name ? ` — ${name}` : ""}`;
+    }
+    return "Stop delivery";
+  }
+  return PHOTO_META[photo.photoType]?.label || "Photo";
+}
 
 function EtaField({ trip }) {
   const { status, eta } = trip;
@@ -97,8 +117,8 @@ export default function TripDetailPage() {
   const [driver, setDriver] = useState(null);
   const [vehicle, setVehicle] = useState(null);
   const [history, setHistory] = useState([]);
-  const [podPhoto, setPodPhoto] = useState(null);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [photos, setPhotos] = useState([]);
+  const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [cancelling, setCancelling] = useState(false);
@@ -108,7 +128,7 @@ export default function TripDetailPage() {
     let cancelled = false;
     setLoading(true);
     setError("");
-    setPodPhoto(null);
+    setPhotos([]);
     setHistory([]);
 
     getTripById(id)
@@ -129,14 +149,10 @@ export default function TripDetailPage() {
         }
 
         try {
-          const podStatus = await getTripPodStatus(id);
-          if (podStatus?.hasPOD) {
-            const photos = await getTripPhotos(id);
-            const pod = photos.find((p) => p.photoType === "POD");
-            if (!cancelled) setPodPhoto(pod || null);
-          }
+          const photoData = await getTripPhotos(id);
+          if (!cancelled) setPhotos(Array.isArray(photoData) ? photoData : []);
         } catch {
-          // POD lookup is best-effort
+          // photos are best-effort
         }
       })
       .catch(() => {
@@ -187,6 +203,12 @@ export default function TripDetailPage() {
 
   const canCancel =
     (role === "ADMIN" || role === "SUPER_ADMIN") && isTripCancellable(trip.status);
+
+  // Delivery photos to show, ordered pre-dispatch → stop PODs → destination POD.
+  const displayPhotos = photos
+    .filter((p) => PHOTO_META[p.photoType])
+    .sort((a, b) => PHOTO_META[a.photoType].order - PHOTO_META[b.photoType].order);
+
 
   return (
     <div className="trip-detail-layout">
@@ -290,15 +312,29 @@ export default function TripDetailPage() {
           </div>
         </div>
 
-        {podPhoto && (
+        {displayPhotos.length > 0 && (
           <div className="trip-pod-card">
-            <span className="trip-pod-badge">Proof of Delivery</span>
-            <img
-              src={podPhoto.photoUrl}
-              alt="Proof of delivery"
-              className="trip-pod-image"
-              onClick={() => setLightboxOpen(true)}
-            />
+            <span className="trip-pod-badge">Delivery photos</span>
+            <div className="trip-photos-grid">
+              {displayPhotos.map((photo) => (
+                <figure
+                  key={photo.id}
+                  className="trip-photo-item"
+                  onClick={() => setLightboxPhoto(photo)}
+                  title="Click to enlarge"
+                >
+                  <img
+                    src={photo.photoUrl}
+                    alt={labelForPhoto(photo, trip)}
+                    className="trip-photo-thumb"
+                    loading="lazy"
+                  />
+                  <figcaption className="trip-photo-caption">
+                    {labelForPhoto(photo, trip)}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -308,9 +344,13 @@ export default function TripDetailPage() {
         <TripTimeline history={history} driver={driver} />
       </div>
 
-      {lightboxOpen && podPhoto && (
-        <div className="lightbox-overlay" onClick={() => setLightboxOpen(false)}>
-          <img src={podPhoto.photoUrl} alt="Proof of delivery enlarged" className="lightbox-image" />
+      {lightboxPhoto && (
+        <div className="lightbox-overlay" onClick={() => setLightboxPhoto(null)}>
+          <img
+            src={lightboxPhoto.photoUrl}
+            alt={labelForPhoto(lightboxPhoto, trip)}
+            className="lightbox-image"
+          />
         </div>
       )}
 

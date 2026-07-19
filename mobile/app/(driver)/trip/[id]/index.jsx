@@ -1,12 +1,30 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, SafeAreaView, Animated, Easing,
+  Dimensions, SafeAreaView, Animated, Easing, Image, Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../../../services/api_1';
+import { mediaService } from '../../../../services/mediaService_3';
 import { useTheme } from '../../../../theme/ThemeContext';
+
+// Delivery-photo types shown on the trip, in capture order (incident/profile excluded).
+const PHOTO_ORDER = { PRE_DISPATCH: 1, STOP_POD: 2, POD: 3 };
+
+function labelForPhoto(photo, trip) {
+  if (photo.photoType === 'STOP_POD') {
+    const idx = trip?.stops?.findIndex((s) => s.id === photo.stopId);
+    if (idx != null && idx >= 0) {
+      const name = trip.stops[idx].name;
+      return `Stop ${idx + 1}${name ? ` — ${name}` : ''}`;
+    }
+    return 'Stop delivery';
+  }
+  if (photo.photoType === 'PRE_DISPATCH') return 'Pre-dispatch';
+  if (photo.photoType === 'POD') return 'Proof of delivery';
+  return 'Photo';
+}
 
 const { width } = Dimensions.get('window');
 
@@ -138,6 +156,8 @@ export default function TripDetailScreen() {
   const tripId = String(id);
 
   const [trip, setTrip] = useState(null);
+  const [photos, setPhotos] = useState([]);
+  const [lightboxPhoto, setLightboxPhoto] = useState(null);
   // Another of the driver's trips that's already in progress (started but not finished).
   // Only one trip may be STARTED at a time, so an ASSIGNED trip can't be started while
   // this is set — the driver can still view it, just not move to pickup / start it.
@@ -147,6 +167,12 @@ export default function TripDetailScreen() {
     api.get(`/trips/${tripId}`)
       .then((r) => setTrip(r.data))
       .catch(() => {});
+
+    // Photos the driver uploaded for this trip (pre-dispatch / POD / stop PODs).
+    mediaService.getTripPhotos(tripId)
+      .then(setPhotos)
+      .catch(() => {});
+
 
     // /trips is scoped to the signed-in driver server-side, so this only sees their trips.
     api.get('/trips')
@@ -169,6 +195,12 @@ export default function TripDetailScreen() {
   // Block starting THIS trip only while it's still ASSIGNED and another trip is running.
   // Once this trip is itself the active one, the button becomes "Continue navigation".
   const blockedByOtherTrip = trip?.status === 'ASSIGNED' && !!otherActiveTrip;
+
+  // Delivery photos to show, ordered pre-dispatch → stop PODs → destination POD.
+  const displayPhotos = photos
+    .filter((p) => PHOTO_ORDER[p.photoType])
+    .sort((a, b) => PHOTO_ORDER[a.photoType] - PHOTO_ORDER[b.photoType]);
+
 
   const navButtonLabel = (() => {
     if (!trip) return 'Open live navigation';
@@ -296,6 +328,27 @@ export default function TripDetailScreen() {
           </View>
         </View>
 
+        {displayPhotos.length > 0 && (
+          <View>
+            <Text style={styles.sectionLabel}>DELIVERY PHOTOS</Text>
+            <View style={styles.photosRow}>
+              {displayPhotos.map((photo) => (
+                <TouchableOpacity
+                  key={photo.id}
+                  style={styles.photoItem}
+                  activeOpacity={0.85}
+                  onPress={() => setLightboxPhoto(photo)}
+                >
+                  <Image source={{ uri: photo.photoUrl }} style={styles.photoThumb} />
+                  <Text style={styles.photoCaption} numberOfLines={1}>
+                    {labelForPhoto(photo, trip)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
         {canOpenNav && (
           blockedByOtherTrip ? (
             <View>
@@ -327,6 +380,29 @@ export default function TripDetailScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Tap-to-enlarge lightbox */}
+      <Modal
+        visible={!!lightboxPhoto}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxPhoto(null)}
+      >
+        <TouchableOpacity
+          style={styles.lightboxOverlay}
+          activeOpacity={1}
+          onPress={() => setLightboxPhoto(null)}
+        >
+          {lightboxPhoto && (
+            <Image
+              source={{ uri: lightboxPhoto.photoUrl }}
+              style={styles.lightboxImage}
+              resizeMode="contain"
+            />
+          )}
+          <Text style={styles.lightboxHint}>Tap anywhere to close</Text>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -418,6 +494,25 @@ const makeStyles = (C) => StyleSheet.create({
     fontFamily: 'Inter-Regular', fontSize: 12.5, color: C.text3,
     textAlign: 'center', lineHeight: 18, marginTop: 8, paddingHorizontal: 8,
   },
+
+  /* Delivery photos */
+  photosRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  photoItem: {
+    width: (width - 32 - 20) / 3, // 3 across within the 16px page padding + 10px gaps
+    backgroundColor: C.surface, borderRadius: 12, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.border,
+  },
+  photoThumb: { width: '100%', height: 88, backgroundColor: C.border },
+  photoCaption: {
+    fontFamily: 'Inter-Medium', fontSize: 11, color: C.text2,
+    paddingHorizontal: 8, paddingVertical: 6,
+  },
+  lightboxOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center', justifyContent: 'center', gap: 16,
+  },
+  lightboxImage: { width: '92%', height: '75%' },
+  lightboxHint: { fontFamily: 'Inter-Regular', fontSize: 13, color: 'rgba(255,255,255,0.6)' },
   dangerCard: { backgroundColor: C.redLight, borderWidth: 1, borderColor: C.redLight, borderRadius: 14, padding: 16, gap: 4 },
   dangerTitle: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1 },
   dangerSub: { fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3, marginBottom: 10 },
