@@ -311,6 +311,16 @@ public class TripService {
                 .toList();
     }
 
+    // Stores the road-following route geometry the driver app pushed (on trip start and
+    // on each reroute). Ownership-checked so a driver can only set their own trip's route.
+    @Transactional
+    public void updateRoute(Long tripId, String routeGeometry, Long requesterDriverId) {
+        Trip trip = findTrip(tripId);
+        checkOwnership(trip, requesterDriverId);
+        trip.setRouteGeometry(routeGeometry);
+        tripRepository.save(trip);
+    }
+
     private Trip findTrip(Long tripId) {
         return tripRepository.findById(tripId)
                 .orElseThrow(() -> new TripNotFoundException("Trip not found: " + tripId));

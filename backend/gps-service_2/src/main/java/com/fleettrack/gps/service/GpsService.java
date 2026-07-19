@@ -70,22 +70,45 @@ public class GpsService {
 
         GpsPing savedPing = gpsPingRepository.save(ping);
 
-        gpsPingRepository.findFirstByTripIdAndRecordedAtBeforeOrderByRecordedAtDesc(tripId, savedPing.getRecordedAt())
-                .ifPresent(previousPing -> {
-                    String flag = plausibilityCheckService.checkPing(savedPing, previousPing);
-                    if (flag != null) {
-                        savedPing.setValidationFlag(flag);
-                        gpsPingRepository.save(savedPing);
-                        log.warn("Ping {} flagged: {}", savedPing.getId(), flag);
-                    }
-                });
+        String flag = gpsPingRepository
+                .findFirstByTripIdAndRecordedAtBeforeOrderByRecordedAtDesc(tripId, savedPing.getRecordedAt())
+                .map(previousPing -> plausibilityCheckService.checkPing(savedPing, previousPing))
+                .orElse(null);
+        if (flag != null) {
+            savedPing.setValidationFlag(flag);
+            gpsPingRepository.save(savedPing);
+            log.warn("Ping {} flagged: {}", savedPing.getId(), flag);
+        }
 
         deviationDetectionService.checkDeviation(tripId, driverId,
                 request.getLat(), request.getLng());
 
         GpsPingResponse response = mapToResponse(savedPing);
-        publishToRedis(tripId, response);
+
+        // Every ping is saved to the DB regardless (route history/audit trail is
+        // complete either way), but only surface it as the trip's *live* position if
+        // it isn't a flagged implausible jump AND it's actually newer than whatever
+        // is currently cached as "latest" for this trip. Without the recency check, a
+        // replayed offline ping (mobile queues failed pings and resends them later,
+        // with their original timestamp, whenever the trip screen regains focus) —
+        // or any other out-of-order delivery — would overwrite a legitimately newer
+        // position and snap the live map backward to a stale point.
+        if (flag == null && isNewerThanCachedLatest(tripId, savedPing.getRecordedAt())) {
+            publishToRedis(tripId, response);
+        }
         return response;
+    }
+
+    private boolean isNewerThanCachedLatest(Long tripId, java.time.Instant recordedAt) {
+        try {
+            String json = redisTemplate.opsForValue().get("trip:latest-ping:" + tripId);
+            if (json == null) return true;
+            GpsPingResponse cached = objectMapper.readValue(json, GpsPingResponse.class);
+            return cached.getRecordedAt() == null || recordedAt.isAfter(cached.getRecordedAt());
+        } catch (Exception e) {
+            log.warn("Failed to read cached latest ping for trip {}", tripId, e);
+            return true; // fail open — a Redis read hiccup shouldn't block live updates
+        }
     }
 
     public List<GpsPingResponse> getRoute(Long tripId, Integer limit) {

@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
-import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { createPin3DIcon } from "./pin3D";
+import { OSRM_BASE_URL } from "../../constants/config";
+import { parseRouteLatLngs, fetchRoadRoute } from "../../utils/routeGeometry";
+
+// FleetTrack marker-family colors — same fixed roles as the mobile driver map.
+const PIN_START_COLOR = "#22C55E";
+const PIN_STOP_COLOR  = "#F59E0B";
+const PIN_DEST_COLOR  = "#EF4444";
 
 // Forward-geocode a free-text location into coordinates (same Nominatim endpoint
 // LocationAutocomplete uses). Only called for legacy trips that lack stored lat/lng.
@@ -21,16 +28,13 @@ async function geocode(query) {
   }
 }
 
-// Colored circular pins matching the driver app's map (green start, numbered navy
-// stops, red destination) so the product reads consistently across mobile and admin.
+// Glossy 3D pins matching the driver app's map (green start, numbered amber stops,
+// red destination) — same shared shape as components/map/pin3D.js, so the product
+// reads as one visual system across mobile and admin.
 function pinIcon(kind, number) {
-  const label = kind === "stop" ? `<span>${number}</span>` : "";
-  return L.divIcon({
-    className: "",
-    html: `<div class="trip-map-pin trip-map-pin--${kind}">${label}</div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-  });
+  if (kind === "start") return createPin3DIcon(PIN_START_COLOR, { size: 34 });
+  if (kind === "stop")  return createPin3DIcon(PIN_STOP_COLOR,  { size: 34, hole: false, number });
+  return createPin3DIcon(PIN_DEST_COLOR, { size: 34 });
 }
 
 // Fits the map view to every resolved point once they're known.
@@ -46,6 +50,7 @@ function FitBounds({ points }) {
 
 export default function TripRouteMap({ trip }) {
   const [points, setPoints] = useState(null); // null = resolving; object once resolved
+  const [roadRoute, setRoadRoute] = useState(null); // road-following [[lat,lng],...], or null
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +84,29 @@ export default function TripRouteMap({ trip }) {
       .map((p) => [p.lat, p.lng]);
   }, [points]);
 
+  // Prefer the trip's stored road-route geometry — computed via OSRM by the driver
+  // app once the trip is under way, so this is the exact route actually driven.
+  // Otherwise, fetch one directly from OSRM so the admin sees a real road route even
+  // before a driver has opened the trip. Falls back to the straight-line `routeLine`
+  // (rendered below) if OSRM is unreachable — same graceful degradation the mobile
+  // app uses for its own routing.
+  useEffect(() => {
+    setRoadRoute(null);
+    const stored = parseRouteLatLngs(trip.routeGeometry);
+    if (stored.length > 1) {
+      setRoadRoute(stored);
+      return;
+    }
+    if (routeLine.length < 2) return;
+    let cancelled = false;
+    fetchRoadRoute(OSRM_BASE_URL, routeLine).then((road) => {
+      if (!cancelled && road) setRoadRoute(road);
+    });
+    return () => { cancelled = true; };
+  }, [trip.routeGeometry, routeLine]);
+
+  const displayedRoute = roadRoute && roadRoute.length > 1 ? roadRoute : routeLine;
+
   if (points === null) {
     return (
       <div className="trip-route-map trip-route-map--loading">
@@ -109,9 +137,9 @@ export default function TripRouteMap({ trip }) {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           maxZoom={19}
         />
-        <FitBounds points={routeLine} />
-        {routeLine.length > 1 && (
-          <Polyline positions={routeLine} pathOptions={{ color: "#2563EB", weight: 4 }} />
+        <FitBounds points={displayedRoute} />
+        {displayedRoute.length > 1 && (
+          <Polyline positions={displayedRoute} pathOptions={{ color: "#2563EB", weight: 4 }} />
         )}
         {points.origin && (
           <Marker position={[points.origin.lat, points.origin.lng]} icon={pinIcon("start")} />

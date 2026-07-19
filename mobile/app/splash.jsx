@@ -300,10 +300,7 @@ export default function SplashScreen() {
       {/* Brand text */}
       <Animated.View style={[styles.textSection, { top: TY + TH + 36 }, nameStyle]} pointerEvents="none">
         <View style={styles.nameRow}>
-          <Text style={styles.appName}>FleetTrack</Text>
-          <View style={styles.proBadge}>
-            <Text style={styles.proText}>PRO</Text>
-          </View>
+          <Text style={styles.appName}>FleetSync</Text>
         </View>
 
         <Animated.View style={[styles.underline, underlineStyle]} />
@@ -358,19 +355,6 @@ const makeStyles = (C) => StyleSheet.create({
     fontSize: 34,
     color: '#fff',
     letterSpacing: -0.8,
-  },
-  proBadge: {
-    backgroundColor: C.teal,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 7,
-    marginBottom: 4,
-  },
-  proText: {
-    fontFamily: 'Inter-Bold',
-    fontSize: 11,
-    color: '#fff',
-    letterSpacing: 1.5,
   },
   underline: {
     width: 200,

@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '../store/authStore_1';
+import { useDriverStore } from '../store/driverStore_1';
 
 // After the app has been backgrounded for this long, require the driver to sign in
 // again. This is the standard mobile "session timeout" — it protects a lost/left
@@ -29,6 +30,7 @@ export function useInactivityLogout() {
           try { await SecureStore.deleteItemAsync('ft_access_token'); } catch {}
           try { await SecureStore.deleteItemAsync('ft_refresh_token'); } catch {}
           try { useAuthStore.getState().clearAuth(); } catch {}
+          try { useDriverStore.getState().clearDriver(); } catch {}
           router.replace('/(auth)/login_1');
         }
       }

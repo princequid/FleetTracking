@@ -1,0 +1,6 @@
+# See backend/.dockerignore for why: keeps old target/ jars and build logs out of the
+# Docker build context (this dir is the context for this service's compose entry).
+target/
+*.class
+build-output*.txt
+*.log

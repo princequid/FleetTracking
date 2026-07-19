@@ -13,7 +13,7 @@ import RAnimated, {
   useSharedValue, useAnimatedProps, withTiming,
 } from 'react-native-reanimated';
 import api from '../../../../services/api_1';
-import { mediaService } from '../../../../services/mediaService_3';
+import { mediaService, describeUploadError } from '../../../../services/mediaService_3';
 import { useTripStore } from '../../../../store/tripStore_2';
 import { useTheme } from '../../../../theme/ThemeContext';
 import { haversineMetres, GEOFENCE_RADIUS_M } from '../../../../utils/geo';
@@ -216,8 +216,8 @@ export default function PODScreen() {
       else setPodUploaded(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => router.back(), 950);
-    } catch {
-      showError('Upload failed. Check connection and retry.');
+    } catch (error) {
+      showError(describeUploadError(error));
       setLoading(false);
       setUploadProgress({ step: '', percent: 0 });
     }

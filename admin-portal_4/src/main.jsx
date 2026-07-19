@@ -21,6 +21,7 @@ const VehiclesPage = lazy(() => import("./pages/VehiclesPage"));
 const ReportsPage = lazy(() => import("./pages/ReportsPage"));
 const IncidentsPage = lazy(() => import("./pages/IncidentsPage"));
 const LiveMapPage = lazy(() => import("./pages/LiveMapPage"));
+const StaffPage = lazy(() => import("./pages/StaffPage"));
 
 const root = createRoot(document.getElementById("root"));
 
@@ -48,6 +49,7 @@ root.render(
         <Route path="incidents" element={<IncidentsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="map" element={<LiveMapPage />} />
+        <Route path="staff" element={<StaffPage />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
       </Routes>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getActivePositions } from "../services/gpsService";
@@ -8,31 +8,11 @@ import { getTrips } from "../services/tripService";
 import { getDrivers } from "../services/driverService";
 import { getVehicles } from "../services/vehicleService";
 import { useFleetWebSocket } from "../hooks/useFleetWebSocket";
-import { TruckIcon } from "../components/common/Icons";
+import { createDriverCarIcon, createRoutePinIcon, driverColor } from "../components/map/driverCarIcon";
+import { parseRouteLatLngs } from "../utils/routeGeometry";
 
 const ACCRA_CENTER = [5.6037, -0.187];
 const STALE_THRESHOLD_MS = 5 * 60 * 1000;
-
-function createTruckDivIcon(isStale) {
-  const borderColor = isStale ? "var(--color-warning)" : "var(--color-teal)";
-  const iconOpacity = isStale ? 0.6 : 1;
-  return L.divIcon({
-    html: `
-      <div class="fleet-marker-box" style="border-color: ${borderColor};">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#0F2347" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: ${iconOpacity};">
-          <rect x="1" y="6" width="13" height="11" rx="1"></rect>
-          <path d="M14 10h4l4 4v3h-8z"></path>
-          <circle cx="6" cy="19" r="1.6"></circle>
-          <circle cx="17" cy="19" r="1.6"></circle>
-        </svg>
-      </div>
-    `,
-    className: "fleet-marker",
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -18],
-  });
-}
 
 function MapController({ onReady }) {
   const map = useMap();
@@ -63,29 +43,39 @@ export default function LiveMapPage() {
     mapRef.current = map;
   }, []);
 
+  // Resolve driver/vehicle/trip for each trip. The trip record carries the route
+  // geometry + stops we draw. GPS pings carry the auth user id as `driverId` (a
+  // different id space from the driver PROFILE id on the trip), so display info is
+  // always resolved via the trip, not the raw ping.
+  const refreshMeta = useCallback(async () => {
+    const [trips, drivers, vehicles] = await Promise.all([getTrips(), getDrivers(), getVehicles()]);
+    const driversById = Object.fromEntries(drivers.map((d) => [d.id, d]));
+    const vehiclesById = Object.fromEntries(vehicles.map((v) => [v.id, v]));
+    const meta = {};
+    trips.forEach((trip) => {
+      meta[trip.id] = {
+        driver: driversById[trip.driverId] || null,
+        vehicle: vehiclesById[trip.vehicleId] || null,
+        trip,
+      };
+    });
+    setTripMetaById(meta);
+  }, []);
+
   useEffect(() => {
     setLoading(true);
     setError("");
-    Promise.all([getActivePositions(), getTrips(), getDrivers(), getVehicles()])
-      .then(([positionData, trips, drivers, vehicles]) => {
-        setPositions(positionData);
-        // GPS pings carry the auth user id as `driverId`, which is a different
-        // id space from the driver PROFILE id stored on the trip — resolve
-        // driver/vehicle display info via the trip record, not the raw ping.
-        const driversById = Object.fromEntries(drivers.map((d) => [d.id, d]));
-        const vehiclesById = Object.fromEntries(vehicles.map((v) => [v.id, v]));
-        const meta = {};
-        trips.forEach((trip) => {
-          meta[trip.id] = {
-            driver: driversById[trip.driverId] || null,
-            vehicle: vehiclesById[trip.vehicleId] || null,
-          };
-        });
-        setTripMetaById(meta);
-      })
+    Promise.all([getActivePositions(), refreshMeta()])
+      .then(([positionData]) => setPositions(positionData))
       .catch(() => setError("Unable to load active vehicle positions."))
       .finally(() => setLoading(false));
-  }, []);
+    // Re-poll trips (route geometry + stops) so the admin sees reroutes live, without
+    // needing a manual refresh. Positions themselves update over the websocket.
+    const metaInterval = setInterval(() => {
+      refreshMeta().catch(() => {});
+    }, 20000);
+    return () => clearInterval(metaInterval);
+  }, [refreshMeta]);
 
   const tripIdsKey = useMemo(
     () =>
@@ -100,17 +90,23 @@ export default function LiveMapPage() {
     positions.forEach((position) => {
       subscribe(position.tripId, (update) => {
         setPositions((prev) =>
-          prev.map((p) =>
-            p.tripId === position.tripId
-              ? {
-                  ...p,
-                  lat: update.lat,
-                  lng: update.lng,
-                  speedKmh: update.speedKmh,
-                  recordedAt: update.recordedAt,
-                }
-              : p
-          )
+          prev.map((p) => {
+            if (p.tripId !== position.tripId) return p;
+            // Ignore an update that's older than what's already shown — the backend
+            // already guards this for a normal ping, but this is a second line of
+            // defense against any out-of-order delivery ever snapping the marker
+            // backward to a stale point.
+            if (p.recordedAt && update.recordedAt && new Date(update.recordedAt) <= new Date(p.recordedAt)) {
+              return p;
+            }
+            return {
+              ...p,
+              lat: update.lat,
+              lng: update.lng,
+              speedKmh: update.speedKmh,
+              recordedAt: update.recordedAt,
+            };
+          })
         );
       });
     });
@@ -158,20 +154,61 @@ export default function LiveMapPage() {
             attribution="&copy; CartoDB"
           />
           <MapController onReady={handleMapReady} />
+
+          {/* Per-driver route + stops — the driver's actual road route (updates live as
+              they reroute), tinted with that driver's colour. Drawn under the markers. */}
+          {positions.map((position) => {
+            const meta = tripMetaById[position.tripId];
+            const trip = meta?.trip;
+            const color = driverColor(meta?.driver?.id ?? position.tripId);
+            const routeLatLngs = parseRouteLatLngs(trip?.routeGeometry);
+            const stops = trip?.stops || [];
+            return (
+              <React.Fragment key={`route-${position.tripId}`}>
+                {routeLatLngs.length > 1 && (
+                  <Polyline
+                    positions={routeLatLngs}
+                    pathOptions={{ color: color.base, weight: 4, opacity: 0.85 }}
+                  />
+                )}
+                {stops.map((s, i) =>
+                  s?.lat != null && s?.lng != null ? (
+                    <Marker
+                      key={`stop-${position.tripId}-${i}`}
+                      position={[Number(s.lat), Number(s.lng)]}
+                      icon={createRoutePinIcon(color.base, i + 1)}
+                    />
+                  ) : null
+                )}
+                {trip?.destLat != null && trip?.destLng != null && (
+                  <Marker
+                    position={[Number(trip.destLat), Number(trip.destLng)]}
+                    icon={createRoutePinIcon(color.base, "", true)}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+
           {positions.map((position) => {
             const meta = tripMetaById[position.tripId];
             const stale = isStalePosition(position);
+            // Colour keyed to the driver's account id so each driver's car is a distinct,
+            // consistent colour the admin can recognise at a glance.
+            const colorKey = meta?.driver?.id ?? position.tripId;
+            const color = driverColor(colorKey);
             return (
               <Marker
                 key={position.tripId}
                 position={[position.lat, position.lng]}
-                icon={createTruckDivIcon(stale)}
+                icon={createDriverCarIcon(colorKey, stale)}
                 ref={(marker) => {
                   if (marker) markerRefs.current[position.tripId] = marker;
                 }}
               >
                 <Popup className="fleet-popup">
                   <div className="fleet-popup-driver">
+                    <span className="fleet-driver-dot" style={{ backgroundColor: color.base }} />
                     {meta?.driver?.fullName || `Trip #${position.tripId}`}
                   </div>
                   <div className="fleet-popup-row">Trip #{position.tripId}</div>
@@ -222,6 +259,7 @@ export default function LiveMapPage() {
             positions.map((position) => {
               const meta = tripMetaById[position.tripId];
               const stale = isStalePosition(position);
+              const color = driverColor(meta?.driver?.id ?? position.tripId);
               return (
                 <div
                   key={position.tripId}
@@ -230,7 +268,11 @@ export default function LiveMapPage() {
                   }`}
                   onClick={() => handleSelectVehicle(position)}
                 >
-                  <TruckIcon size={18} className="fleet-vehicle-icon" />
+                  <span
+                    className="fleet-driver-dot fleet-driver-dot-lg"
+                    style={{ backgroundColor: color.base }}
+                    title="Driver colour"
+                  />
                   <div className="fleet-vehicle-info">
                     <div className="fleet-vehicle-driver">
                       {meta?.driver?.fullName || `Trip #${position.tripId}`}
