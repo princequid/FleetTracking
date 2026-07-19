@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getTripById, cancelTrip, getTripHistory } from "../services/tripService";
 import { getDrivers } from "../services/driverService";
@@ -166,6 +166,22 @@ export default function TripDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  // Re-pull the photo list whenever this tab regains focus. A dispatcher/admin often
+  // keeps a trip's detail page open in one tab while the driver is out on the trip —
+  // without this, newly-uploaded photos wouldn't appear until the page is reloaded.
+  const refetchPhotos = useCallback(() => {
+    getTripPhotos(id)
+      .then((photoData) => setPhotos(Array.isArray(photoData) ? photoData : []))
+      .catch(() => {
+        // photos are best-effort
+      });
+  }, [id]);
+
+  useEffect(() => {
+    window.addEventListener("focus", refetchPhotos);
+    return () => window.removeEventListener("focus", refetchPhotos);
+  }, [refetchPhotos]);
 
   async function handleCancel() {
     setCancelConfirmOpen(false);

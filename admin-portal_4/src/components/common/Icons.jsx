@@ -113,6 +113,15 @@ export function BarChartIcon(props) {
   );
 }
 
+export function ShieldIcon(props) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6Z" />
+      <path d="m9 12 2 2 4-4" />
+    </Svg>
+  );
+}
+
 export function LogOutIcon(props) {
   return (
     <Svg {...props}>

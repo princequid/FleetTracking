@@ -48,6 +48,14 @@ internal:
   service:
     secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
 
+app:
+  # Creates the first SUPER_ADMIN account on boot if none exists yet — see
+  # InitialAdminBootstrap. Leave both unset (the default) to disable entirely, e.g. in
+  # local dev where you create test users by hand.
+  initial-admin:
+    email: ${INITIAL_ADMIN_EMAIL:}
+    password: ${INITIAL_ADMIN_PASSWORD:}
+
 # JWT configuration
 jwt:
   secret: ${JWT_SECRET:dev-only-change-this-to-a-long-random-string-before-prod}

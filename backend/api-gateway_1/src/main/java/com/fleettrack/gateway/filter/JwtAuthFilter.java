@@ -57,6 +57,13 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                 .retrieve()
                 .bodyToMono(Map.class)
                 .timeout(Duration.ofSeconds(5))
+                // Only errors from THIS call (validating the token) count as an auth
+                // failure. Tag them so the catch below can't also swallow unrelated
+                // failures from chain.filter() further down — e.g. a proxied service
+                // being down/slow — which would otherwise get mapped to 401 and bounce
+                // an already-logged-in client to the login screen.
+                .onErrorMap(ex -> !(ex instanceof ValidationFailedException),
+                        ex -> new ValidationFailedException(describeValidationError(path, ex)))
                 .flatMap(body -> {
                     String userId = String.valueOf(body.get("userId"));
                     String role = (String) body.get("role");
@@ -73,18 +80,26 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
                             .build();
                     return chain.filter(exchange.mutate().request(mutatedRequest).build());
                 })
-                .onErrorResume(WebClientResponseException.Unauthorized.class, ex -> {
-                    log.debug("Token validation returned 401");
-                    return unauthorized(exchange);
-                })
-                .onErrorResume(TimeoutException.class, ex -> {
-                    log.warn("Token validation timed out for path: {}", path);
-                    return unauthorized(exchange);
-                })
-                .onErrorResume(ex -> {
-                    log.warn("Token validation failed: {}", ex.getMessage());
+                .onErrorResume(ValidationFailedException.class, ex -> {
+                    log.debug("Token validation failed: {}", ex.getMessage());
                     return unauthorized(exchange);
                 });
+    }
+
+    private String describeValidationError(String path, Throwable ex) {
+        if (ex instanceof WebClientResponseException.Unauthorized) {
+            return "token rejected by auth-service";
+        }
+        if (ex instanceof TimeoutException) {
+            return "timed out validating token for path: " + path;
+        }
+        return "validate call failed: " + ex.getMessage();
+    }
+
+    private static final class ValidationFailedException extends RuntimeException {
+        ValidationFailedException(String message) {
+            super(message);
+        }
     }
 
     private Mono<Void> unauthorized(ServerWebExchange exchange) {

@@ -13,7 +13,7 @@ import RAnimated, {
   useSharedValue, useAnimatedProps, withTiming,
 } from 'react-native-reanimated';
 import api from '../../../../services/api_1';
-import { mediaService } from '../../../../services/mediaService_3';
+import { mediaService, describeUploadError } from '../../../../services/mediaService_3';
 import { useTripStore } from '../../../../store/tripStore_2';
 import { useTheme } from '../../../../theme/ThemeContext';
 import { haversineMetres, GEOFENCE_RADIUS_M } from '../../../../utils/geo';
@@ -209,8 +209,8 @@ export default function PreDispatchScreen() {
         setActiveTrip({ id: parseInt(tripId) });
         router.back(); // returns to wherever this was launched from (the live map)
       }, 950);
-    } catch {
-      showError('Upload failed. Check your connection.');
+    } catch (error) {
+      showError(describeUploadError(error));
       setLoading(false);
       setUploadProgress({ step: '', percent: 0 });
     }

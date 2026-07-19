@@ -7,6 +7,7 @@ import com.fleettrack.vehicle.service.VehicleService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class VehicleController {
     private final VehicleService vehicleService;
+
+    @Value("${internal.service.secret:}")
+    private String internalServiceSecret;
 
     private static final List<String> LIST_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
     private static final List<String> AVAILABLE_ROLES = List.of("ADMIN", "DISPATCHER");
@@ -48,7 +52,7 @@ public class VehicleController {
 
     @GetMapping("/{id}")
     public ResponseEntity<VehicleResponse> getVehicleById(@PathVariable Long id, HttpServletRequest r) {
-        requireRole(r, LIST_ROLES);
+        requireRoleOrInternal(r, LIST_ROLES);
         return ResponseEntity.ok(vehicleService.getVehicleById(id));
     }
 
@@ -62,7 +66,7 @@ public class VehicleController {
     @PutMapping("/{id}/status")
     public ResponseEntity<VehicleResponse> updateStatus(
             @PathVariable Long id, @RequestBody Map<String, String> body, HttpServletRequest r) {
-        requireRole(r, WRITE_ROLES);
+        requireRoleOrInternal(r, WRITE_ROLES);
         String rawStatus = body.get("status");
         if (rawStatus == null || rawStatus.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "status is required");
@@ -80,5 +84,24 @@ public class VehicleController {
         String role = r.getHeader("X-User-Role");
         if (role == null || !roles.contains(role))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+    }
+
+    private void requireRoleOrInternal(HttpServletRequest r, List<String> roles) {
+        if (isGenuinelyInternal(r)) {
+            return;
+        }
+        requireRole(r, roles);
+    }
+
+    /**
+     * The gateway stamps X-Internal-Service-Key on EVERY proxied request — including a
+     * normal end user's own request — so the key alone can't distinguish a genuine bare
+     * service-to-service call (which never carries X-User-Role) from a gateway-proxied
+     * end-user request (which always does, per JwtAuthFilter). Require both.
+     */
+    private boolean isGenuinelyInternal(HttpServletRequest r) {
+        String internalKey = r.getHeader("X-Internal-Service-Key");
+        String role = r.getHeader("X-User-Role");
+        return internalServiceSecret.equals(internalKey) && (role == null || role.isBlank());
     }
 }

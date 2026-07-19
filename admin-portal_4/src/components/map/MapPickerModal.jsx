@@ -50,17 +50,24 @@ async function reverseGeocode(lat, lng) {
   return data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
-export default function MapPickerModal({ isOpen, onClose, onConfirm, initialCenter, title }) {
+export default function MapPickerModal({
+  isOpen, onClose, onConfirm, initialCenter, initialPin, initialAddress, title,
+}) {
   const [pin,            setPin]            = useState(null);
   const [address,        setAddress]        = useState("");
   const [loadingAddress, setLoadingAddress] = useState(false);
 
-  // Reset state each time the modal opens
+  // Seed from the field's already-confirmed location (if any) each time the modal
+  // opens, so re-opening the picker to review/adjust an existing origin, stop, or
+  // destination shows that location pinned immediately — not a blank map that looks
+  // like nothing was ever selected. A fresh field (no prior pin) still opens empty,
+  // exactly as before.
   useEffect(() => {
     if (isOpen) {
-      setPin(null);
-      setAddress("");
+      setPin(initialPin ?? null);
+      setAddress(initialPin ? (initialAddress || `${initialPin.lat.toFixed(5)}, ${initialPin.lng.toFixed(5)}`) : "");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Accra, Ghana as global fallback

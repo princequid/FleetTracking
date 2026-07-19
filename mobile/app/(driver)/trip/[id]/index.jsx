@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Dimensions, SafeAreaView, Animated, Easing, Image, Modal,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../../../services/api_1';
 import { mediaService } from '../../../../services/mediaService_3';
@@ -163,17 +163,24 @@ export default function TripDetailScreen() {
   // this is set — the driver can still view it, just not move to pickup / start it.
   const [otherActiveTrip, setOtherActiveTrip] = useState(null);
 
+  // Re-fetch the trip + its photos every time this screen comes into focus, not just on
+  // mount — the driver reaches this screen via back-navigation from the live-nav map
+  // after capturing a pre-dispatch/POD photo, so the screen instance is already mounted
+  // and a mount-only effect would keep showing the stale (pre-upload) photo list.
+  useFocusEffect(
+    useCallback(() => {
+      api.get(`/trips/${tripId}`)
+        .then((r) => setTrip(r.data))
+        .catch(() => {});
+
+      // Photos the driver uploaded for this trip (pre-dispatch / POD / stop PODs).
+      mediaService.getTripPhotos(tripId)
+        .then(setPhotos)
+        .catch(() => {});
+    }, [tripId]),
+  );
+
   useEffect(() => {
-    api.get(`/trips/${tripId}`)
-      .then((r) => setTrip(r.data))
-      .catch(() => {});
-
-    // Photos the driver uploaded for this trip (pre-dispatch / POD / stop PODs).
-    mediaService.getTripPhotos(tripId)
-      .then(setPhotos)
-      .catch(() => {});
-
-
     // /trips is scoped to the signed-in driver server-side, so this only sees their trips.
     api.get('/trips')
       .then((r) => {
@@ -364,7 +371,7 @@ export default function TripDetailScreen() {
           ) : (
             <TouchableOpacity
               style={styles.actionBtn}
-              onPress={() => router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: tripId } })}
+              onPress={() => router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: tripId, focus: 'driver' } })}
             >
               <Feather name="navigation" size={16} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.actionBtnText}>{navButtonLabel}</Text>
