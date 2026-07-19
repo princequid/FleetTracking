@@ -1,25 +1,78 @@
 {
   "expo": {
-    "name": "FleetTrack Pro",
+    "name": "FleetSync",
     "slug": "fleettrack-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "fleettrack",
-    "platforms": ["ios", "android"],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F2347"
+    },
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      ["expo-notifications", { "color": "#0D9488" }]
+      [
+        "expo-notifications",
+        {
+          "color": "#0D9488"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FleetSync uses your camera to capture proof-of-delivery photos."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FleetSync uses your location to track deliveries and show your position on the trip map."
+        }
+      ]
     ],
     "android": {
       "package": "com.fleettrack.mobile",
-      "googleServicesFile": "./google-services.json",
-      "useNextNotificationsApi": true
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAaGzh1HjsrIJbf7dw5bLNxRJxesV_9dvo"
+        }
+      }
     },
     "ios": {
       "bundleIdentifier": "com.fleettrack.mobile",
+      "config": {
+        "googleMapsApiKey": "REPLACE_WITH_GOOGLE_MAPS_IOS_API_KEY"
+      },
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "af9f5d44-3f58-4f9e-985c-5476e568b361"
       }
     }
   }

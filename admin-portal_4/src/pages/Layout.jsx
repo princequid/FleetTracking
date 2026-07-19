@@ -33,8 +33,8 @@ export default function Layout() {
 
   useEffect(() => {
     const base = "/" + location.pathname.split("/")[1];
-    const page = DOC_TITLES[location.pathname] || DOC_TITLES[base] || "FleetTrack";
-    document.title = `FleetTrack Pro — ${page}`;
+    const page = DOC_TITLES[location.pathname] || DOC_TITLES[base] || "FleetSync";
+    document.title = `FleetSync — ${page}`;
   }, [location.pathname]);
 
   // Close the mobile nav automatically whenever the route changes.

@@ -3,7 +3,6 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import api from "../../services/api";
 import {
-  HexagonLogoIcon,
   GridIcon,
   MapPinIcon,
   PlusCircleIcon,
@@ -12,6 +11,7 @@ import {
   CarIcon,
   AlertTriangleIcon,
   BarChartIcon,
+  ShieldIcon,
   LogOutIcon,
 } from "./Icons";
 
@@ -32,6 +32,7 @@ const navSections = [
       { to: "/vehicles", label: "Vehicles", icon: CarIcon },
       { to: "/incidents", label: "Incidents", icon: AlertTriangleIcon, hideFor: ["DISPATCHER"] },
       { to: "/reports", label: "Reports", icon: BarChartIcon, hideFor: ["DISPATCHER"] },
+      { to: "/staff", label: "Staff", icon: ShieldIcon, hideFor: ["DISPATCHER"] },
     ],
   },
 ];
@@ -75,10 +76,8 @@ export default function Sidebar({ isOpen, onClose }) {
   return (
     <aside className={sidebarClass}>
       <div className="sidebar-header">
-        <HexagonLogoIcon size={24} />
-        <span className="sidebar-brand">
-          FleetTrack<span className="sidebar-brand-pro">Pro</span>
-        </span>
+        <img src="/images/logo.png" alt="FleetSync" className="sidebar-logo" />
+        <span className="sidebar-brand">FleetSync</span>
       </div>
       <div className="sidebar-rule" />
 

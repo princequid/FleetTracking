@@ -20,6 +20,24 @@ async function writeQueue(queue) {
   } catch {}
 }
 
+// Turns whatever fullUploadFlow threw into a message that actually says what went
+// wrong (server validation error, timeout, storage-PUT failure, etc.) instead of the
+// generic "check your connection" every capture screen used to show regardless of
+// cause — that made a real 4xx (e.g. photo too large) indistinguishable from the
+// phone genuinely being offline.
+export function describeUploadError(error) {
+  const apiMessage = error?.response?.data?.error || error?.response?.data?.message;
+  if (apiMessage) return apiMessage;
+  if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) {
+    return 'Upload timed out — check your connection and try again.';
+  }
+  if (!error?.response && error?.message === 'Network Error') {
+    return 'Cannot reach the server. Check your network connection.';
+  }
+  if (error?.message) return error.message;
+  return 'Upload failed. Check your connection.';
+}
+
 export const mediaService = {
   async presignUpload(tripId, photoType, mimeType) {
     const response = await api.post('/media/presign', { tripId, photoType, mimeType });

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, Image, TextInput, TouchableOpacity,
   StyleSheet, Dimensions, KeyboardAvoidingView, Platform, ScrollView,
   Animated,
 } from 'react-native';
@@ -10,6 +10,7 @@ import { Feather } from '@expo/vector-icons';
 import { authService } from '../../services/authService_1';
 import { useAuthStore } from '../../store/authStore_1';
 import { useTheme } from '../../theme/ThemeContext';
+import LoadingSpinner from '../../components/common/LoadingSpinner';
 
 const { height } = Dimensions.get('window');
 
@@ -92,10 +93,10 @@ export default function LoginScreen() {
         <View style={[styles.topSection, { paddingTop: Math.max(60, insets.top + 20) }]}>
           <View style={styles.brandRow}>
             <View style={styles.brandIcon}>
-              <Feather name="truck" size={16} color="#fff" />
+              <Image source={require('../../assets/icon.png')} style={styles.brandIconImage} resizeMode="contain" />
             </View>
             <View>
-              <Text style={styles.brandName}>FleetTrack Pro</Text>
+              <Text style={styles.brandName}>FleetSync</Text>
               <Text style={styles.brandPortal}>Driver Portal</Text>
             </View>
           </View>
@@ -163,7 +164,7 @@ export default function LoginScreen() {
                 activeOpacity={0.9}
               >
                 {loading ? (
-                  <View style={styles.spinner} />
+                  <LoadingSpinner color="#fff" />
                 ) : (
                   <Text style={styles.signInText}>Sign in</Text>
                 )}
@@ -183,13 +184,15 @@ const makeStyles = (C) => StyleSheet.create({
     borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
     gap: 16, minHeight: height * 0.42, justifyContent: 'flex-end',
   },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 },
   brandIcon: {
-    width: 32, height: 32, borderRadius: 10,
-    backgroundColor: C.teal, alignItems: 'center', justifyContent: 'center',
+    width: 42, height: 42, borderRadius: 12,
+    backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
   },
-  brandName:   { fontFamily: 'Inter-Bold', fontSize: 15, color: '#fff' },
-  brandPortal: { fontFamily: 'Inter-Regular', fontSize: 11, color: 'rgba(255,255,255,0.5)' },
+  brandIconImage: { width: 34, height: 34 },
+  brandName:   { fontFamily: 'Inter-ExtraBold', fontSize: 21, color: '#fff', letterSpacing: -0.3 },
+  brandPortal: { fontFamily: 'Inter-Medium', fontSize: 13, color: 'rgba(255,255,255,0.65)' },
   heroLine:    { fontFamily: 'Inter-Bold', fontSize: 24, color: '#fff', lineHeight: 32 },
   heroAccent:  { color: C.tealLight },
   heroSub:     { fontFamily: 'Inter-Regular', fontSize: 13, color: 'rgba(255,255,255,0.55)', lineHeight: 20 },
@@ -224,8 +227,4 @@ const makeStyles = (C) => StyleSheet.create({
   },
   signInBtnLoading: { opacity: 0.8 },
   signInText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff', letterSpacing: -0.2 },
-  spinner: {
-    width: 20, height: 20, borderRadius: 10,
-    borderWidth: 2.5, borderColor: 'rgba(255,255,255,0.35)', borderTopColor: '#fff',
-  },
 });

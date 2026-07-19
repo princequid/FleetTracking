@@ -16,6 +16,8 @@ import Animated, {
   Easing, interpolate,
 } from 'react-native-reanimated';
 import { useTheme, useThemeMode } from '../../../../theme/ThemeContext';
+import VehicleMarker3D from '../../../../components/map/VehicleMarker3D';
+import Pin3D from '../../../../components/map/Pin3D';
 import api from '../../../../services/api_1';
 import { useNavStore } from '../../../../store/navStore_2';
 import { useTripStore } from '../../../../store/tripStore_2';
@@ -23,6 +25,12 @@ import tripService from '../../../../services/tripService_2';
 
 const ARRIVE_RADIUS = 50;    // within this of the destination → "Mark arrived"
 const READY_RADIUS  = 50;    // within this of the trip start → "Ready" button
+// FleetTrack marker-family colors — fixed brand colors for the pin roles, independent
+// of the light/dark theme palette (a stop pin should read the same shade of amber
+// whichever theme the driver has selected).
+const PIN_START_COLOR = '#22C55E';
+const PIN_STOP_COLOR  = '#F59E0B';
+const PIN_DEST_COLOR  = '#EF4444';
 // Public OSRM server (HTTPS) so routes follow real roads from anywhere the phone has
 // internet — no local OSRM/firewall needed. Override with EXPO_PUBLIC_OSRM_URL to use a
 // self-hosted OSRM instead. If unreachable, the map falls back to a direct line.
@@ -222,27 +230,42 @@ function parseOsrmSteps(steps) {
 }
 
 // ─── Distinct map pin ─────────────────────────────────────────────────────────
-// A bold teardrop marker: a coloured circular head (with an icon or number) sitting
-// on a matching pointer, plus an optional label chip above. Anchored at the bottom
-// tip so the point marks the exact coordinate.
-// NOTE: the pin head deliberately uses only plain Views/Text — NOT an icon font.
-// Icon-font glyphs (e.g. Feather) don't reliably rasterise inside a react-native-maps
-// custom marker on Android, which left the start/destination pins blank. A number (Text)
-// or a solid white centre dot (View) always renders.
-function Pin({ color, number, label, styles }) {
+// A glossy 3D pin (see components/map/Pin3D.jsx — the same base shape the driver's
+// marker uses), plus an optional label chip above. Anchored at the bottom tip so
+// the point marks the exact coordinate.
+// NOTE: the number badge is layered on top as a plain RN <Text>, not SVG text or an
+// icon font. Icon-font glyphs don't reliably rasterise inside a react-native-maps
+// custom marker on Android, which used to leave these pins blank — RN <Text> always
+// renders. `collapsable={false}` is required on every plain View in this tree on
+// Android: RN's view-flattening optimiser otherwise strips these style-only Views out
+// of the native hierarchy before react-native-maps can snapshot them into a marker
+// bitmap, which is what made these pins render blank (or not at all) on Android only
+// (iOS's Marker implementation doesn't rasterise the same way, so it was unaffected).
+const PIN_BADGE_SIZE = 16;
+
+function Pin({ color, number, label, styles, size = 44 }) {
+  const badge = Pin3D.badgeCenter(size);
   return (
-    <View style={{ alignItems: 'center' }}>
+    <View style={{ alignItems: 'center' }} collapsable={false}>
       {label ? (
-        <View style={styles.pinLabel}>
+        <View style={styles.pinLabel} collapsable={false}>
           <Text style={styles.pinLabelText} numberOfLines={1}>{label}</Text>
         </View>
       ) : null}
-      <View style={[styles.pinHead, { backgroundColor: color }]}>
-        {number != null
-          ? <Text style={styles.pinNumber}>{number}</Text>
-          : <View style={styles.pinCenterDot} />}
+      <View style={{ width: size, height: size * (29 / 24) }} collapsable={false}>
+        <Pin3D color={color} size={size} hole={number == null} />
+        {number != null && (
+          <View
+            style={[
+              styles.pinNumberBadge,
+              { left: badge.x - PIN_BADGE_SIZE / 2, top: badge.y - PIN_BADGE_SIZE / 2 },
+            ]}
+            collapsable={false}
+          >
+            <Text style={styles.pinNumber}>{number}</Text>
+          </View>
+        )}
       </View>
-      <View style={[styles.pinPoint, { borderTopColor: color }]} />
     </View>
   );
 }
@@ -251,6 +274,15 @@ function Pin({ color, number, label, styles }) {
 export default function LiveMapScreen() {
   const router          = useRouter();
   const { id: tripId }  = useLocalSearchParams();
+  // Every entry point (Navigate, Mark arrived, View Map, a notification tap, ...) must
+  // focus the camera on the driver's current location — this used to be opt-in via a
+  // `?focus=driver` param that only ONE caller ("Move to pickup") actually passed, so
+  // every other entry point fell through to restoring whatever Explore-mode camera (or
+  // cached position) happened to be saved from a previous visit, which could be far away
+  // or long stale. Centralizing it here — always true, not caller-dependent — means the
+  // screen behaves consistently regardless of how it was opened, with no per-button
+  // camera-reset logic to keep in sync. Callers no longer need to pass `?focus=driver`.
+  const focusOnMe = true;
   const C = useTheme();
   const { resolved } = useThemeMode();
   const styles = useMemo(() => makeStyles(C), [C]);
@@ -274,11 +306,14 @@ export default function LiveMapScreen() {
   const resetTripStore       = useTripStore((s) => s.resetTripStore);
   // Stops that already have an optional POD captured this trip — hides the button once done.
   const stopPods             = useTripStore((s) => s.stopPods);
-  // Snapshot whether a camera was already saved for this trip (decided once, on mount):
-  // if so we restore that exact view instead of auto-zooming to the driver.
+  // Always false now that every entry focuses on the driver (focusOnMe is always true) —
+  // kept as a ref (rather than deleted outright) because loadLeg's `mayMoveCamera` guard
+  // and the first-fix auto-zoom effect below both key off it, and a saved Explore camera
+  // may still exist in the store from before this fix; this ref is what keeps it from
+  // ever being restored again.
   const hasSavedCameraRef = useRef(null);
   if (hasSavedCameraRef.current === null) {
-    hasSavedCameraRef.current = !!getStoreCamera(tripId);
+    hasSavedCameraRef.current = focusOnMe ? false : !!getStoreCamera(tripId);
   }
 
   // Mutable nav state — read by GPS callback to avoid stale closures.
@@ -315,6 +350,8 @@ export default function LiveMapScreen() {
   const lastPersistRef      = useRef(0);      // throttle nav-state persistence
   const lastFixTimeRef      = useRef(0);      // timestamp of last accepted fix (for speed)
   const speedSmoothRef      = useRef(0);      // low-pass smoothed speed (km/h)
+  const movingRef           = useRef(false);  // confirmed-moving vs. parked (see onPositionUpdate)
+  const pendingMoveRef      = useRef(null);   // unconfirmed candidate fix while parked
   const pendingFitRef       = useRef(null);
   const zoomRef             = useRef(15);
   const updateCounterRef    = useRef(0);
@@ -347,10 +384,6 @@ export default function LiveMapScreen() {
   // Vehicle marker rasterisation: on briefly so Android captures a crisp icon, then off
   const [vehicleTracking,      setVehicleTracking]    = useState(true);
   const vehicleReadyRef = useRef(false);
-  // Same for the start/stop/destination pins — track changes briefly so Android
-  // rasterises the pin (icon + label) properly, then freeze for performance.
-  const [trackMarkers,         setTrackMarkers]       = useState(true);
-  const markersFrozenRef = useRef(false);
   const [isFollowingVehicle,   setFollowing]          = useState(true);
   const [panelExpanded,        setPanelExpanded]      = useState(false);
   const [voiceEnabled,         setVoice]              = useState(true);
@@ -433,18 +466,6 @@ export default function LiveMapScreen() {
       return () => clearTimeout(t);
     }
   }, [currentPosition]);
-
-  // Once the start/destination/stop pins have coordinates, keep them rasterising for a
-  // moment so Android captures the fully-rendered pin (icon + label), then freeze.
-  useEffect(() => {
-    const c = extractCoords(trip);
-    const hasPins = c.originLat != null || c.destLat != null || stopMarkers.length > 0;
-    if (hasPins && !markersFrozenRef.current) {
-      markersFrozenRef.current = true;
-      const t = setTimeout(() => setTrackMarkers(false), 1500);
-      return () => clearTimeout(t);
-    }
-  }, [trip, stopMarkers]);
 
   // On load we intentionally show the whole route (origin → destination) so the driver
   // can see the full trip. Zooming in to the driver is a deliberate action via the
@@ -690,10 +711,34 @@ export default function LiveMapScreen() {
   const onMapReady = useCallback(() => {
     mapReadyRef.current = true;
 
-    // A saved camera only exists if the driver left in Free Explore mode — restore that
-    // EXACT view (no reset/flicker) and STAY in Explore (recenter button shown). Follow
-    // Mode is not resumed automatically here; the driver taps Recenter to resume it.
-    const savedCam = getStoreCamera(tripId);
+    // Every entry always centers on the driver: drop any saved camera so it can't
+    // restore a stale/far-away view, and fall through to the driver-follow behaviour.
+    if (focusOnMe) clearStoreCamera(tripId);
+
+    // The live GPS tracker runs for the whole driver session (not just while this screen
+    // is open), so a position is often already known BEFORE the native map view finishes
+    // initializing — meaning the currentPosition effect below can fire first, see
+    // mapReadyRef still false, and skip the focus. It never gets a second chance, because
+    // that effect only re-runs when currentPosition itself changes again, not when
+    // mapReadyRef flips true (a ref isn't reactive). Cover that ordering here too, using
+    // positionRef (kept in sync ahead of React state) so either order — map-ready-first or
+    // position-first — reliably ends in the same place: centered on the driver.
+    if (!firstFixZoomedRef.current && positionRef.current) {
+      firstFixZoomedRef.current = true;
+      focusOnDriver(positionRef.current, 1000);
+      // Deterministic precedence: don't also apply a route-fit queued by loadLeg before
+      // the map was ready (pendingFitRef below) right after — it would immediately
+      // override the drive-focus animation just started.
+      pendingFitRef.current = null;
+      return;
+    }
+
+    // Dead branch by design now that focusOnMe is always true (savedCam is always null) —
+    // left in place rather than deleted in case a future caller legitimately needs to
+    // restore an exact Explore-mode view. It previously restored whatever camera the
+    // driver had last panned/zoomed to, which is exactly what made re-opening the map
+    // (via any button that didn't explicitly opt out) land on a stale, unrelated view.
+    const savedCam = focusOnMe ? null : getStoreCamera(tripId);
     if (savedCam && mapRef.current) {
       nav.current.following = false;
       setFollowing(false);
@@ -715,13 +760,31 @@ export default function LiveMapScreen() {
       });
       pendingFitRef.current = null;
     }
-  }, [getStoreCamera, tripId]);
+  }, [getStoreCamera, tripId, focusOnMe, clearStoreCamera, focusOnDriver]);
+
+  // ── Push the trip route to the backend ──
+  // So the admin live map can draw this driver's actual route (and gps-service can run
+  // deviation detection). Fire-and-forget — never blocks navigation. Sent as GeoJSON
+  // {"coordinates":[[lng,lat],...]} to match what the backend/deviation check expect.
+  const pushTripRoute = useCallback((coords) => {
+    if (!Array.isArray(coords) || coords.length < 2) return;
+    const geometry = JSON.stringify({
+      type: 'LineString',
+      coordinates: coords.map((c) => [c.longitude, c.latitude]),
+    });
+    api.put(`/trips/${tripId}/route`, { routeGeometry: geometry }).catch(() => {});
+  }, [tripId]);
 
   // ── Load a navigation leg ──
   // Fetches the OSRM route through `waypoints`, resets progress/turn tracking, draws
   // the line and fits it, and sets the active target (leg end). Falls back to a direct
   // line if OSRM is unreachable. Used for both Leg 1 (driver→start) and Leg 2 (trip).
-  const loadLeg = useCallback(async (waypoints, targetPt) => {
+  // `moveCamera: false` is passed by the initial map-entry paths, where `focusOnDriver`
+  // is already explicitly centering the camera on the driver — without this, the OSRM
+  // fetch resolving later (it can take up to 7s) would call fitToRoute a second time and
+  // silently override that focus with a whole-route overview, which is exactly what made
+  // "Navigate"/"Move to pickup" land on the driver only sometimes.
+  const loadLeg = useCallback(async (waypoints, targetPt, options = {}) => {
     nav.current.target = targetPt;
     // Reset progress + turn tracking for the new leg
     nav.current.completedCoords = [];
@@ -731,9 +794,9 @@ export default function LiveMapScreen() {
     setCompleted([]);
     setStepIndex(0);
 
-    // Only auto-fit the camera to the route when we're NOT restoring a saved view —
-    // otherwise fitting would override the exact camera the driver left.
-    const mayMoveCamera = !hasSavedCameraRef.current;
+    // Only auto-fit the camera to the route when we're NOT restoring a saved view, and
+    // the caller hasn't reserved the camera for something else (see comment above).
+    const mayMoveCamera = !hasSavedCameraRef.current && options.moveCamera !== false;
 
     // 1) Draw a straight line IMMEDIATELY so the route appears with no delay…
     if (waypoints.length >= 2) {
@@ -751,9 +814,11 @@ export default function LiveMapScreen() {
       setDirections(steps);
       if (duration != null) setRouteDurationSecs(Math.round(duration));
       if (mayMoveCamera) fitToRoute(overviewCoords);
+      // Once the trip is underway, share this leg's route with the backend (admin map).
+      if (nav.current.phase === PHASE.TRIP) pushTripRoute(overviewCoords);
     }
     // If OSRM was unreachable the straight line from step 1 stays visible.
-  }, [fetchOsrm, fitToRoute]);
+  }, [fetchOsrm, fitToRoute, pushTripRoute]);
 
   // ── On the first real GPS fix: auto-zoom to the driver AND (if approaching) draw the
   //    driver→start route. Handles the case where the map loaded before GPS locked on. ──
@@ -767,10 +832,11 @@ export default function LiveMapScreen() {
       focusOnDriver(currentPosition, 1000);
     }
 
-    // Draw the approach route from the driver's real position to the trip start (once)
+    // Draw the approach route from the driver's real position to the trip start (once).
+    // moveCamera:false — the focusOnDriver call just above already owns the camera here.
     if (nav.current.phase === PHASE.APPROACH && nav.current.originPt && !approachFixRef.current) {
       approachFixRef.current = true;
-      loadLeg([currentPosition, nav.current.originPt], nav.current.originPt);
+      loadLeg([currentPosition, nav.current.originPt], nav.current.originPt, { moveCamera: false });
     }
   }, [currentPosition, focusOnDriver, loadLeg]);
 
@@ -805,6 +871,8 @@ export default function LiveMapScreen() {
         setCompleted([]);
         setStepIndex(0);
         if (duration != null) setRouteDurationSecs(Math.round(duration));
+        // Push the rerouted path so the admin live map reflects the change.
+        if (nav.current.phase === PHASE.TRIP) pushTripRoute(newCoords);
       }
     } catch {}
     finally {
@@ -812,7 +880,7 @@ export default function LiveMapScreen() {
       setIsRerouting(false);
       isReroutingRef.current = false;
     }
-  }, [fetchOsrm]);
+  }, [fetchOsrm, pushTripRoute]);
 
   // ── GPS position handler — processes a location fed from the shared tracker/store.
   //    NOTE: this updates the driver marker + nav logic ONLY. It never moves the map
@@ -839,7 +907,27 @@ export default function LiveMapScreen() {
         // speed below always covers the same interval and isn't wildly inflated.
         speedSmoothRef.current = 0;
         setSpeed(0); // React bails out if already 0 — no needless re-render
+        movingRef.current = false;
+        pendingMoveRef.current = null;
         return;
+      }
+
+      // 3) A single fix can clear the deadband on its own (accuracy is often 20-45m in
+      // practice, well past the deadband cap of 20m) while the vehicle is genuinely
+      // parked, which used to yank the anchor to that noisy spot and make the marker
+      // hop back and forth on the next good fix. While parked (not already confirmed
+      // moving), require ONE more fix that agrees with this one before trusting it —
+      // a real departure repeats in the same direction next fix, noise doesn't. Once
+      // movement is confirmed, fixes are accepted immediately as before (no added lag
+      // mid-drive).
+      if (!movingRef.current) {
+        const pending = pendingMoveRef.current;
+        if (!pending || haversineMetres(pending.latitude, pending.longitude, latitude, longitude) > 15) {
+          pendingMoveRef.current = { latitude, longitude };
+          return;
+        }
+        movingRef.current = true;
+        pendingMoveRef.current = null;
       }
     }
 
@@ -1035,7 +1123,12 @@ export default function LiveMapScreen() {
         nav.current.phase           = cached.phase || PHASE.APPROACH;
         nav.current.nearStart       = !!cached.nearStart;
         nav.current.within200m      = !!cached.within200m;
-        if (cached.position) positionRef.current = cached.position;
+        // Every re-entry (focusOnMe is always true) DON'T seed the stale cached position
+        // from the last visit — that's what made re-opening the map snap to an old spot.
+        // Leave the position to the live GPS tracker so the fresh-fix zoom below centres
+        // on where the driver actually is now. (Dead branch below by the same design as
+        // the onMapReady savedCam branch above — kept for a future opt-out, not deleted.)
+        if (!focusOnMe && cached.position) positionRef.current = cached.position;
 
         setTrip(cached.trip);
         setFullRoute(cached.fullCoords || []);
@@ -1046,9 +1139,11 @@ export default function LiveMapScreen() {
         setPhase(cached.phase || PHASE.APPROACH);
         setNearStart(!!cached.nearStart);
         setWithin200m(!!cached.within200m);
-        if (cached.position) setPosition(cached.position);
+        if (!focusOnMe && cached.position) setPosition(cached.position);
         approachFixRef.current = true;     // route already present — don't redraw
         firstFixZoomedRef.current = false; // allow a fresh zoom to the current position
+        // Force follow mode so the camera tracks the driver's live position on re-open.
+        if (focusOnMe) { nav.current.following = true; setFollowing(true); }
         setIsLoading(false);               // no loading pill on re-entry
 
         // Ensure permission is still granted, then resume live tracking
@@ -1191,17 +1286,24 @@ export default function LiveMapScreen() {
         nav.current.following = false;
         setFollowing(false);
         const wp = [originPt, ...stopCoords, destPt].filter(Boolean);
-        if (wp.length >= 2) await loadLeg(wp, destPt);
+        // moveCamera:false ONLY when we actually have a driver position — the
+        // currentPosition effect's focusOnDriver call will own the camera in that case.
+        // If GPS hasn't resolved yet (driverPos is null — still acquiring a fix), let
+        // loadLeg fit to the route instead of leaving the camera at no position at all;
+        // focusOnDriver will still take over and correct it the moment a fix arrives.
+        if (wp.length >= 2) await loadLeg(wp, destPt, { moveCamera: !driverPos });
       } else if (alreadyStarted || !originPt) {
         nav.current.phase = PHASE.TRIP;
         setPhase(PHASE.TRIP);
         nav.current.following = true;
         setFollowing(true);
         const wp = [originPt, ...stopCoords, destPt].filter(Boolean);
-        if (wp.length >= 2) await loadLeg(wp, destPt);
+        if (wp.length >= 2) await loadLeg(wp, destPt, { moveCamera: !driverPos });
         else showToast('Could not determine the trip start or destination location.');
       } else if (resumeAtStart) {
-        // Resume the "at start" state: show the trip route + the Start button
+        // Resume the "at start" state: show the trip route + the Start button — same
+        // deliberate whole-route review as handleCapturePreDispatch below, so this one
+        // keeps its camera-fit rather than forcing driver-focus.
         nav.current.phase = PHASE.AT_START;
         setPhase(PHASE.AT_START);
         const wp = [originPt, ...stopCoords, destPt].filter(Boolean);
@@ -1210,7 +1312,11 @@ export default function LiveMapScreen() {
         nav.current.phase = PHASE.APPROACH;
         setPhase(PHASE.APPROACH);
         approachFixRef.current = true; // drawn from a real fix — don't redraw in the GPS effect
-        await loadLeg([{ latitude: driverPos.latitude, longitude: driverPos.longitude }, originPt], originPt);
+        await loadLeg(
+          [{ latitude: driverPos.latitude, longitude: driverPos.longitude }, originPt],
+          originPt,
+          { moveCamera: false },
+        );
       } else if (originPt && destPt) {
         nav.current.phase = PHASE.APPROACH;
         setPhase(PHASE.APPROACH);
@@ -1361,13 +1467,16 @@ export default function LiveMapScreen() {
     }
     nav.current.phase = PHASE.TRIP;
     setPhase(PHASE.TRIP);
+    // Trip is now underway — share the route (already computed at the pickup) with the
+    // backend so it shows on the admin live map.
+    pushTripRoute(nav.current.fullCoords);
     nav.current.following = true;
     setFollowing(true);
     if (nav.current.voice) Speech.speak('Starting trip', { language: 'en-GB' });
     const pos = positionRef.current;
     if (pos) focusOnDriver(pos, 800);
     setIsStarting(false);
-  }, [tripId, isStarting, showToast, focusOnDriver]);
+  }, [tripId, isStarting, showToast, focusOnDriver, pushTripRoute]);
 
   // ── Capture POD: only opens the camera if the driver is actually near the
   //    destination right now — mirrors the details-page check so this button can't
@@ -1671,15 +1780,20 @@ export default function LiveMapScreen() {
             />
           )}
 
-          {/* Origin — green "Start" pin */}
+          {/* Origin — green "Start" pin.
+              tracksViewChanges is always true here (not frozen after a timer, unlike the
+              vehicle marker below) — these pins are few and never move, so the perf cost
+              of always tracking is negligible, and it's what previously caused Android to
+              freeze the bitmap snapshot mid-paint (a clipped "semi-circle" pin) or before
+              a later-resolving destination had painted at all (missing entirely). */}
           {originLat != null && (
             <Marker
               coordinate={{ latitude: Number(originLat), longitude: Number(originLng) }}
               anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={trackMarkers}
+              tracksViewChanges
               zIndex={2}
             >
-              <Pin color={C.green} label="Start" styles={styles} />
+              <Pin color={PIN_START_COLOR} label="Start" styles={styles} />
             </Marker>
           )}
 
@@ -1689,10 +1803,10 @@ export default function LiveMapScreen() {
               key={`stop-${i}`}
               coordinate={{ latitude: Number(s.latitude), longitude: Number(s.longitude) }}
               anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={trackMarkers}
+              tracksViewChanges
               zIndex={2}
             >
-              <Pin color={C.navyPrimary} number={i + 1} styles={styles} />
+              <Pin color={PIN_STOP_COLOR} number={i + 1} styles={styles} />
             </Marker>
           ))}
 
@@ -1701,10 +1815,10 @@ export default function LiveMapScreen() {
             <Marker
               coordinate={{ latitude: Number(destLat), longitude: Number(destLng) }}
               anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={trackMarkers}
+              tracksViewChanges
               zIndex={3}
             >
-              <Pin color={C.red} label={trip?.destination || 'Destination'} styles={styles} />
+              <Pin color={PIN_DEST_COLOR} label={trip?.destination || 'Destination'} styles={styles} />
             </Marker>
           )}
 
@@ -1715,29 +1829,21 @@ export default function LiveMapScreen() {
               anchor={{ x: 0.5, y: 0.5 }}
               tracksViewChanges={false}
             >
-              <View style={styles.turnDot} />
+              <View style={styles.turnDot} collapsable={false} />
             </Marker>
           )}
 
-          {/* Vehicle marker — static content so Android rasterises a crisp icon.
-              tracksViewChanges is on only briefly (so the truck glyph is captured), then
-              off, keeping the icon sharp and stable. The coordinate still moves natively
-              and `rotation` still turns it to face the heading without re-capturing. */}
+          {/* Driver location pin — static content so Android rasterises a crisp icon.
+              A pin isn't directional, so unlike a vehicle glyph it doesn't rotate with
+              heading; it's anchored by its point, same as the origin/stop/destination
+              pins above. */}
           {currentPosition && (
             <Marker
               coordinate={currentPosition}
-              anchor={{ x: 0.5, y: 0.5 }}
-              flat
+              anchor={{ x: 0.5, y: 1 }}
               tracksViewChanges={vehicleTracking}
-              rotation={currentHeading}
             >
-              {/* Wrapper IS the halo (in-flow layout) — an absolute halo gets clipped
-                  to a partial arc when Android rasterises the marker. */}
-              <View style={styles.vehicleWrapper}>
-                <View style={styles.vehicleCircle}>
-                  <Feather name="truck" size={18} color="#fff" />
-                </View>
-              </View>
+              <VehicleMarker3D />
             </Marker>
           )}
         </MapView>
@@ -2118,21 +2224,13 @@ const makeStyles = (C) => StyleSheet.create({
     elevation: 4,
   },
   pinLabelText: { fontFamily: 'Inter-Bold', fontSize: 12, color: C.text1 },
-  pinHead: {
-    width: 38, height: 38, borderRadius: 19,
-    borderWidth: 3, borderColor: '#fff',
+  // Overlaid on Pin3D's solid white badge (hole={false}) to number a stop pin —
+  // dark text so it stays legible on white regardless of the pin's own color.
+  pinNumberBadge: {
+    position: 'absolute', width: PIN_BADGE_SIZE, height: PIN_BADGE_SIZE,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 5, shadowOffset: { width: 0, height: 3 },
-    elevation: 6,
   },
-  pinNumber: { fontFamily: 'Inter-Bold', fontSize: 16, color: '#fff' },
-  pinCenterDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#fff' },
-  pinPoint: {
-    width: 0, height: 0, marginTop: -3,
-    borderLeftWidth: 7, borderRightWidth: 7, borderTopWidth: 11,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    // borderTopColor set inline per pin
-  },
+  pinNumber: { fontFamily: 'Inter-Bold', fontSize: 12, color: '#1E293B' },
   turnDot:       { width: 12, height: 12, borderRadius: 6, backgroundColor: C.teal, borderWidth: 2, borderColor: '#fff' },
 
   // Vehicle marker (static + in-flow layout so it rasterises crisply on Android)

@@ -15,6 +15,7 @@ import { useDriverStore } from '../../store/driverStore_1';
 import authService from '../../services/authService_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import LoadingSpinner from '../../components/common/LoadingSpinner';
 
 const MENU = [
   { key: 'notif',   icon: 'bell',        label: 'Notifications', sub: 'Manage alerts & push settings',  route: '/(driver)/notifications_5' },
@@ -55,8 +56,10 @@ function SignOutRow({ onPress, styles, C }) {
       <Pressable
         style={[styles.menuItem, { borderBottomWidth: 0 }]}
         onPress={onPress}
-        onPressIn={() => { scale.value = withSpring(0.97, { damping: 14, stiffness: 300 }); }}
-        onPressOut={() => { scale.value = withSpring(1,    { damping: 14, stiffness: 300 }); }}
+        // withTiming (not withSpring) — a flat ease-out with no overshoot, so the
+        // press feels solid rather than bouncy for this destructive action.
+        onPressIn={() => { scale.value = withTiming(0.97, { duration: 100 }); }}
+        onPressOut={() => { scale.value = withTiming(1,    { duration: 100 }); }}
       >
         <View style={[styles.menuIcon, { backgroundColor: C.redLight }]}>
           <Feather name="log-out" size={18} color={C.red} />
@@ -95,6 +98,7 @@ export default function ProfileScreen() {
   const fetchStats   = useDriverStore((s) => s.fetchStats);
   const clearDriver  = useDriverStore((s) => s.clearDriver);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   /* avatar entrance */
   const avatarScale   = useSharedValue(0.8);
@@ -120,6 +124,9 @@ export default function ProfileScreen() {
   };
 
   const closeSignOut = () => {
+    // Don't let a backdrop tap dismiss the sheet mid sign-out — the request is
+    // already in flight and about to navigate away.
+    if (signingOut) return;
     backdropOpac.value = withTiming(0, { duration: 200 });
     sheetY.value = withSpring(300, { damping: 18, stiffness: 180 }, () => {
       runOnJS(setShowSignOut)(false);
@@ -128,9 +135,11 @@ export default function ProfileScreen() {
 
   const confirmSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSigningOut(true);
     // authService.logout() POSTs /auth/logout to revoke the refresh token server-side,
     // then deletes both tokens from SecureStore — so we no longer need to delete them
-    // here ourselves.
+    // here ourselves. It never throws (network failure is swallowed internally), so no
+    // try/catch is needed — this always resolves and navigates away.
     await authService.logout();
     clearAuth();
     clearDriver();
@@ -237,7 +246,7 @@ export default function ProfileScreen() {
           <SignOutRow onPress={openSignOut} styles={styles} C={C} />
         </View>
 
-        <Text style={styles.version}>FleetTrack Driver App v1.0.0</Text>
+        <Text style={styles.version}>FleetSync Driver App v1.0.0</Text>
       </ScrollView>
 
       {/* Sign out bottom sheet */}
@@ -255,11 +264,23 @@ export default function ProfileScreen() {
                 You will need to sign in again to access your trips.
               </Text>
               <View style={styles.sheetBtns}>
-                <Pressable style={[styles.sheetBtn, styles.sheetBtnCancel]} onPress={closeSignOut}>
+                <Pressable
+                  style={[styles.sheetBtn, styles.sheetBtnCancel, signingOut && styles.sheetBtnDisabled]}
+                  onPress={closeSignOut}
+                  disabled={signingOut}
+                >
                   <Text style={styles.sheetBtnCancelText}>Cancel</Text>
                 </Pressable>
-                <Pressable style={[styles.sheetBtn, styles.sheetBtnConfirm]} onPress={confirmSignOut}>
-                  <Text style={styles.sheetBtnConfirmText}>Sign out</Text>
+                <Pressable
+                  style={[styles.sheetBtn, styles.sheetBtnConfirm, signingOut && styles.sheetBtnDisabled]}
+                  onPress={confirmSignOut}
+                  disabled={signingOut}
+                >
+                  {signingOut ? (
+                    <LoadingSpinner color="#fff" />
+                  ) : (
+                    <Text style={styles.sheetBtnConfirmText}>Sign out</Text>
+                  )}
                 </Pressable>
               </View>
             </Animated.View>
@@ -456,4 +477,5 @@ const makeStyles = (C) => StyleSheet.create({
   sheetBtnCancelText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: C.text2 },
   sheetBtnConfirm:    { backgroundColor: C.red },
   sheetBtnConfirmText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff' },
+  sheetBtnDisabled: { opacity: 0.7 },
 });

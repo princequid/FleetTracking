@@ -17,7 +17,7 @@
  
 
 -- M1 — Auth & Infrastructure
-CREATE SCHEMA IF NOT EXISTS auth;
+CREATE SCHEMA IF NOT EXISTS fleettrack_auth;
  
 -- M1 — Core Records
 CREATE SCHEMA IF NOT EXISTS driver;
