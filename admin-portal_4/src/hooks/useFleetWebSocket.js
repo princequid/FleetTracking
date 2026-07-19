@@ -50,7 +50,7 @@ export function useFleetWebSocket() {
       connectHeaders: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
       reconnectDelay: 5000,
       onConnect: () => {
-        console.log("Fleet WebSocket connected");
+        if (import.meta.env.DEV) console.log("Fleet WebSocket connected");
         setIsConnected(true);
         stompSubsRef.current = {};
         topicSubsRef.current = {};

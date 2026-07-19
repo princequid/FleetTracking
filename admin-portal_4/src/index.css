@@ -323,14 +323,20 @@ select:focus-visible,
   padding: 0 20px 16px;
 }
 
+.sidebar-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+  object-fit: contain;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
 .sidebar-brand {
   font-weight: 700;
   font-size: 18px;
   color: var(--color-white);
-}
-
-.sidebar-brand-pro {
-  color: var(--color-teal);
 }
 
 .sidebar-rule {
@@ -881,6 +887,16 @@ h1 {
     url("/images/login.jpeg");
   background-size: cover;
   background-position: center;
+}
+
+.login-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  padding: 6px;
+  margin-bottom: 1.25rem;
 }
 
 .login-wordmark {
@@ -2425,24 +2441,6 @@ h1 {
   font-size: var(--text-sm);
 }
 
-.trip-map-pin {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 3px solid var(--color-white);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-white);
-}
-
-.trip-map-pin--start { background: var(--color-success); }
-.trip-map-pin--stop  { background: var(--color-navy); }
-.trip-map-pin--dest  { background: var(--color-danger); }
-
 .trip-route-node {
   display: flex;
   align-items: flex-start;
@@ -3387,7 +3385,8 @@ h1 {
   position: relative;
 }
 
-.password-input-wrapper .dispatch-input {
+.password-input-wrapper .dispatch-input,
+.password-input-wrapper .login-input {
   padding-right: 40px;
 }
 
@@ -3534,6 +3533,31 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Driver car marker — self-contained SVG, so no default box/border behind it */
+.fleet-car-marker,
+.fleet-route-pin {
+  background: transparent;
+  border: none;
+}
+
+/* Per-driver colour dot (popup + sidebar), matches the car marker's body colour */
+.fleet-driver-dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-white);
+  box-shadow: var(--shadow-sm);
+  vertical-align: middle;
+  margin-right: 7px;
+  flex-shrink: 0;
+}
+.fleet-driver-dot-lg {
+  width: 16px;
+  height: 16px;
+  margin-right: 0;
 }
 
 @keyframes markerBounce {

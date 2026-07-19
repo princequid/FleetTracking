@@ -4,6 +4,7 @@ import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.model.dto.CreateTripRequest;
 import com.fleettrack.trip.model.dto.DriverResponse;
 import com.fleettrack.trip.model.dto.LocationRequest;
+import com.fleettrack.trip.model.dto.RouteUpdateRequest;
 import com.fleettrack.trip.model.dto.TripResponse;
 import com.fleettrack.trip.model.dto.TripStatusHistoryResponse;
 import com.fleettrack.trip.service.TripService;
@@ -115,6 +116,20 @@ public class TripController {
         requireRole(httpRequest, CANCEL_ROLES);
         Long userId = extractUserId(httpRequest);
         return ResponseEntity.ok(tripService.cancelTrip(id, userId));
+    }
+
+    // The driver app pushes the road-following route geometry it computed (and any
+    // reroute) so the admin live map can draw the driver's actual route, and so
+    // gps-service's deviation detection has a route to compare against.
+    @PutMapping("/{id}/route")
+    public ResponseEntity<Void> updateRoute(
+            @PathVariable Long id,
+            @RequestBody RouteUpdateRequest request,
+            HttpServletRequest httpRequest) {
+        requireRole(httpRequest, TRANSITION_ROLES);
+        Long requesterDriverId = resolveOwnDriverId(httpRequest);
+        tripService.updateRoute(id, request.getRouteGeometry(), requesterDriverId);
+        return ResponseEntity.noContent().build();
     }
 
     private Long extractUserId(HttpServletRequest request) {

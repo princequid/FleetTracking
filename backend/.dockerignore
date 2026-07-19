@@ -1,0 +1,18 @@
+# Keeps the Docker build context small — this directory is the build context for every
+# service whose docker-compose.yml entry uses "context: ../backend" (audit-service,
+# auth-service_1, trip-service_2, gps-service_2, incident-service_3, notification-service_5).
+# None of this is needed: each Dockerfile does a fresh `mvn clean package` from pom.xml + src,
+# so shipping old target/ jars (each ~70-80MB) and debug logs to the daemon just slows every
+# build and wastes memory — worth avoiding on a resource-constrained deploy VM.
+**/target/
+**/*.class
+**/build-output*.txt
+**/build-task*.txt
+**/build-rabbit*.txt
+**/build-gps*.txt
+**/hs_err_pid*.log
+**/replay_pid*.log
+**/*.log
+.git/
+.idea/
+**/*.iml

@@ -19,7 +19,7 @@ const PAGE_TITLES = {
 function getPageTitle(pathname) {
   if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname];
   const base = "/" + pathname.split("/")[1];
-  return PAGE_TITLES[base] || "FleetTrack";
+  return PAGE_TITLES[base] || "FleetSync";
 }
 
 export default function Navbar({ onMenuClick }) {
