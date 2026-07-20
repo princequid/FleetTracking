@@ -52,11 +52,11 @@ sudo usermod -aG docker $USER && newgrp docker
 ### A5. Get the code onto the VM
 ```bash
 git clone <YOUR_GITHUB_REPO_URL> fleettrack
-cd fleettrack/fleettrack-pro/infrastructure_1
+cd fleettrack/infrastructure_1
 ```
 
 ### A6. Create the production `.env`
-Create `fleettrack-pro/infrastructure_1/.env` (it is gitignored — never commit it). **Generate the secrets on the VM** so they never touch a file on your laptop:
+Create `infrastructure_1/.env` inside your clone (it is gitignored — never commit it). **Generate the secrets on the VM** so they never touch a file on your laptop:
 
 ```bash
 cat > .env <<EOF
@@ -108,7 +108,7 @@ the `osrm` container crash-loops and all routing (driver navigation + the admin 
 dead — even though the rest of the stack comes up. Generate it once on the VM (Ghana extract,
 MLD algorithm to match the compose command):
 ```bash
-cd fleettrack-pro/infrastructure_1
+cd fleettrack/infrastructure_1
 mkdir -p osrm-data && cd osrm-data
 wget https://download.geofabrik.de/africa/ghana-latest.osm.pbf
 docker run -t -v "$PWD:/data" osrm/osrm-backend osrm-extract   -p /opt/car.lua /data/ghana-latest.osm.pbf
@@ -135,7 +135,7 @@ curl -s -o /dev/null -w "%{http_code}\n" https://fleettrack.duckdns.org/auth/log
 ## Part B — Admin portal on Render
 
 1. Render → **New → Static Site** → connect your GitHub repo.
-2. **Root Directory:** `fleettrack-pro/admin-portal_4`
+2. **Root Directory:** `admin-portal_4`
 3. **Build Command:** `npm ci && npm run build`
 4. **Publish Directory:** `dist`
 5. **Environment variable:** `VITE_API_BASE_URL = https://fleettrack.duckdns.org`
@@ -170,7 +170,7 @@ Download the APK from the link and share/install it. (iOS needs an Apple Develop
 
 Admin in‑app notifications already work (the bell polls incidents + trip events), and the driver app polls its alerts — **no push needed for those**. Real device push (FCM) is only needed for background notifications, and requires:
 1. Firebase console → Project Settings → Service Accounts → **Generate new private key** (JSON).
-2. Put it at `fleettrack-pro/backend/notification-service_5/src/main/resources/firebase-service-account.json` **on the VM only** (it is gitignored — never commit it).
+2. Put it at `fleettrack/backend/notification-service_5/src/main/resources/firebase-service-account.json` **on the VM only** (it is gitignored — never commit it).
 3. Rebuild + restart notification-service so it picks up the key: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build notification-service`. (notification-service already runs in the stack by default; without the JSON it just runs with push disabled — safe. For **mobile** push you also need the matching `google-services.json` in `mobile/` and its `app.json` reference restored, then a new EAS build.)
 
 ---
