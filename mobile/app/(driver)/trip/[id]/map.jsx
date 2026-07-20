@@ -892,8 +892,13 @@ export default function LiveMapScreen() {
     const now  = timestamp || Date.now();
 
     // ── Location stabilisation (fixes Android GPS jitter/drift when parked) ──
-    // 1) Drop very inaccurate fixes that would make the marker jump around.
-    if (prev && acc > 50) return;
+    // 1) Drop very inaccurate fixes that would make the marker jump around. 35m (was 50m)
+    // — indoors/poor-signal fixes routinely fall back to WiFi/cell-tower estimates that can
+    // report misleadingly "OK" accuracy in the 35-50m band while still being genuinely wrong,
+    // so reject more of that before it reaches the deadband/confirmed-move checks below.
+    // Real outdoor GPS is typically 3-15m accurate, well under this either way — this only
+    // tightens behavior for poor-signal conditions, not normal driving.
+    if (prev && acc > 35) return;
     // 2) Deadband: GPS keeps reporting tiny position changes even when the vehicle
     //    is stationary. If the reported move is below the noise radius, treat the
     //    driver as not moving — keep the marker/camera still and show 0 km/h.

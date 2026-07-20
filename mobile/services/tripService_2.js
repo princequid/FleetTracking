@@ -1,5 +1,7 @@
 import api from './api_1';
-import * as FileSystem from 'expo-file-system';
+// See mediaService_3.js — the legacy subpath keeps the same getInfoAsync/readAsStringAsync/
+// writeAsStringAsync API this file uses, without the top-level export's deprecation warning.
+import * as FileSystem from 'expo-file-system/legacy';
 
 const PING_QUEUE_FILE = `${FileSystem.documentDirectory}ft_offline_pings.json`;
 
