@@ -1,5 +1,9 @@
 import api from './api_1';
-import * as FileSystem from 'expo-file-system';
+// The top-level 'expo-file-system' export deprecated getInfoAsync/readAsStringAsync/
+// writeAsStringAsync in SDK 54 in favor of new File/Directory classes. The 'legacy'
+// subpath keeps the exact same API this file already uses, just without the warning —
+// a full migration to the new class-based API is a separate, bigger change.
+import * as FileSystem from 'expo-file-system/legacy';
 
 const QUEUE_FILE = `${FileSystem.documentDirectory}ft_upload_queue.json`;
 

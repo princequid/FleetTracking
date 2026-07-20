@@ -28,7 +28,7 @@ public class MediaController {
     private String internalServiceSecret;
 
     private static final List<String> DRIVER_ROLES = List.of("DRIVER");
-    private static final List<String> ADMIN_DISPATCHER_ROLES = List.of("ADMIN", "DISPATCHER");
+    private static final List<String> ADMIN_DISPATCHER_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
 
     @PostMapping("/presign")
     public ResponseEntity<PresignResponse> generatePresignedUrl(
