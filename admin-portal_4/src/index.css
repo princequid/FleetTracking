@@ -2709,6 +2709,20 @@ h1 {
   box-shadow: var(--shadow-sm);
 }
 
+/* Nested inside the Status Timeline sidebar card, which already has this same white/
+   border/shadow treatment — a second full card here would look like a card-in-a-card,
+   so this becomes a simple divided section instead. */
+.trip-detail-sidebar .trip-pod-card {
+  background: none;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
 .trip-pod-badge {
   display: inline-block;
   background: var(--color-teal-pale);

@@ -39,7 +39,11 @@ export default function Pin3D({ color, size = 40, glow = false, hole = true }) {
   const light = shade(color, 30);
   const dark = shade(color, -25);
   const gradId = `pin-grad-${color.slice(1)}`;
-  const height = size * (29 / 24);
+  // Rounded to a whole pixel — react-native-maps measures a custom Android marker's
+  // native view to place/anchor it, and a fractional height there can make that
+  // measurement land differently between re-layouts (e.g. tracksViewChanges
+  // switching on/off), which reads as the pin's anchor drifting by a pixel or two.
+  const height = Pin3D.height(size);
 
   return (
     <Svg width={size} height={height} viewBox="0 0 24 29">
@@ -70,6 +74,12 @@ export default function Pin3D({ color, size = 40, glow = false, hole = true }) {
     </Svg>
   );
 }
+
+// The pin's actual rendered height for a given `size` — callers that wrap Pin3D in
+// their own layout (e.g. a label chip above it) must size that wrapper to this exact
+// rounded value, not re-derive the 29/24 ratio themselves, so the wrapper never
+// mismatches the SVG's real measured height by a fractional pixel.
+Pin3D.height = (size) => Math.round(size * (29 / 24));
 
 // Pixel offset of the badge center for a given rendered `size`, so callers can
 // overlay an RN <Text> precisely on the solid-badge (`hole={false}`) variant.

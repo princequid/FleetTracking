@@ -17,7 +17,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme, useThemeMode } from '../../../../theme/ThemeContext';
 import VehicleMarker3D from '../../../../components/map/VehicleMarker3D';
-import Pin3D from '../../../../components/map/Pin3D';
 import api from '../../../../services/api_1';
 import { useNavStore } from '../../../../store/navStore_2';
 import { useTripStore } from '../../../../store/tripStore_2';
@@ -230,21 +229,18 @@ function parseOsrmSteps(steps) {
 }
 
 // ─── Distinct map pin ─────────────────────────────────────────────────────────
-// A glossy 3D pin (see components/map/Pin3D.jsx — the same base shape the driver's
-// marker uses), plus an optional label chip above. Anchored at the bottom tip so
-// the point marks the exact coordinate.
-// NOTE: the number badge is layered on top as a plain RN <Text>, not SVG text or an
-// icon font. Icon-font glyphs don't reliably rasterise inside a react-native-maps
-// custom marker on Android, which used to leave these pins blank — RN <Text> always
-// renders. `collapsable={false}` is required on every plain View in this tree on
-// Android: RN's view-flattening optimiser otherwise strips these style-only Views out
-// of the native hierarchy before react-native-maps can snapshot them into a marker
-// bitmap, which is what made these pins render blank (or not at all) on Android only
-// (iOS's Marker implementation doesn't rasterise the same way, so it was unaffected).
-const PIN_BADGE_SIZE = 16;
-
-function Pin({ color, number, label, styles, size = 44 }) {
-  const badge = Pin3D.badgeCenter(size);
+// A teardrop marker: a coloured circular head (white ring + subtle gloss, with a
+// centre dot or a number) sitting on a matching triangle point, plus an optional
+// label chip above. Anchored at the bottom tip so the point marks the exact coordinate.
+// NOTE: built from plain Views/Text — NOT react-native-svg. Android's react-native-maps
+// rasterises each custom marker into a bitmap and does NOT reliably snapshot SVG content
+// (it renders blank/clipped, and a late-mounting pin like the destination can vanish
+// entirely) — Views/Text always rasterise. `collapsable={false}` is required on every
+// plain View in this tree on Android: RN's view-flattening optimiser otherwise strips
+// these style-only Views out of the native hierarchy before react-native-maps can
+// snapshot them, which also left pins blank (iOS's Marker doesn't rasterise the same
+// way, so it was unaffected either way).
+function Pin({ color, number, label, styles }) {
   return (
     <View style={{ alignItems: 'center' }} collapsable={false}>
       {label ? (
@@ -252,20 +248,13 @@ function Pin({ color, number, label, styles, size = 44 }) {
           <Text style={styles.pinLabelText} numberOfLines={1}>{label}</Text>
         </View>
       ) : null}
-      <View style={{ width: size, height: size * (29 / 24) }} collapsable={false}>
-        <Pin3D color={color} size={size} hole={number == null} />
-        {number != null && (
-          <View
-            style={[
-              styles.pinNumberBadge,
-              { left: badge.x - PIN_BADGE_SIZE / 2, top: badge.y - PIN_BADGE_SIZE / 2 },
-            ]}
-            collapsable={false}
-          >
-            <Text style={styles.pinNumber}>{number}</Text>
-          </View>
-        )}
+      <View style={[styles.pinHead, { backgroundColor: color }]} collapsable={false}>
+        <View style={styles.pinGloss} collapsable={false} />
+        {number != null
+          ? <Text style={styles.pinNumber}>{number}</Text>
+          : <View style={styles.pinCenterDot} collapsable={false} />}
       </View>
+      <View style={[styles.pinPoint, { borderTopColor: color }]} collapsable={false} />
     </View>
   );
 }
@@ -458,11 +447,15 @@ export default function LiveMapScreen() {
   );
 
   // Once the vehicle marker first has a position, keep it rasterising just long enough
-  // for the truck glyph to render, then stop so the icon stays crisp (Android fix).
+  // for the pin glyph to render, then stop so the icon stays crisp (Android fix).
+  // 1800ms (was 1000ms) — a slower Android device can still be mid-paint of the SVG's
+  // gradient/glow layers at the 1s mark, and freezing tracksViewChanges mid-paint
+  // locks in that incomplete frame permanently (the icon then looks wrong/clipped
+  // for the rest of the trip, since tracksViewChanges never re-enables itself).
   useEffect(() => {
     if (currentPosition && !vehicleReadyRef.current) {
       vehicleReadyRef.current = true;
-      const t = setTimeout(() => setVehicleTracking(false), 1000);
+      const t = setTimeout(() => setVehicleTracking(false), 1800);
       return () => clearTimeout(t);
     }
   }, [currentPosition]);
@@ -905,7 +898,12 @@ export default function LiveMapScreen() {
     let movedMeters = 0;
     if (prev) {
       movedMeters    = haversineMetres(prev.latitude, prev.longitude, latitude, longitude);
-      const deadband = Math.min(20, Math.max(8, acc * 0.5));
+      // Floor raised 8m → 12m: Android's reported accuracy is often an optimistic
+      // confidence radius, not a hard cap — a "10m accuracy" fix can still legitimately
+      // wobble 10-15m from the true stationary point. An 8m floor let enough of that
+      // real-world noise clear the deadband (and then mutually "confirm" itself against
+      // the next similarly-noisy fix below) to make the parked marker visibly drift.
+      const deadband = Math.min(20, Math.max(12, acc * 0.5));
       if (movedMeters < deadband) {
         // Stationary jitter — show 0. Do NOT advance lastFixTimeRef here: it must stay
         // paired with positionRef (both only move on accepted fixes) so the distance÷time
@@ -2229,13 +2227,33 @@ const makeStyles = (C) => StyleSheet.create({
     elevation: 4,
   },
   pinLabelText: { fontFamily: 'Inter-Bold', fontSize: 12, color: C.text1 },
-  // Overlaid on Pin3D's solid white badge (hole={false}) to number a stop pin —
-  // dark text so it stays legible on white regardless of the pin's own color.
-  pinNumberBadge: {
-    position: 'absolute', width: PIN_BADGE_SIZE, height: PIN_BADGE_SIZE,
+  // Plain-View teardrop pin (circular head + white ring + triangle point). Built
+  // from Views/Text only — NOT react-native-svg — because Android's react-native-maps
+  // rasterises each custom marker to a bitmap and does NOT reliably snapshot SVG
+  // content (it renders blank/clipped, and a late-mounting pin like the destination
+  // can vanish entirely). Views/Text always rasterise, so every pin shows completely.
+  pinHead: {
+    width: 30, height: 30, borderRadius: 15,
+    borderWidth: 3, borderColor: '#fff',
     alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
   },
-  pinNumber: { fontFamily: 'Inter-Bold', fontSize: 12, color: '#1E293B' },
+  // Subtle top sheen so the flat head still reads as a glossy 3D pin.
+  pinGloss: {
+    position: 'absolute', top: 4,
+    width: 14, height: 6, borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+  },
+  // Only stops are numbered, and stops are always amber — dark text reads clearly on it.
+  pinNumber: { fontFamily: 'Inter-Bold', fontSize: 13, color: '#1E293B' },
+  pinCenterDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#fff' },
+  pinPoint: {
+    width: 0, height: 0, marginTop: -4,
+    borderLeftWidth: 6.5, borderRightWidth: 6.5, borderTopWidth: 10,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    // borderTopColor set inline per pin
+  },
   turnDot:       { width: 12, height: 12, borderRadius: 6, backgroundColor: C.teal, borderWidth: 2, borderColor: '#fff' },
 
   // Vehicle marker (static + in-flow layout so it rasterises crisply on Android)
