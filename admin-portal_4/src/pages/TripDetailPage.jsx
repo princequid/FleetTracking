@@ -327,6 +327,11 @@ export default function TripDetailPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="trip-detail-sidebar">
+        <h2 className="trip-timeline-title">Status Timeline</h2>
+        <TripTimeline history={history} driver={driver} />
 
         {displayPhotos.length > 0 && (
           <div className="trip-pod-card">
@@ -353,11 +358,6 @@ export default function TripDetailPage() {
             </div>
           </div>
         )}
-      </div>
-
-      <div className="trip-detail-sidebar">
-        <h2 className="trip-timeline-title">Status Timeline</h2>
-        <TripTimeline history={history} driver={driver} />
       </div>
 
       {lightboxPhoto && (
