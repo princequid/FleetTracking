@@ -26,7 +26,7 @@ public class VehicleController {
     private String internalServiceSecret;
 
     private static final List<String> LIST_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
-    private static final List<String> AVAILABLE_ROLES = List.of("ADMIN", "DISPATCHER");
+    private static final List<String> AVAILABLE_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
     private static final List<String> WRITE_ROLES = List.of("ADMIN", "SUPER_ADMIN");
 
     @PostMapping

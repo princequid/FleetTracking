@@ -8,7 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming,
-  runOnJS,
+  runOnJS, Easing,
 } from 'react-native-reanimated';
 import { useAuthStore } from '../../store/authStore_1';
 import { useDriverStore } from '../../store/driverStore_1';
@@ -119,7 +119,9 @@ export default function ProfileScreen() {
   const openSignOut = () => {
     setShowSignOut(true);
     backdropOpac.value = withTiming(1, { duration: 250 });
-    sheetY.value = withSpring(0, { damping: 18, stiffness: 180 });
+    // withTiming + ease-out (not withSpring) — a smooth, solid slide-in with no
+    // overshoot/bounce at the end.
+    sheetY.value = withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -128,7 +130,7 @@ export default function ProfileScreen() {
     // already in flight and about to navigate away.
     if (signingOut) return;
     backdropOpac.value = withTiming(0, { duration: 200 });
-    sheetY.value = withSpring(300, { damping: 18, stiffness: 180 }, () => {
+    sheetY.value = withTiming(300, { duration: 220, easing: Easing.in(Easing.cubic) }, () => {
       runOnJS(setShowSignOut)(false);
     });
   };
