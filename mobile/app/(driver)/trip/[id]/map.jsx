@@ -9,7 +9,7 @@ import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import * as SecureStore from 'expo-secure-store';
-import MapView, { Marker, Polyline, UrlTile, PROVIDER_DEFAULT } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT, PROVIDER_GOOGLE } from 'react-native-maps';
 import Animated, {
   useSharedValue, useAnimatedStyle,
   withTiming, withSpring, withRepeat, withSequence,
@@ -17,6 +17,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme, useThemeMode } from '../../../../theme/ThemeContext';
 import VehicleMarker3D from '../../../../components/map/VehicleMarker3D';
+import Pin3D from '../../../../components/map/Pin3D';
+import { DARK_MAP_STYLE } from '../../../../constants/mapStyle';
 import api from '../../../../services/api_1';
 import { useNavStore } from '../../../../store/navStore_2';
 import { useTripStore } from '../../../../store/tripStore_2';
@@ -27,9 +29,10 @@ const READY_RADIUS  = 50;    // within this of the trip start → "Ready" button
 // FleetTrack marker-family colors — fixed brand colors for the pin roles, independent
 // of the light/dark theme palette (a stop pin should read the same shade of amber
 // whichever theme the driver has selected).
-const PIN_START_COLOR = '#22C55E';
-const PIN_STOP_COLOR  = '#F59E0B';
-const PIN_DEST_COLOR  = '#EF4444';
+const PIN_START_COLOR  = '#22C55E';
+const PIN_STOP_COLOR   = '#F59E0B';
+const PIN_DEST_COLOR   = '#EF4444';
+const PIN_DRIVER_COLOR = '#1677FF';
 // Public OSRM server (HTTPS) so routes follow real roads from anywhere the phone has
 // internet — no local OSRM/firewall needed. Override with EXPO_PUBLIC_OSRM_URL to use a
 // self-hosted OSRM instead. If unreachable, the map falls back to a direct line.
@@ -48,10 +51,9 @@ const PHASE = { APPROACH: 'APPROACH', AT_START: 'AT_START', TRIP: 'TRIP', ARRIVE
 // navigating away and back within the app session, so re-opening the map is instant
 // (no re-fetch/geocode/route). Cleared when the trip is marked arrived.
 const routeCache = new Map();
-// Street-level navigation zoom. The MapView caps zoom at maxZoomLevel={18}
-// (and UrlTile at maximumZ={18} to avoid black tiles), so 18 is the maximum
-// practical navigation zoom for this map. Shared by auto-zoom, follow and recenter
-// so the camera never snaps between zoom levels.
+// Street-level navigation zoom. Both providers render vector detail well past this,
+// so 18 is a comfortable navigation zoom rather than a hard ceiling. Shared by
+// auto-zoom, follow and recenter so the camera never snaps between zoom levels.
 const NAV_ZOOM = 18;
 // Apple Maps (PROVIDER_DEFAULT on iOS) ignores Camera.zoom and uses Camera.altitude
 // (metres) instead. ~350 m gives an equivalent street-level navigation view. Camera
@@ -228,19 +230,16 @@ function parseOsrmSteps(steps) {
   }));
 }
 
-// ─── Distinct map pin ─────────────────────────────────────────────────────────
-// A teardrop marker: a coloured circular head (white ring + subtle gloss, with a
-// centre dot or a number) sitting on a matching triangle point, plus an optional
-// label chip above. Anchored at the bottom tip so the point marks the exact coordinate.
-// NOTE: built from plain Views/Text — NOT react-native-svg. Android's react-native-maps
-// rasterises each custom marker into a bitmap and does NOT reliably snapshot SVG content
-// (it renders blank/clipped, and a late-mounting pin like the destination can vanish
-// entirely) — Views/Text always rasterise. `collapsable={false}` is required on every
-// plain View in this tree on Android: RN's view-flattening optimiser otherwise strips
-// these style-only Views out of the native hierarchy before react-native-maps can
-// snapshot them, which also left pins blank (iOS's Marker doesn't rasterise the same
-// way, so it was unaffected either way).
-function Pin({ color, number, label, styles }) {
+// ─── Distinct map pin (iOS only) ──────────────────────────────────────────────
+// The custom teardrop pin (Pin3D) with an optional label chip above, anchored at the
+// bottom tip so the point marks the exact coordinate. Android uses native Google pins
+// instead (see RouteMarker below), so this only ever renders on iOS.
+// The stop number is layered on top as a plain RN <Text> rather than SVG text, since
+// SVG text and icon-font glyphs don't rasterise reliably inside a marker.
+const PIN_BADGE_SIZE = 16;
+
+function Pin({ color, number, label, styles, size = 44 }) {
+  const badge = Pin3D.badgeCenter(size);
   return (
     <View style={{ alignItems: 'center' }} collapsable={false}>
       {label ? (
@@ -248,14 +247,74 @@ function Pin({ color, number, label, styles }) {
           <Text style={styles.pinLabelText} numberOfLines={1}>{label}</Text>
         </View>
       ) : null}
-      <View style={[styles.pinHead, { backgroundColor: color }]} collapsable={false}>
-        <View style={styles.pinGloss} collapsable={false} />
-        {number != null
-          ? <Text style={styles.pinNumber}>{number}</Text>
-          : <View style={styles.pinCenterDot} collapsable={false} />}
+      <View style={{ width: size, height: Pin3D.height(size) }} collapsable={false}>
+        <Pin3D color={color} size={size} hole={false} />
+        {number != null && (
+          <View
+            style={[
+              styles.pinNumberBadge,
+              { left: badge.x - PIN_BADGE_SIZE / 2, top: badge.y - PIN_BADGE_SIZE / 2 },
+            ]}
+            collapsable={false}
+          >
+            <Text style={styles.pinNumber}>{number}</Text>
+          </View>
+        )}
       </View>
-      <View style={[styles.pinPoint, { borderTopColor: color }]} collapsable={false} />
     </View>
+  );
+}
+
+// ─── Marker that stops flickering ─────────────────────────────────────────────
+// Android re-rasterises a custom marker on EVERY frame while tracksViewChanges is
+// true, which is what shows up as the pins blinking/jittering. Leaving it permanently
+// true was how these pins avoided being frozen mid-paint (blank or half-drawn), but
+// the cost was that flicker. This does both: it tracks just long enough for the pin to
+// paint, then freezes the bitmap so it stops re-rasterising (and stops blinking).
+// `trackKey` reopens that window whenever the marker's content changes — e.g. the
+// destination label resolving after a geocode — so a late change still gets captured.
+function TrackedMarker({ trackKey, trackMs = 1500, children, ...markerProps }) {
+  const [tracking, setTracking] = useState(true);
+  useEffect(() => {
+    setTracking(true);
+    const t = setTimeout(() => setTracking(false), trackMs);
+    return () => clearTimeout(t);
+  }, [trackKey, trackMs]);
+  return (
+    <Marker tracksViewChanges={tracking} {...markerProps}>
+      {children}
+    </Marker>
+  );
+}
+
+// ─── Platform-split route marker ──────────────────────────────────────────────
+// Android → a NATIVE Google Maps pin (`pinColor`, no children). With no custom view
+// there is nothing for Android to rasterise into a marker bitmap, which was the single
+// root cause of the clipped / missing / flickering pins — SVG and plain Views both hit
+// it. A native pin always draws. Trade-off: native pins can't carry the number badge or
+// the label chip, so those move into `title` (shown when the pin is tapped), and Google
+// snaps `pinColor` to its nearest standard marker hue.
+// iOS → the custom teardrop pin, which renders correctly there, unchanged.
+function RouteMarker({ coordinate, color, number, label, styles, zIndex, trackKey }) {
+  if (Platform.OS === 'android') {
+    return (
+      <Marker
+        coordinate={coordinate}
+        pinColor={color}
+        title={number != null ? `Stop ${number}` : label}
+        zIndex={zIndex}
+      />
+    );
+  }
+  return (
+    <TrackedMarker
+      trackKey={trackKey}
+      coordinate={coordinate}
+      anchor={{ x: 0.5, y: 1 }}
+      zIndex={zIndex}
+    >
+      <Pin color={color} number={number} label={label} styles={styles} />
+    </TrackedMarker>
   );
 }
 
@@ -275,10 +334,11 @@ export default function LiveMapScreen() {
   const C = useTheme();
   const { resolved } = useThemeMode();
   const styles = useMemo(() => makeStyles(C), [C]);
-  // Android renders CARTO raster tiles — swap to the dark basemap in dark mode.
-  const mapTileUrl = resolved === 'dark'
-    ? 'https://basemaps.cartocdn.com/rastertiles/dark-matter/{z}/{x}/{y}.png'
-    : 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+  // Map provider: Android → Google Maps (needs the API key in app.json's
+  // android.config.googleMaps); iOS → Apple Maps (PROVIDER_DEFAULT), since the iOS
+  // Google Maps key is still a placeholder. Dark mode is handled per-provider on the
+  // MapView below (customMapStyle for Google, userInterfaceStyle for Apple).
+  const mapProvider = Platform.OS === 'android' ? PROVIDER_GOOGLE : PROVIDER_DEFAULT;
   const insets          = useSafeAreaInsets();
   const mapRef          = useRef(null);
 
@@ -379,9 +439,6 @@ export default function LiveMapScreen() {
   const [permissionDenied,     setPermDenied]         = useState(false);
   const [errorToast,           setErrorToast]         = useState('');
   const [mapMounted,           setMapMounted]         = useState(false);
-  // tracksViewChanges is always true for the vehicle marker — toggling it causes
-  // react-native-maps to drop the Reanimated view in the native layer, making the
-  // marker vanish or snap to stale coordinates.
   const [tiltEnabled,          setTiltEnabled]        = useState(true);
   const [isLoading,            setIsLoading]          = useState(true);
 
@@ -1687,9 +1744,10 @@ export default function LiveMapScreen() {
         <MapView
           ref={mapRef}
           style={StyleSheet.absoluteFillObject}
-          provider={PROVIDER_DEFAULT}
+          provider={mapProvider}
           mapType="standard"
           userInterfaceStyle={resolved}
+          customMapStyle={resolved === 'dark' ? DARK_MAP_STYLE : []}
           showsUserLocation={false}
           showsCompass={false}
           showsMyLocationButton={false}
@@ -1731,26 +1789,10 @@ export default function LiveMapScreen() {
             } catch { /* ignore */ }
           }}
         >
-          {/* Map imagery:
-              - iOS  → Apple Maps (native vector, free, no key). No tile overlay needed.
-              - Android → Google's base map needs an API key we don't have, so we overlay
-                raster tiles instead.
-              Tiles come from CARTO's basemaps (OpenStreetMap data), NOT the OSM
-              volunteer servers. The public osm.org tiles block embedded apps (HTTP 403 —
-              tile usage policy); CARTO permits app use for free with attribution.
-              - maximumNativeZ 20 → CARTO serves tiles up to z20.
-              - maximumZ 20 caps display so nothing over-zooms into missing tiles.
-              - tileSize 256 matches the raster tile size. */}
-          {Platform.OS === 'android' && (
-            <UrlTile
-              urlTemplate={mapTileUrl}
-              minimumZ={1}
-              maximumZ={20}
-              maximumNativeZ={20}
-              tileSize={256}
-              shouldReplaceMapContent
-            />
-          )}
+          {/* Map imagery is now the provider's own base map — Google Maps on Android
+              (via the app.json API key), Apple Maps on iOS — so there's no raster tile
+              overlay. Dark mode: customMapStyle above styles the Google map; Apple
+              follows userInterfaceStyle. */}
 
           {/* Full route — drawn start → finish so the line is ALWAYS visible,
               independent of the driver's position. White casing underlay first, then the
@@ -1783,46 +1825,42 @@ export default function LiveMapScreen() {
             />
           )}
 
-          {/* Origin — green "Start" pin.
-              tracksViewChanges is always true here (not frozen after a timer, unlike the
-              vehicle marker below) — these pins are few and never move, so the perf cost
-              of always tracking is negligible, and it's what previously caused Android to
-              freeze the bitmap snapshot mid-paint (a clipped "semi-circle" pin) or before
-              a later-resolving destination had painted at all (missing entirely). */}
+          {/* Origin / stops / destination — native Google pins on Android (always draw),
+              custom teardrop pins on iOS. See RouteMarker above. */}
           {originLat != null && (
-            <Marker
+            <RouteMarker
+              trackKey={`origin-${originLat},${originLng}`}
               coordinate={{ latitude: Number(originLat), longitude: Number(originLng) }}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges
+              color={PIN_START_COLOR}
+              label="Start"
+              styles={styles}
               zIndex={2}
-            >
-              <Pin color={PIN_START_COLOR} label="Start" styles={styles} />
-            </Marker>
+            />
           )}
 
-          {/* Stop markers — numbered navy pins between origin and destination */}
+          {/* Stop markers — numbered pins between origin and destination */}
           {stopMarkers.map((s, i) => (
-            <Marker
+            <RouteMarker
               key={`stop-${i}`}
+              trackKey={`stop-${i}-${s.latitude},${s.longitude}`}
               coordinate={{ latitude: Number(s.latitude), longitude: Number(s.longitude) }}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges
+              color={PIN_STOP_COLOR}
+              number={i + 1}
+              styles={styles}
               zIndex={2}
-            >
-              <Pin color={PIN_STOP_COLOR} number={i + 1} styles={styles} />
-            </Marker>
+            />
           ))}
 
           {/* Destination — red pin with the destination name */}
           {destLat != null && (
-            <Marker
+            <RouteMarker
+              trackKey={`dest-${destLat},${destLng}-${trip?.destination || ''}`}
               coordinate={{ latitude: Number(destLat), longitude: Number(destLng) }}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges
+              color={PIN_DEST_COLOR}
+              label={trip?.destination || 'Destination'}
+              styles={styles}
               zIndex={3}
-            >
-              <Pin color={PIN_DEST_COLOR} label={trip?.destination || 'Destination'} styles={styles} />
-            </Marker>
+            />
           )}
 
           {/* Next-turn dot */}
@@ -1836,18 +1874,27 @@ export default function LiveMapScreen() {
             </Marker>
           )}
 
-          {/* Driver location pin — static content so Android rasterises a crisp icon.
-              A pin isn't directional, so unlike a vehicle glyph it doesn't rotate with
-              heading; it's anchored by its point, same as the origin/stop/destination
-              pins above. */}
+          {/* Driver location pin — native Google pin on Android (nothing to rasterise,
+              so it always draws), custom teardrop on iOS. Not directional: it's a pin
+              anchored by its point, so it doesn't rotate with heading. */}
           {currentPosition && (
-            <Marker
-              coordinate={currentPosition}
-              anchor={{ x: 0.5, y: 1 }}
-              tracksViewChanges={vehicleTracking}
-            >
-              <VehicleMarker3D />
-            </Marker>
+            Platform.OS === 'android' ? (
+              <Marker
+                coordinate={currentPosition}
+                pinColor={PIN_DRIVER_COLOR}
+                title="Your location"
+                zIndex={4}
+              />
+            ) : (
+              <Marker
+                coordinate={currentPosition}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={vehicleTracking}
+                zIndex={4}
+              >
+                <VehicleMarker3D />
+              </Marker>
+            )
           )}
         </MapView>
       )}
@@ -1940,13 +1987,6 @@ export default function LiveMapScreen() {
         <Text style={styles.speedVal}>{Math.round(currentSpeed)}</Text>
         <Text style={styles.speedUnit}>KM/H</Text>
       </View>
-
-      {/* Tile attribution — required by CARTO/OpenStreetMap usage terms (Android tiles) */}
-      {Platform.OS === 'android' && (
-        <Text style={[styles.attribution, { bottom: insets.bottom + 190 }]}>
-          © OpenStreetMap © CARTO
-        </Text>
-      )}
 
       {/* ── Map control column (right side) ── */}
       <View style={[styles.controlCol, { top: insets.top + 130 }]}>
@@ -2187,20 +2227,6 @@ const makeStyles = (C) => StyleSheet.create({
   speedVal:  { fontFamily: 'Inter-Bold', fontSize: 20, color: C.text1 },
   speedUnit: { fontFamily: 'Inter-Regular', fontSize: 9, color: C.text3, letterSpacing: 0.5 },
 
-  // Tile attribution (bottom-left, subtle)
-  attribution: {
-    position: 'absolute',
-    left: 10,
-    fontFamily: 'Inter-Regular',
-    fontSize: 9,
-    color: 'rgba(0,0,0,0.5)',
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-
   // Map control column
   controlCol: {
     position: 'absolute', right: 16,
@@ -2227,33 +2253,13 @@ const makeStyles = (C) => StyleSheet.create({
     elevation: 4,
   },
   pinLabelText: { fontFamily: 'Inter-Bold', fontSize: 12, color: C.text1 },
-  // Plain-View teardrop pin (circular head + white ring + triangle point). Built
-  // from Views/Text only — NOT react-native-svg — because Android's react-native-maps
-  // rasterises each custom marker to a bitmap and does NOT reliably snapshot SVG
-  // content (it renders blank/clipped, and a late-mounting pin like the destination
-  // can vanish entirely). Views/Text always rasterise, so every pin shows completely.
-  pinHead: {
-    width: 30, height: 30, borderRadius: 15,
-    borderWidth: 3, borderColor: '#fff',
+  // Overlaid on Pin3D's solid white badge (hole={false}) to number a stop pin —
+  // dark text so it stays legible on white regardless of the pin's own color.
+  pinNumberBadge: {
+    position: 'absolute', width: PIN_BADGE_SIZE, height: PIN_BADGE_SIZE,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
-    elevation: 6,
   },
-  // Subtle top sheen so the flat head still reads as a glossy 3D pin.
-  pinGloss: {
-    position: 'absolute', top: 4,
-    width: 14, height: 6, borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.32)',
-  },
-  // Only stops are numbered, and stops are always amber — dark text reads clearly on it.
-  pinNumber: { fontFamily: 'Inter-Bold', fontSize: 13, color: '#1E293B' },
-  pinCenterDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#fff' },
-  pinPoint: {
-    width: 0, height: 0, marginTop: -4,
-    borderLeftWidth: 6.5, borderRightWidth: 6.5, borderTopWidth: 10,
-    borderLeftColor: 'transparent', borderRightColor: 'transparent',
-    // borderTopColor set inline per pin
-  },
+  pinNumber: { fontFamily: 'Inter-Bold', fontSize: 12, color: '#1E293B' },
   turnDot:       { width: 12, height: 12, borderRadius: 6, backgroundColor: C.teal, borderWidth: 2, borderColor: '#fff' },
 
   // Vehicle marker (static + in-flow layout so it rasterises crisply on Android)

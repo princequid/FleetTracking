@@ -12,7 +12,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAuthStore } from '../../store/authStore_1';
 import { useDriverStore } from '../../store/driverStore_1';
+import { useTripStore } from '../../store/tripStore_2';
 import authService from '../../services/authService_1';
+import api from '../../services/api_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -20,8 +22,8 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 const MENU = [
   { key: 'notif',   icon: 'bell',        label: 'Notifications', sub: 'Manage alerts & push settings',  route: '/(driver)/notifications_5' },
   { key: 'history', icon: 'clock',       label: 'Trip history',  sub: 'View all completed deliveries',  route: '/(driver)/trip/history_2' },
-  { key: 'support', icon: 'help-circle', label: 'Help & Support',sub: 'FAQs, contact fleet manager',    route: null },
-  { key: 'privacy', icon: 'shield',      label: 'Privacy policy',sub: 'Data usage and permissions',     route: null },
+  { key: 'support', icon: 'help-circle', label: 'Help & Support',sub: 'FAQs, contact fleet manager',    route: '/(driver)/help-support' },
+  { key: 'privacy', icon: 'shield',      label: 'Privacy policy',sub: 'Data usage and permissions',     route: '/(driver)/privacy-policy' },
 ];
 
 function MenuItem({ item, onPress, styles, C }) {
@@ -93,12 +95,30 @@ export default function ProfileScreen() {
   // prefetch or the dashboard's own fetch, so this screen can paint real data
   // on first render instead of showing placeholders while it re-fetches.
   const driver = useDriverStore((s) => s.driver);
-  const stats  = useDriverStore((s) => s.stats) || { trips: 0, onTime: 100 };
+  // totalTrips/onTimePercent come straight from GET /drivers/{id}/stats (driver-service,
+  // which in turn pulls real completed/on-time counts from trip-service). onTimePercent
+  // is null — not 0 — until the driver has a completed trip to compute a rate from.
+  const stats  = useDriverStore((s) => s.stats) || { totalTrips: null, onTimePercent: null, rating: null };
   const fetchProfile = useDriverStore((s) => s.fetchProfile);
   const fetchStats   = useDriverStore((s) => s.fetchStats);
   const clearDriver  = useDriverStore((s) => s.clearDriver);
   const [showSignOut, setShowSignOut] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+
+  // A driver profile has no permanent vehicle of its own — vehicles are assigned
+  // per-trip. Resolve the plate number of whichever vehicle is on the driver's
+  // current active trip (set by the dashboard), rather than always showing "Not
+  // assigned" for a field that never existed on the driver profile response.
+  const activeTrip = useTripStore((s) => s.activeTrip);
+  const [vehicle, setVehicle] = useState(null);
+  useEffect(() => {
+    if (!activeTrip?.vehicleId) { setVehicle(null); return; }
+    let cancelled = false;
+    api.get(`/vehicles/${activeTrip.vehicleId}`)
+      .then((res) => { if (!cancelled) setVehicle(res.data); })
+      .catch(() => { if (!cancelled) setVehicle(null); });
+    return () => { cancelled = true; };
+  }, [activeTrip?.vehicleId]);
 
   /* avatar entrance */
   const avatarScale   = useSharedValue(0.8);
@@ -194,7 +214,7 @@ export default function ProfileScreen() {
           {[
             { icon: 'mail',  label: 'Email',   val: authEmail || '–' },
             { icon: 'phone', label: 'Phone',   val: driver?.phone || '–' },
-            { icon: 'truck', label: 'Vehicle', val: driver?.vehicle?.plateNumber || 'Not assigned' },
+            { icon: 'truck', label: 'Vehicle', val: vehicle?.plateNumber || 'Not assigned' },
           ].map((row, i) => (
             <React.Fragment key={row.label}>
               {i > 0 && <View style={styles.infoDivider} />}
@@ -214,9 +234,9 @@ export default function ProfileScreen() {
         <Text style={styles.sectionLabel}>PERFORMANCE</Text>
         <View style={styles.statsRow}>
           {[
-            { label: 'Trips done', val: String(stats.trips || driver?.tripsCompleted || '–'), icon: 'check-circle', color: C.green },
-            { label: 'On time',    val: `${stats.onTime ?? 100}%`,                            icon: 'clock',        color: C.teal },
-            { label: 'Rating',     val: driver?.rating ? `${driver.rating}/5` : '–',          icon: 'star',         color: C.amber },
+            { label: 'Trips done', val: stats.totalTrips != null ? String(stats.totalTrips) : '–',    icon: 'check-circle', color: C.green },
+            { label: 'On time',    val: stats.onTimePercent != null ? `${stats.onTimePercent}%` : '–', icon: 'clock',        color: C.teal },
+            { label: 'Rating',     val: stats.rating != null ? `${stats.rating}/5` : '–',      icon: 'star',         color: C.amber },
           ].map((s) => (
             <View key={s.label} style={styles.statCard}>
               <Feather name={s.icon} size={18} color={s.color} />

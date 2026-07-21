@@ -1,17 +1,17 @@
 package com.fleettrack.driver.service;
 
+import com.fleettrack.driver.client.TripServiceClient;
 import com.fleettrack.driver.model.dto.DriverProfileRequest;
 import com.fleettrack.driver.model.dto.DriverProfileResponse;
 import com.fleettrack.driver.model.dto.DriverStatsResponse;
+import com.fleettrack.driver.model.dto.TripStatsResponse;
 import com.fleettrack.driver.model.entity.DriverProfile;
 import com.fleettrack.driver.exception.DriverNotFoundException;
 import com.fleettrack.driver.repository.DriverProfileRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -20,6 +20,7 @@ import java.util.List;
 public class DriverService {
 
     private final DriverProfileRepository driverProfileRepository;
+    private final TripServiceClient tripServiceClient;
 
     @Transactional
     public DriverProfileResponse createDriver(DriverProfileRequest request) {
@@ -82,13 +83,30 @@ public class DriverService {
         if (!driverProfileRepository.existsById(id)) {
             throw new DriverNotFoundException("Driver not found");
         }
-        // NOTE: real stats require cross-service data (completed/on-time trips from
-        // trip-service, incident counts from incident-service). driver-service has no
-        // client wired up to either service yet (DriverStatsService is an empty stub and
-        // there is no trip-service/incident-service client in this service), so we
-        // deliberately do not fabricate numbers here. Wire this up for real once such a
-        // client exists, rather than resurrecting hardcoded zeros.
-        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Driver stats not yet available");
+        // Completed/on-time trip counts live in trip-service, not here — pulled via a
+        // trusted internal call (see TripServiceClient). If trip-service is unreachable,
+        // the client itself falls back to zeroed stats rather than failing this request.
+        TripStatsResponse tripStats = tripServiceClient.getDriverTripStats(id);
+        long total = tripStats.getCompletedTrips();
+        long onTime = tripStats.getOnTimeTrips();
+        // null (not 0%) when there's no completed trip yet — "no data" and "0% on-time
+        // over real trips" mean different things and the UI shouldn't conflate them.
+        Integer onTimePercent = total > 0 ? (int) Math.round((onTime * 100.0) / total) : null;
+        // Rating has no independent source of its own (no customer feedback, no admin
+        // rating UI) — by product decision it's derived from on-time %, linearly mapped
+        // onto the familiar 1-5 star scale (0% -> 1.0, 100% -> 5.0). Null follows
+        // onTimePercent for the same "no data yet" reason.
+        Double rating = onTimePercent != null
+                ? Math.round((1 + (onTimePercent / 100.0) * 4) * 10) / 10.0
+                : null;
+
+        return DriverStatsResponse.builder()
+                .driverId(id)
+                .totalTrips((int) total)
+                .onTimeTrips((int) onTime)
+                .onTimePercent(onTimePercent)
+                .rating(rating)
+                .build();
     }
 
     private DriverProfileResponse mapToResponse(DriverProfile profile) {
