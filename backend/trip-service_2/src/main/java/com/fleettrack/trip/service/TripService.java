@@ -298,6 +298,15 @@ public class TripService {
         return mapToResponse(trip);
     }
 
+    // Backs driver-service's "performance" stats (called internally — see
+    // TripServiceClient in driver-service). No ownership check needed: only reachable via
+    // requireRoleOrInternal, i.e. an admin/dispatcher or a trusted internal-service caller.
+    public DriverTripStatsResponse getDriverTripStats(Long driverId) {
+        long completed = tripRepository.countByDriverIdAndStatus(driverId, TripStatus.DELIVERED);
+        long onTime = tripRepository.countOnTimeByDriverId(driverId);
+        return new DriverTripStatsResponse(completed, onTime);
+    }
+
     public List<TripStatusHistoryResponse> getTripStatusHistory(Long tripId, Long requesterDriverId) {
         Trip trip = findTrip(tripId);
         checkOwnership(trip, requesterDriverId);

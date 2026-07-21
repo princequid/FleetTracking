@@ -3,6 +3,7 @@ package com.fleettrack.trip.controller;
 import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.model.dto.CreateTripRequest;
 import com.fleettrack.trip.model.dto.DriverResponse;
+import com.fleettrack.trip.model.dto.DriverTripStatsResponse;
 import com.fleettrack.trip.model.dto.LocationRequest;
 import com.fleettrack.trip.model.dto.RouteUpdateRequest;
 import com.fleettrack.trip.model.dto.TripResponse;
@@ -69,6 +70,16 @@ public class TripController {
         requireRoleOrInternal(httpRequest, ALL_ROLES);
         Long requesterDriverId = resolveOwnDriverId(httpRequest);
         return ResponseEntity.ok(tripService.getTripById(id, requesterDriverId));
+    }
+
+    // Internal — called by driver-service to back the driver app's "Performance" card
+    // (completed-trip count + on-time %). Never exposed as a driver-facing endpoint of
+    // its own; driver-service's own /drivers/{id}/stats is the public-facing route.
+    @GetMapping("/drivers/{driverId}/stats")
+    public ResponseEntity<DriverTripStatsResponse> getDriverTripStats(
+            @PathVariable Long driverId, HttpServletRequest httpRequest) {
+        requireRoleOrInternal(httpRequest, ALL_ROLES);
+        return ResponseEntity.ok(tripService.getDriverTripStats(driverId));
     }
 
     @GetMapping("/{id}/history")
