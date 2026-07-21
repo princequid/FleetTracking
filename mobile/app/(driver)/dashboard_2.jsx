@@ -4,6 +4,7 @@ import {
   RefreshControl, Linking, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -187,6 +188,7 @@ function TripRow({ trip, isLast, onPress, ss, C }) {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const ss = useMemo(() => makeStyles(C), [C]);
 
@@ -395,13 +397,13 @@ export default function HomeScreen() {
 
         {/* ── Header ────────────────────────────────────────────── */}
         <Animated.View style={headerStyle}>
-          <View style={ss.header}>
+          <View style={[ss.header, { paddingTop: Math.max(56, insets.top + 16) }]}>
             <View style={ss.headerTop}>
-              <View>
-                <Text style={ss.greeting}>{getGreeting()}</Text>
-                <Text style={ss.driverName}>{driverName}</Text>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={ss.greeting} numberOfLines={1}>{getGreeting()}</Text>
+                <Text style={ss.driverName} numberOfLines={1} ellipsizeMode="tail">{driverName}</Text>
               </View>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 10, flexShrink: 0 }}>
                 <PressableScale
                   onPress={() => router.push('/(driver)/notifications_5')}
                   style={ss.headerCircleBtn}

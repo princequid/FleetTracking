@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { GoogleMap, MarkerF, PolylineF, useJsApiLoader } from "@react-google-maps/api";
 import { createPin3DIcon } from "./pin3D";
-import { OSRM_BASE_URL } from "../../constants/config";
+import { LIGHT_MAP_STYLE } from "./googleMapStyle";
+import { GOOGLE_MAPS_API_KEY, OSRM_BASE_URL } from "../../constants/config";
 import { parseRouteLatLngs, fetchRoadRoute } from "../../utils/routeGeometry";
+
+const MAP_CONTAINER_STYLE = { height: "100%", width: "100%" };
 
 // FleetTrack marker-family colors — same fixed roles as the mobile driver map.
 const PIN_START_COLOR = "#22C55E";
 const PIN_STOP_COLOR  = "#F59E0B";
 const PIN_DEST_COLOR  = "#EF4444";
+
+// Convert the [lat,lng] pairs routeGeometry.js hands back into the {lat,lng}
+// objects the Google Maps API expects for a Polyline path / Marker position.
+const toLatLngObjs = (pairs) => pairs.map(([lat, lng]) => ({ lat, lng }));
 
 // Forward-geocode a free-text location into coordinates (same Nominatim endpoint
 // LocationAutocomplete uses). Only called for legacy trips that lack stored lat/lng.
@@ -37,18 +43,12 @@ function pinIcon(kind, number) {
   return createPin3DIcon(PIN_DEST_COLOR, { size: 34 });
 }
 
-// Fits the map view to every resolved point once they're known.
-function FitBounds({ points }) {
-  const map = useMap();
-  useEffect(() => {
-    if (points.length === 0) return;
-    if (points.length === 1) map.setView(points[0], 14);
-    else map.fitBounds(points, { padding: [32, 32] });
-  }, [points, map]);
-  return null;
-}
-
 export default function TripRouteMap({ trip }) {
+  const { isLoaded } = useJsApiLoader({
+    id: "google-map-script",
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+  });
+
   const [points, setPoints] = useState(null); // null = resolving; object once resolved
   const [roadRoute, setRoadRoute] = useState(null); // road-following [[lat,lng],...], or null
 
@@ -106,6 +106,20 @@ export default function TripRouteMap({ trip }) {
   }, [trip.routeGeometry, routeLine]);
 
   const displayedRoute = roadRoute && roadRoute.length > 1 ? roadRoute : routeLine;
+  const displayedRoutePath = useMemo(() => toLatLngObjs(displayedRoute), [displayedRoute]);
+
+  const handleMapLoad = useCallback((map) => {
+    if (displayedRoute.length === 0) return;
+    if (displayedRoute.length === 1) {
+      map.setCenter(displayedRoutePath[0]);
+      map.setZoom(14);
+      return;
+    }
+    const bounds = new window.google.maps.LatLngBounds();
+    displayedRoutePath.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, 32);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (points === null) {
     return (
@@ -124,36 +138,48 @@ export default function TripRouteMap({ trip }) {
     );
   }
 
+  if (!isLoaded) {
+    return (
+      <div className="trip-route-map trip-route-map--loading">
+        <span className="loc-spinner" />
+        <span>Loading map…</span>
+      </div>
+    );
+  }
+
   return (
     <div className="trip-route-map">
-      <MapContainer
-        center={routeLine[0]}
+      <GoogleMap
+        mapContainerStyle={MAP_CONTAINER_STYLE}
+        center={{ lat: routeLine[0][0], lng: routeLine[0][1] }}
         zoom={13}
-        style={{ height: "100%", width: "100%" }}
-        scrollWheelZoom={false}
+        onLoad={handleMapLoad}
+        options={{
+          styles: LIGHT_MAP_STYLE,
+          disableDefaultUI: true,
+          zoomControl: true,
+          scrollwheel: false,
+          clickableIcons: false,
+        }}
       >
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          maxZoom={19}
-        />
-        <FitBounds points={displayedRoute} />
-        {displayedRoute.length > 1 && (
-          <Polyline positions={displayedRoute} pathOptions={{ color: "#2563EB", weight: 4 }} />
+        {displayedRoutePath.length > 1 && (
+          <PolylineF path={displayedRoutePath} options={{ strokeColor: "#2563EB", strokeWeight: 4 }} />
         )}
         {points.origin && (
-          <Marker position={[points.origin.lat, points.origin.lng]} icon={pinIcon("start")} />
+          <MarkerF position={{ lat: points.origin.lat, lng: points.origin.lng }} icon={pinIcon("start")} />
         )}
         {points.stops.map((s, i) =>
-          s ? <Marker key={i} position={[s.lat, s.lng]} icon={pinIcon("stop", i + 1)} /> : null
+          s ? (
+            <MarkerF key={i} position={{ lat: s.lat, lng: s.lng }} icon={pinIcon("stop", i + 1)} />
+          ) : null
         )}
         {points.destination && (
-          <Marker
-            position={[points.destination.lat, points.destination.lng]}
+          <MarkerF
+            position={{ lat: points.destination.lat, lng: points.destination.lng }}
             icon={pinIcon("dest")}
           />
         )}
-      </MapContainer>
+      </GoogleMap>
     </div>
   );
 }
