@@ -28,6 +28,10 @@ public class VehicleController {
     private static final List<String> LIST_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
     private static final List<String> AVAILABLE_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
     private static final List<String> WRITE_ROLES = List.of("ADMIN", "SUPER_ADMIN");
+    // Vehicle details (plate/model/capacity) aren't sensitive, so a DRIVER may look up a
+    // single vehicle by id — needed so the driver app can show which vehicle is assigned
+    // to their current trip. Listing the whole fleet or writing stays staff-only.
+    private static final List<String> SINGLE_VEHICLE_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN", "DRIVER");
 
     @PostMapping
     public ResponseEntity<VehicleResponse> createVehicle(
@@ -52,7 +56,7 @@ public class VehicleController {
 
     @GetMapping("/{id}")
     public ResponseEntity<VehicleResponse> getVehicleById(@PathVariable Long id, HttpServletRequest r) {
-        requireRoleOrInternal(r, LIST_ROLES);
+        requireRoleOrInternal(r, SINGLE_VEHICLE_ROLES);
         return ResponseEntity.ok(vehicleService.getVehicleById(id));
     }
 
