@@ -1801,12 +1801,6 @@ h1 {
   overflow: hidden;
 }
 
-/* Leaflet container fills the slot */
-.map-modal-map .leaflet-container {
-  height: 100% !important;
-  width: 100% !important;
-}
-
 .map-modal-footer {
   padding: 12px 20px;
   border-top: 1px solid var(--color-border);
@@ -2889,8 +2883,8 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Above Leaflet's own control layer (.leaflet-top/.leaflet-bottom, z-index: 1000)
-     so the trip-detail route map's zoom controls can't render on top of the photo
+  /* Above Google Maps' own control layer (its default z-index sits around 1000) so
+     the trip-detail route map's zoom controls can't render on top of the photo
      lightbox — otherwise the overlay looked like it was rendering "behind" the map. */
   z-index: 1100;
   cursor: zoom-out;
@@ -3544,34 +3538,6 @@ h1 {
   white-space: nowrap;
 }
 
-.fleet-marker {
-  cursor: pointer;
-}
-
-.fleet-marker:hover {
-  transform: scale(1.15);
-  transition: transform 150ms;
-}
-
-.fleet-marker-box {
-  width: 32px;
-  height: 32px;
-  background: var(--color-white);
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  border: 2px solid var(--color-teal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Driver car marker — self-contained SVG, so no default box/border behind it */
-.fleet-car-marker,
-.fleet-route-pin {
-  background: transparent;
-  border: none;
-}
-
 /* Per-driver colour dot (popup + sidebar), matches the car marker's body colour */
 .fleet-driver-dot {
   display: inline-block;
@@ -3590,33 +3556,21 @@ h1 {
   margin-right: 0;
 }
 
-@keyframes markerBounce {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-.marker-selected {
-  animation: markerBounce 600ms ease-in-out;
-}
-
-.leaflet-popup-content-wrapper {
+/* Google's InfoWindow chrome — override its default padding/shadow so it matches
+   the rest of the design system instead of looking like a raw Google Maps popup. */
+.gm-style .gm-style-iw-c {
   border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  padding: 0;
+  padding: 14px 16px;
 }
 
-.leaflet-popup-content {
-  margin: 14px 16px;
+.gm-style .gm-style-iw-d {
+  overflow: visible !important;
   min-width: 160px;
 }
 
-.leaflet-popup-tip-container {
-  display: none;
+.fleet-popup {
+  font-family: inherit;
 }
 
 .fleet-popup-driver {

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Pressable,
-  ScrollView, SafeAreaView, Modal,
+  ScrollView, Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -84,6 +85,7 @@ function initials(name = '') {
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -184,8 +186,8 @@ export default function ProfileScreen() {
   const driverName = driver?.fullName || 'Driver';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="chevron-left" size={20} color="#fff" />
         </Pressable>
@@ -309,7 +311,7 @@ export default function ProfileScreen() {
           </View>
         </Modal>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
