@@ -16,4 +16,8 @@ public class LoginResponse {
 
     private Role role;
     private Long userId;
+
+    // True once, right after an admin-created account's first successful login —
+    // prompts the mobile app to offer changing the password the admin set.
+    private Boolean mustChangePassword;
 }

@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
   Image, Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -91,6 +92,7 @@ const makeRingStyles = (C) => StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function PODScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const ringStyles = useMemo(() => makeRingStyles(C), [C]);
@@ -259,7 +261,7 @@ export default function PODScreen() {
       )}
 
       {/* Top overlay */}
-      <View style={styles.topOverlay}>
+      <View style={[styles.topOverlay, { paddingTop: Math.max(48, insets.top + 12) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="x" size={20} color="#fff" />
         </TouchableOpacity>

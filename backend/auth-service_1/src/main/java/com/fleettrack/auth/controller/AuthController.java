@@ -3,6 +3,8 @@ package com.fleettrack.auth.controller;
 import com.fleettrack.auth.model.dto.*;
 import com.fleettrack.auth.model.entity.User;
 import com.fleettrack.auth.service.AuthService;
+import com.fleettrack.auth.service.PasswordResetService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,6 +20,7 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
 
     @PostMapping("/register")
     public ResponseEntity<Map<String, Object>> register(@Valid @RequestBody RegisterRequest request) {
@@ -49,6 +52,37 @@ public class AuthController {
     public ResponseEntity<ValidateResponse> validate(
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         return ResponseEntity.ok(authService.validate(authHeader));
+    }
+
+    // Always 200 regardless of outcome — the response must never reveal whether an
+    // email is registered, and a failed/slow email send shouldn't surface as an error.
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        passwordResetService.requestReset(request.getEmail());
+        return ResponseEntity.ok(Map.of("message", "If that email is registered, a reset link has been sent."));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok(Map.of("message", "Password updated successfully."));
+    }
+
+    // NOT in the gateway's PUBLIC_PATHS — the caller must already have a valid JWT,
+    // which the gateway validates and turns into the X-User-Id header read below.
+    @PutMapping("/first-login-ack")
+    public ResponseEntity<Map<String, String>> firstLoginAck(
+            @RequestBody FirstLoginAckRequest request, HttpServletRequest httpRequest) {
+        authService.firstLoginAck(extractUserId(httpRequest), request.getNewPassword());
+        return ResponseEntity.ok(Map.of("message", "Acknowledged."));
+    }
+
+    private Long extractUserId(HttpServletRequest request) {
+        String header = request.getHeader("X-User-Id");
+        if (header == null || header.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing X-User-Id header");
+        }
+        return Long.parseLong(header.trim());
     }
 
     @ExceptionHandler(ResponseStatusException.class)

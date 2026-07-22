@@ -149,8 +149,8 @@ export default function NotificationsScreen() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="chevron-left" size={20} color="#fff" />
         </TouchableOpacity>
@@ -182,7 +182,7 @@ export default function NotificationsScreen() {
           removeClippedSubviews
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 

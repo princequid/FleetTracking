@@ -1,21 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GoogleMap, InfoWindowF, MarkerF, PolylineF, useJsApiLoader } from "@react-google-maps/api";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { getActivePositions } from "../services/gpsService";
 import { getTrips } from "../services/tripService";
 import { getDrivers } from "../services/driverService";
 import { getVehicles } from "../services/vehicleService";
 import { useFleetWebSocket } from "../hooks/useFleetWebSocket";
 import { createDriverCarIcon, createRoutePinIcon, driverColor } from "../components/map/driverCarIcon";
-import { LIGHT_MAP_STYLE } from "../components/map/googleMapStyle";
-import { GOOGLE_MAPS_API_KEY } from "../constants/config";
 import { parseRouteLatLngs } from "../utils/routeGeometry";
 
-const ACCRA_CENTER = { lat: 5.6037, lng: -0.187 };
+const ACCRA_CENTER = [5.6037, -0.187];
 const STALE_THRESHOLD_MS = 5 * 60 * 1000;
-const MAP_CONTAINER_STYLE = { width: "100%", height: "100%" };
 
-const toLatLngObjs = (pairs) => pairs.map(([lat, lng]) => ({ lat, lng }));
+function MapController({ onReady }) {
+  const map = useMap();
+  useEffect(() => {
+    onReady(map);
+  }, [map, onReady]);
+  return null;
+}
 
 function isStalePosition(position) {
   if (!position.recordedAt) return true;
@@ -25,20 +30,16 @@ function isStalePosition(position) {
 export default function LiveMapPage() {
   const navigate = useNavigate();
   const { subscribe, unsubscribe, isConnected } = useFleetWebSocket();
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-  });
 
   const [positions, setPositions] = useState([]);
   const [tripMetaById, setTripMetaById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedTripId, setSelectedTripId] = useState(null);
-  const [openInfoTripId, setOpenInfoTripId] = useState(null);
 
   const mapRef = useRef(null);
-  const handleMapLoad = useCallback((map) => {
+  const markerRefs = useRef({});
+  const handleMapReady = useCallback((map) => {
     mapRef.current = map;
   }, []);
 
@@ -118,128 +119,121 @@ export default function LiveMapPage() {
   function handleCenterFleet() {
     const map = mapRef.current;
     if (!map || positions.length === 0) return;
-    const bounds = new window.google.maps.LatLngBounds();
-    positions.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
-    map.fitBounds(bounds, 40);
+    const bounds = L.latLngBounds(positions.map((p) => [p.lat, p.lng]));
+    map.fitBounds(bounds, { padding: [40, 40] });
   }
 
   function handleSelectVehicle(position) {
     setSelectedTripId(position.tripId);
-    setOpenInfoTripId(position.tripId);
     const map = mapRef.current;
+    const marker = markerRefs.current[position.tripId];
     if (map) {
-      map.panTo({ lat: position.lat, lng: position.lng });
-      map.setZoom(Math.max(map.getZoom(), 13));
+      map.flyTo([position.lat, position.lng], Math.max(map.getZoom(), 13));
+    }
+    if (marker) {
+      marker.openPopup();
+      const el = marker.getElement();
+      if (el) {
+        el.classList.add("marker-selected");
+        setTimeout(() => el.classList.remove("marker-selected"), 600);
+      }
     }
   }
 
   return (
     <div className="fleet-map-layout">
       <div className="fleet-map-panel">
-        {isLoaded && (
-          <GoogleMap
-            mapContainerStyle={MAP_CONTAINER_STYLE}
-            center={ACCRA_CENTER}
-            zoom={12}
-            onLoad={handleMapLoad}
-            options={{
-              styles: LIGHT_MAP_STYLE,
-              disableDefaultUI: true,
-              zoomControl: false,
-              clickableIcons: false,
-            }}
-          >
-            {/* Per-driver route + stops — the driver's actual road route (updates live as
-                they reroute), tinted with that driver's colour. Drawn under the markers. */}
-            {positions.map((position) => {
-              const meta = tripMetaById[position.tripId];
-              const trip = meta?.trip;
-              const color = driverColor(meta?.driver?.id ?? position.tripId);
-              const routeLatLngs = parseRouteLatLngs(trip?.routeGeometry);
-              const stops = trip?.stops || [];
-              return (
-                <React.Fragment key={`route-${position.tripId}`}>
-                  {routeLatLngs.length > 1 && (
-                    <PolylineF
-                      path={toLatLngObjs(routeLatLngs)}
-                      options={{ strokeColor: color.base, strokeWeight: 4, strokeOpacity: 0.85 }}
-                    />
-                  )}
-                  {stops.map((s, i) =>
-                    s?.lat != null && s?.lng != null ? (
-                      <MarkerF
-                        key={`stop-${position.tripId}-${i}`}
-                        position={{ lat: Number(s.lat), lng: Number(s.lng) }}
-                        icon={createRoutePinIcon(color.base, i + 1)}
-                      />
-                    ) : null
-                  )}
-                  {trip?.destLat != null && trip?.destLng != null && (
-                    <MarkerF
-                      position={{ lat: Number(trip.destLat), lng: Number(trip.destLng) }}
-                      icon={createRoutePinIcon(color.base, "", true)}
-                    />
-                  )}
-                </React.Fragment>
-              );
-            })}
+        <MapContainer
+          center={ACCRA_CENTER}
+          zoom={12}
+          zoomControl={false}
+          className="fleet-map-container"
+        >
+          <TileLayer
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            attribution="&copy; CartoDB"
+          />
+          <MapController onReady={handleMapReady} />
 
-            {positions.map((position) => {
-              const meta = tripMetaById[position.tripId];
-              const stale = isStalePosition(position);
-              // Colour keyed to the driver's account id so each driver's car is a distinct,
-              // consistent colour the admin can recognise at a glance.
-              const colorKey = meta?.driver?.id ?? position.tripId;
-              const color = driverColor(colorKey);
-              const markerPos = { lat: position.lat, lng: position.lng };
-              return (
-                <MarkerF
-                  key={position.tripId}
-                  position={markerPos}
-                  icon={createDriverCarIcon(colorKey, stale)}
-                  onClick={() => setOpenInfoTripId(position.tripId)}
-                >
-                  {openInfoTripId === position.tripId && (
-                    <InfoWindowF position={markerPos} onCloseClick={() => setOpenInfoTripId(null)}>
-                      <div className="fleet-popup">
-                        <div className="fleet-popup-driver">
-                          <span className="fleet-driver-dot" style={{ backgroundColor: color.base }} />
-                          {meta?.driver?.fullName || `Trip #${position.tripId}`}
-                        </div>
-                        <div className="fleet-popup-row">Trip #{position.tripId}</div>
-                        <div className="fleet-popup-row">
-                          Speed: {position.speedKmh != null ? `${position.speedKmh} km/h` : "—"}
-                        </div>
-                        <div className="fleet-popup-row">Vehicle: {meta?.vehicle?.plateNumber || "—"}</div>
-                        <button
-                          className="fleet-popup-link"
-                          type="button"
-                          onClick={() => navigate(`/trips/${position.tripId}`)}
-                        >
-                          View Trip
-                        </button>
-                      </div>
-                    </InfoWindowF>
-                  )}
-                </MarkerF>
-              );
-            })}
-          </GoogleMap>
-        )}
+          {/* Per-driver route + stops — the driver's actual road route (updates live as
+              they reroute), tinted with that driver's colour. Drawn under the markers. */}
+          {positions.map((position) => {
+            const meta = tripMetaById[position.tripId];
+            const trip = meta?.trip;
+            const color = driverColor(meta?.driver?.id ?? position.tripId);
+            const routeLatLngs = parseRouteLatLngs(trip?.routeGeometry);
+            const stops = trip?.stops || [];
+            return (
+              <React.Fragment key={`route-${position.tripId}`}>
+                {routeLatLngs.length > 1 && (
+                  <Polyline
+                    positions={routeLatLngs}
+                    pathOptions={{ color: color.base, weight: 4, opacity: 0.85 }}
+                  />
+                )}
+                {stops.map((s, i) =>
+                  s?.lat != null && s?.lng != null ? (
+                    <Marker
+                      key={`stop-${position.tripId}-${i}`}
+                      position={[Number(s.lat), Number(s.lng)]}
+                      icon={createRoutePinIcon(color.base, i + 1)}
+                    />
+                  ) : null
+                )}
+                {trip?.destLat != null && trip?.destLng != null && (
+                  <Marker
+                    position={[Number(trip.destLat), Number(trip.destLng)]}
+                    icon={createRoutePinIcon(color.base, "", true)}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+
+          {positions.map((position) => {
+            const meta = tripMetaById[position.tripId];
+            const stale = isStalePosition(position);
+            // Colour keyed to the driver's account id so each driver's car is a distinct,
+            // consistent colour the admin can recognise at a glance.
+            const colorKey = meta?.driver?.id ?? position.tripId;
+            const color = driverColor(colorKey);
+            return (
+              <Marker
+                key={position.tripId}
+                position={[position.lat, position.lng]}
+                icon={createDriverCarIcon(colorKey, stale)}
+                ref={(marker) => {
+                  if (marker) markerRefs.current[position.tripId] = marker;
+                }}
+              >
+                <Popup className="fleet-popup">
+                  <div className="fleet-popup-driver">
+                    <span className="fleet-driver-dot" style={{ backgroundColor: color.base }} />
+                    {meta?.driver?.fullName || `Trip #${position.tripId}`}
+                  </div>
+                  <div className="fleet-popup-row">Trip #{position.tripId}</div>
+                  <div className="fleet-popup-row">
+                    Speed: {position.speedKmh != null ? `${position.speedKmh} km/h` : "—"}
+                  </div>
+                  <div className="fleet-popup-row">Vehicle: {meta?.vehicle?.plateNumber || "—"}</div>
+                  <button
+                    className="fleet-popup-link"
+                    type="button"
+                    onClick={() => navigate(`/trips/${position.tripId}`)}
+                  >
+                    View Trip
+                  </button>
+                </Popup>
+              </Marker>
+            );
+          })}
+        </MapContainer>
 
         <div className="fleet-map-controls">
-          <button
-            type="button"
-            onClick={() => mapRef.current?.setZoom((mapRef.current.getZoom() || 12) + 1)}
-            aria-label="Zoom in"
-          >
+          <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">
             +
           </button>
-          <button
-            type="button"
-            onClick={() => mapRef.current?.setZoom((mapRef.current.getZoom() || 12) - 1)}
-            aria-label="Zoom out"
-          >
+          <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">
             −
           </button>
           <button type="button" className="fleet-center-btn" onClick={handleCenterFleet}>

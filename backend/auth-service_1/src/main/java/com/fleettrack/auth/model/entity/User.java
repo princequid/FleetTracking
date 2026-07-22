@@ -43,6 +43,15 @@ public class User {
     @Builder.Default
     private Boolean mfaEnabled = false;
 
+    // Prompts a one-time "change your password?" screen on next login. Set true
+    // whenever an account is created via /auth/register (the admin portal's "Add
+    // Driver" flow sets the driver's initial password on their behalf), cleared once
+    // the driver acknowledges the prompt (see AuthService.firstLoginAck) or resets
+    // their password via the emailed setup link (see PasswordResetService).
+    @Column(name = "must_change_password", nullable = false)
+    @Builder.Default
+    private Boolean mustChangePassword = false;
+
     @Column(name = "mfa_secret")
     private String mfaSecret;
 
