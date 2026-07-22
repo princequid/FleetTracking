@@ -19,4 +19,8 @@ public class LoginRequest {
 
     @NotBlank
     private String password;
+
+    // Optional. Mobile sends a UUID persisted in SecureStore; the admin portal
+    // (web) doesn't send one yet, so new-device tracking is currently mobile-only.
+    private String deviceFingerprint;
 }

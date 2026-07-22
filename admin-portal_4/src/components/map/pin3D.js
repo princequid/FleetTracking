@@ -1,3 +1,5 @@
+import L from "leaflet";
+
 /**
  * Shared glossy 3D map pin for the admin portal — the same shape, gradient recipe,
  * and gloss highlight as the mobile app's components/map/Pin3D.jsx, so both apps
@@ -35,7 +37,7 @@ let gradientUid = 0;
  *   - glow: soft halo behind the bulb, for a marker that should stay the most
  *     prominent thing on the map (the live driver marker).
  */
-export function pin3DSvg(color, { size = 40, glow = false, hole = true, number = null, opacity = null } = {}) {
+export function pin3DSvg(color, { size = 40, glow = false, hole = true, number = null } = {}) {
   const light = shade(color, 30);
   const dark = shade(color, -25);
   const gradId = `pin3d-grad-${gradientUid++}`;
@@ -49,12 +51,9 @@ export function pin3DSvg(color, { size = 40, glow = false, hole = true, number =
   const numberText = number != null
     ? `<text x="12" y="14.2" text-anchor="middle" font-size="6" font-weight="700" font-family="Inter, Arial, sans-serif" fill="#1E293B">${number}</text>`
     : "";
-  // Opacity has to live on the root <svg> itself (not a wrapping element) — this
-  // markup is later serialized into a standalone data URI image, not inlined HTML.
-  const opacityAttr = opacity != null ? ` opacity="${opacity}"` : "";
 
   return `
-    <svg width="${size}" height="${height}" viewBox="0 0 24 29" xmlns="http://www.w3.org/2000/svg"${opacityAttr}>
+    <svg width="${size}" height="${height}" viewBox="0 0 24 29" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="${gradId}" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stop-color="${light}"/>
@@ -70,21 +69,17 @@ export function pin3DSvg(color, { size = 40, glow = false, hole = true, number =
   `;
 }
 
-/**
- * Builds a Google Maps icon descriptor ({url, scaledSize, anchor}) anchored at the
- * pin's point, so the tip marks the exact coordinate — the Google Maps equivalent of
- * the old Leaflet divIcon. Must only be called once the Maps JS API has loaded
- * (window.google.maps must exist), which every caller here guarantees via
- * useJsApiLoader's isLoaded flag before rendering any markers.
- */
+/** Builds a Leaflet divIcon anchored at the pin's point, so the tip marks the exact coordinate. */
 export function createPin3DIcon(color, opts = {}) {
   const size = opts.size ?? 40;
   const height = size * (29 / 24);
   const svg = pin3DSvg(color, opts);
-  const url = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-  return {
-    url,
-    scaledSize: new window.google.maps.Size(size, height),
-    anchor: new window.google.maps.Point(size / 2, height),
-  };
+  const html = opts.opacity != null ? `<div style="opacity:${opts.opacity};">${svg}</div>` : svg;
+  return L.divIcon({
+    className: `fleet-marker fleet-pin3d-marker${opts.extraClassName ? ` ${opts.extraClassName}` : ""}`,
+    html,
+    iconSize: [size, height],
+    iconAnchor: [size / 2, height],
+    popupAnchor: [0, -height],
+  });
 }

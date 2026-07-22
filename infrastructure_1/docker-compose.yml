@@ -172,6 +172,13 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
+      # Gmail SMTP — blank in local dev (default) silently disables sending (EmailService
+      # logs a warning and skips); set both in the server .env to actually deliver mail.
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      # Base URL for the forgot-password email's link — must be the real deployed admin
+      # portal URL in prod (localhost is only correct for local dev).
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       # See eureka-server's comment: JAVA_TOOL_OPTIONS (not JAVA_OPTS) is what the JVM
       # actually reads from the environment.
@@ -518,6 +525,13 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
+      # Gmail SMTP — blank in local dev (default) silently disables sending (EmailService
+      # logs a warning and skips); set both in the server .env to actually deliver mail.
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      # "View incident" / "View full dashboard" links in emails — must be the real
+      # deployed admin portal URL in prod (localhost is only correct for local dev).
+      ADMIN_PORTAL_URL: ${ADMIN_PORTAL_URL:-http://localhost:5173}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
       EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"

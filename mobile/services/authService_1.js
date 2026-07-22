@@ -19,7 +19,7 @@ export const authService = {
   async login(emailAddr, password) {
     try {
       const response = await api.post('/auth/login', { email: emailAddr, password });
-      const { accessToken, refreshToken, userId, role } = response.data;
+      const { accessToken, refreshToken, userId, role, mustChangePassword } = response.data;
 
       await SecureStore.setItemAsync(TOKEN_KEYS.ACCESS, accessToken);
       await SecureStore.setItemAsync(TOKEN_KEYS.REFRESH, refreshToken);
@@ -27,7 +27,7 @@ export const authService = {
       const payload = decodeJwtPayload(accessToken);
       const email = payload.sub || payload.email || emailAddr;
 
-      return { userId, role, email };
+      return { userId, role, email, mustChangePassword: !!mustChangePassword };
     } catch (error) {
       if (__DEV__) console.error('Login failed:', error);
       throw error;

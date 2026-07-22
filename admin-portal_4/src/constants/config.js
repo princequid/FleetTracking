@@ -11,8 +11,3 @@ export const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || `${API_BASE_URL}/
 // mobile driver app uses, so a trip's route looks identical in both places. Override
 // with VITE_OSRM_URL to point at a self-hosted OSRM instead.
 export const OSRM_BASE_URL = import.meta.env.VITE_OSRM_URL || "https://router.project-osrm.org";
-
-// Google Maps JavaScript API key — separate from the mobile app's Android key
-// (that one is restricted by package name + SHA-1 and can't be reused for the web;
-// this one must be restricted by HTTP referrer instead).
-export const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, SafeAreaView, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, Linking, Alert } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -74,6 +75,7 @@ function FaqItem({ item, open, onToggle, C, styles }) {
 
 export default function HelpSupportScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const [openFaq, setOpenFaq] = useState(null);
@@ -99,8 +101,8 @@ export default function HelpSupportScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
         <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
           <Feather name="chevron-left" size={20} color="#fff" />
         </Pressable>
@@ -160,7 +162,7 @@ export default function HelpSupportScreen() {
           ))}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -53,10 +53,10 @@ export default function LoginScreen() {
     setLoading(true);
     Animated.spring(btnScale, { toValue: 0.97, damping: 10, stiffness: 200, useNativeDriver: true }).start();
     try {
-      const { userId, role, email: userEmail } = await authService.login(email, password);
+      const { userId, role, email: userEmail, mustChangePassword } = await authService.login(email, password);
       Animated.spring(btnScale, { toValue: 1, damping: 10, stiffness: 200, useNativeDriver: true }).start();
       setLoggedIn(userId, role, userEmail);
-      router.replace('/(driver)/dashboard_2');
+      router.replace(mustChangePassword ? '/(driver)/first-login' : '/(driver)/dashboard_2');
     } catch (err) {
       Animated.spring(btnScale, { toValue: 1, damping: 10, stiffness: 200, useNativeDriver: true }).start();
       if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {

@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   TextInput, SafeAreaView, KeyboardAvoidingView, Platform, Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -26,6 +27,7 @@ const urgencyLevels = (C) => [
 
 export default function IncidentReportScreen() {
   const router   = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const TYPES = useMemo(() => incidentTypes(C), [C]);
@@ -104,9 +106,9 @@ export default function IncidentReportScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
             <Feather name="chevron-left" size={20} color="#fff" />
             <Text style={styles.backText}>Back</Text>
@@ -190,7 +192,7 @@ export default function IncidentReportScreen() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 

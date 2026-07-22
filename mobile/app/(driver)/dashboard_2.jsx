@@ -508,20 +508,11 @@ export default function HomeScreen() {
                     onPress={() => router.push(`/(driver)/trip/${activeTrip.id}`)}
                     style={ss.continueBtn}
                   >
-                    <Feather name="arrow-right" size={16} color="#fff" />
-                    <Text style={ss.continueBtnText}>Continue trip</Text>
+                    <Feather name="file-text" size={16} color="#fff" />
+                    <Text style={ss.continueBtnText}>View trip details</Text>
                   </PressableScale>
                 </View>
               </View>
-
-              {/* View full trip details (available before the trip is started) */}
-              <PressableScale
-                onPress={() => router.push(`/(driver)/trip/${activeTrip.id}`)}
-                style={ss.detailsBtn}
-              >
-                <Feather name="file-text" size={15} color={C.teal} />
-                <Text style={ss.detailsBtnText}>View trip details</Text>
-              </PressableScale>
             </View>
           ) : (
             <View style={ss.noTripBox}>
@@ -860,21 +851,6 @@ const makeStyles = (C) => StyleSheet.create({
     fontSize: 14,
     color: '#fff',
     letterSpacing: -0.2,
-  },
-  detailsBtn: {
-    height: 44,
-    borderRadius: 12,
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    backgroundColor: C.tealPale,
-  },
-  detailsBtnText: {
-    fontFamily: 'Inter-SemiBold',
-    fontSize: 13.5,
-    color: C.teal,
   },
   noTripBox: {
     alignItems: 'center',
