@@ -37,6 +37,21 @@ spring:
     default-schema: fleettrack_auth
     baseline-on-migrate: true
 
+  # Gmail SMTP — GMAIL_USERNAME/GMAIL_APP_PASSWORD are set as environment variables,
+  # never committed here. The app password comes from a Google Account with 2-Step
+  # Verification enabled (myaccount.google.com/apppasswords), not a Cloud API key.
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${GMAIL_USERNAME:}
+    password: ${GMAIL_APP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 eureka:
   client:
     service-url:
@@ -47,6 +62,20 @@ eureka:
 internal:
   service:
     secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+
+fleetsync:
+  email:
+    # Gmail requires the From address to be the authenticated account itself (or a
+    # verified alias) — unlike Resend, you can't send "as" an arbitrary address.
+    from-address: ${GMAIL_USERNAME:}
+    from-name: FleetSync
+  # Base URL of the web app that hosts /reset-password — used by the forgot-password
+  # email. The admin portal is the only web frontend in this project today.
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  # Deep-link scheme registered in mobile/app.json ("scheme": "fleettrack") — the
+  # welcome email's "Set your password" link opens straight into the app, since
+  # drivers only ever use the mobile app, not the admin portal web.
+  mobile-app-scheme: ${MOBILE_APP_SCHEME:fleettrack}
 
 app:
   # Creates the first SUPER_ADMIN account on boot if none exists yet — see

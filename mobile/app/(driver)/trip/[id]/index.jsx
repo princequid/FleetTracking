@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, SafeAreaView, Animated, Easing, Image, Modal,
+  Dimensions, Animated, Easing, Image, Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../../../services/api_1';
@@ -150,6 +151,7 @@ function RouteStop({ color, tag, name, description, number, last, styles }) {
 // and hands off to the map for anything that advances the trip.
 export default function TripDetailScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const { id } = useLocalSearchParams();
@@ -218,8 +220,8 @@ export default function TripDetailScreen() {
   })();
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.navyDark }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.navyDark }}>
+      <View style={[styles.header, { paddingTop: Math.max(12, insets.top + 12) }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Feather name="chevron-left" size={20} color="#fff" />
           <Text style={styles.backText}>Back</Text>
@@ -410,7 +412,7 @@ export default function TripDetailScreen() {
           <Text style={styles.lightboxHint}>Tap anywhere to close</Text>
         </TouchableOpacity>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 

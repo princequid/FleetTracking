@@ -1,20 +1,28 @@
 package com.fleettrack.auth.service;
 
+import com.fleettrack.auth.email.EmailService;
+import com.fleettrack.auth.email.EmailTemplates;
 import com.fleettrack.auth.event.AuthEventPublisher;
 import com.fleettrack.auth.exception.AccountLockedException;
 import com.fleettrack.auth.model.dto.*;
+import com.fleettrack.auth.model.entity.KnownDevice;
 import com.fleettrack.auth.model.entity.RefreshToken;
 import com.fleettrack.auth.model.entity.User;
 import com.fleettrack.auth.model.enums.Role;
+import com.fleettrack.auth.repository.KnownDeviceRepository;
 import com.fleettrack.auth.repository.RefreshTokenRepository;
 import com.fleettrack.auth.repository.UserRepository;
 import com.fleettrack.events.BaseEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.time.format.DateTimeFormatter;
+import java.time.ZoneOffset;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -30,12 +38,26 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final KnownDeviceRepository knownDeviceRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthEventPublisher authEventPublisher;
+    private final EmailService emailService;
+    private final PasswordResetService passwordResetService;
+
+    @Value("${fleetsync.frontend-url}")
+    private String frontendUrl;
+
+    // Deep-link scheme registered in the mobile app's app.json ("scheme": "fleettrack")
+    // — the welcome email's "Set your password" link opens straight into the app's
+    // reset-password screen, not a web page, since drivers only ever use the mobile app.
+    @Value("${fleetsync.mobile-app-scheme:fleettrack}")
+    private String mobileAppScheme;
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final int LOCK_DURATION_MINUTES = 15;
+    private static final DateTimeFormatter LOGIN_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("MMM d, yyyy 'at' HH:mm 'UTC'").withZone(ZoneOffset.UTC);
 
     // Fixed placeholder hash used to equalize timing when an email lookup fails,
     // so a BCrypt comparison always happens regardless of whether the user exists.
@@ -69,8 +91,25 @@ public class AuthService {
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(Role.DRIVER)
+                // The password on this request was set by whoever filled out the form —
+                // in practice, the admin portal's "Add Driver" flow, on the driver's
+                // behalf. Rather than have the admin communicate that password to the
+                // driver out of band, the welcome email below carries a one-time setup
+                // link so the driver sets their OWN password before ever using this one.
+                .mustChangePassword(true)
                 .build();
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+
+        // Best-effort and non-blocking (EmailService.sendEmail is @Async) — a slow or
+        // failed send must never delay or fail the registration response.
+        // RegisterRequest has no name field (self-registration only collects email +
+        // password), so the email address itself is the closest thing to a display name.
+        String setupToken = passwordResetService.issueSetupToken(saved);
+        String setupLink = mobileAppScheme + "://reset-password?token=" + setupToken;
+        emailService.sendEmail(saved.getEmail(), "Welcome to FleetSync",
+                EmailTemplates.buildWelcomeEmail(saved.getEmail(), saved.getRole().name(), setupLink));
+
+        return saved;
     }
 
     @Transactional
@@ -107,6 +146,8 @@ public class AuthService {
         user.setLockedUntil(null);
         userRepository.save(user);
 
+        checkKnownDevice(user, request.getDeviceFingerprint());
+
         String rawRefreshToken = jwtService.generateRefreshToken();
         RefreshToken refreshToken = RefreshToken.builder()
                 .userId(user.getId())
@@ -121,6 +162,7 @@ public class AuthService {
                 .refreshToken(rawRefreshToken)
                 .role(user.getRole())
                 .userId(user.getId())
+                .mustChangePassword(user.getMustChangePassword())
                 .build();
 
         try {
@@ -189,6 +231,55 @@ public class AuthService {
                 .role(jwtService.extractRole(token))
                 .email(jwtService.extractEmail(token))
                 .build();
+    }
+
+    /**
+     * Resolves the one-time first-login prompt (see User.mustChangePassword): a
+     * {@code newPassword} changes it, {@code null}/blank just dismisses the prompt and
+     * keeps the existing password. Either way the flag is cleared so it never shows
+     * again. {@code userId} comes from X-User-Id, which the gateway sets only after
+     * validating the caller's JWT — this endpoint is deliberately NOT public.
+     */
+    @Transactional
+    public void firstLoginAck(Long userId, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (newPassword != null && !newPassword.isBlank()) {
+            if (newPassword.length() < 8) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password must be at least 8 characters");
+            }
+            user.setPasswordHash(passwordEncoder.encode(newPassword));
+        }
+        user.setMustChangePassword(false);
+        userRepository.save(user);
+    }
+
+    /**
+     * Web clients (the admin portal) don't send a fingerprint today, so this is a
+     * no-op for them until one is wired up — only mobile (which generates and
+     * persists a UUID in SecureStore) currently participates in device tracking.
+     */
+    private void checkKnownDevice(User user, String deviceFingerprint) {
+        if (deviceFingerprint == null || deviceFingerprint.isBlank()) return;
+
+        KnownDevice existing = knownDeviceRepository
+                .findByUserIdAndDeviceFingerprint(user.getId(), deviceFingerprint)
+                .orElse(null);
+
+        if (existing != null) {
+            existing.setLastSeenAt(Instant.now());
+            knownDeviceRepository.save(existing);
+            return;
+        }
+
+        knownDeviceRepository.save(KnownDevice.builder()
+                .userId(user.getId())
+                .deviceFingerprint(deviceFingerprint)
+                .build());
+
+        emailService.sendEmail(user.getEmail(), "New sign-in to your FleetSync account",
+                EmailTemplates.buildNewDeviceLoginEmail(user.getEmail(), LOGIN_TIME_FORMAT.format(Instant.now())));
     }
 
     private String hashToken(String rawToken) {
