@@ -1,9 +1,58 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { GoogleMap, MarkerF, useJsApiLoader } from "@react-google-maps/api";
-import { GOOGLE_MAPS_API_KEY } from "../../constants/config";
-import { LIGHT_MAP_STYLE } from "./googleMapStyle";
+import { useState, useEffect } from "react";
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
-const MAP_CONTAINER_STYLE = { height: "100%", width: "100%" };
+// Fix broken default marker icons in Vite/Webpack builds
+import markerIconPng    from "leaflet/dist/images/marker-icon.png";
+import markerIconRetina from "leaflet/dist/images/marker-icon-2x.png";
+import markerShadowPng  from "leaflet/dist/images/marker-shadow.png";
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl:       markerIconPng,
+  iconRetinaUrl: markerIconRetina,
+  shadowUrl:     markerShadowPng,
+});
+
+const PIN_ICON = new L.Icon({
+  iconUrl:       markerIconPng,
+  iconRetinaUrl: markerIconRetina,
+  shadowUrl:     markerShadowPng,
+  iconSize:      [25, 41],
+  iconAnchor:    [12, 41],
+  popupAnchor:   [1, -34],
+  shadowSize:    [41, 41],
+});
+
+// Forces Leaflet to recalculate its size after the modal animates in
+function MapAutoResize() {
+  const map = useMap();
+  useEffect(() => {
+    const t = setTimeout(() => map.invalidateSize(), 300);
+    return () => clearTimeout(t);
+  }, [map]);
+  return null;
+}
+
+// Registers click events on the map canvas
+function ClickHandler({ onMapClick }) {
+  useMapEvents({ click: (e) => onMapClick(e.latlng) });
+  return null;
+}
+
+// Recenters the map camera on the pin whenever it changes — a fresh click, or the
+// modal opening with an already-chosen origin/destination/stop seeded in. Without
+// this, the camera stayed wherever it happened to be pointed (the browser's GPS
+// location, the previous field's location, or the Accra fallback), and a newly
+// dropped/reopened pin could end up off-center or even out of view.
+function CenterOnPin({ pin }) {
+  const map = useMap();
+  useEffect(() => {
+    if (pin) map.flyTo([pin.lat, pin.lng], map.getZoom(), { duration: 0.5 });
+  }, [pin, map]);
+  return null;
+}
 
 // Nominatim reverse-geocode a {lat, lng} into a human-readable address string
 async function reverseGeocode(lat, lng) {
@@ -17,15 +66,9 @@ async function reverseGeocode(lat, lng) {
 export default function MapPickerModal({
   isOpen, onClose, onConfirm, initialCenter, initialPin, initialAddress, title,
 }) {
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-  });
-
   const [pin,            setPin]            = useState(null);
   const [address,        setAddress]        = useState("");
   const [loadingAddress, setLoadingAddress] = useState(false);
-  const mapRef = useRef(null);
 
   // Seed from the field's already-confirmed location (if any) each time the modal
   // opens, so re-opening the picker to review/adjust an existing origin, stop, or
@@ -41,25 +84,9 @@ export default function MapPickerModal({
   }, [isOpen]);
 
   // Accra, Ghana as global fallback
-  const center = initialCenter
-    ? { lat: initialCenter[0], lng: initialCenter[1] }
-    : { lat: 5.6037, lng: -0.187 };
+  const center = initialCenter ?? [5.6037, -0.1870];
 
-  const handleMapLoad = useCallback((map) => {
-    mapRef.current = map;
-    // Google sizes the map from its container at load time — the modal animates in
-    // after that, so force a resize + recenter once the animation settles (the same
-    // fix the old Leaflet invalidateSize() call handled).
-    const t = setTimeout(() => {
-      window.google.maps.event.trigger(map, "resize");
-      map.setCenter(center);
-    }, 300);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
-
-  async function handleMapClick(e) {
-    const latlng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+  async function handleMapClick(latlng) {
     setPin(latlng);
     setAddress("");
     setLoadingAddress(true);
@@ -111,28 +138,23 @@ export default function MapPickerModal({
 
         {/* Map */}
         <div className="map-modal-map">
-          {isLoaded ? (
-            <GoogleMap
-              mapContainerStyle={MAP_CONTAINER_STYLE}
-              center={center}
-              zoom={14}
-              onLoad={handleMapLoad}
-              onClick={handleMapClick}
-              options={{
-                styles: LIGHT_MAP_STYLE,
-                disableDefaultUI: true,
-                zoomControl: true,
-                clickableIcons: false,
-              }}
-            >
-              {pin && <MarkerF position={pin} />}
-            </GoogleMap>
-          ) : (
-            <div className="trip-route-map trip-route-map--loading">
-              <span className="loc-spinner" />
-              <span>Loading map…</span>
-            </div>
-          )}
+          <MapContainer
+            key={`${center[0]}-${center[1]}`}
+            center={center}
+            zoom={14}
+            style={{ height: "100%", width: "100%" }}
+            zoomControl={true}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              maxZoom={19}
+            />
+            <MapAutoResize />
+            <ClickHandler onMapClick={handleMapClick} />
+            <CenterOnPin pin={pin} />
+            {pin && <Marker position={pin} icon={PIN_ICON} />}
+          </MapContainer>
         </div>
 
         {/* Footer */}

@@ -101,7 +101,10 @@ export default function AssignTripForm({ onDispatched, onError }) {
     setOrigin({ name, lat, lng });
   }
   async function openOriginMap() {
-    const center = await getBrowserLocation();
+    // If an origin is already chosen (typed via autocomplete or a previous pin),
+    // center on THAT — not the browser's current location, which used to override
+    // it even when reopening the picker just to review/adjust an existing origin.
+    const center = origin.lat != null ? [origin.lat, origin.lng] : await getBrowserLocation();
     const initialPin = origin.lat != null ? { lat: origin.lat, lng: origin.lng } : null;
     setMapPicker({ field: "origin", center, initialPin, initialAddress: origin.name });
   }

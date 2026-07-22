@@ -8,7 +8,7 @@ import Layout from "./pages/Layout";
 import LoginPage from "./pages/LoginPage";
 
 // Route-level code splitting: each page (and its heavy deps — Recharts on the
-// dashboard/reports, Google Maps on the map) ships as its own chunk that loads only
+// dashboard/reports, Leaflet on the map) ships as its own chunk that loads only
 // when navigated to. The login screen no longer downloads the whole app.
 // The shell (Layout, Sidebar, Navbar, Login) stays eager for an instant first paint.
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));

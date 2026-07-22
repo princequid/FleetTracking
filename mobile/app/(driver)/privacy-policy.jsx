@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeContext';
@@ -85,12 +86,13 @@ const SECTIONS = [
 
 export default function PrivacyPolicyScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
         <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
           <Feather name="chevron-left" size={20} color="#fff" />
         </Pressable>
@@ -133,7 +135,7 @@ export default function PrivacyPolicyScreen() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

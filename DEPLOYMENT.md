@@ -72,9 +72,9 @@ JWT_SECRET=$(openssl rand -hex 48)
 INTERNAL_SERVICE_SECRET=$(openssl rand -hex 32)
 
 # ── First admin account (created automatically on auth-service's first boot, only if no
-# admin exists yet — see InitialAdminBootstrap. Pick a real password here; there is no
-# self-service "change password" flow yet, so this is what you'll log into the admin
-# portal with.) ──
+# admin exists yet — see InitialAdminBootstrap. Pick a real password here — there's no
+# self-service reset for THIS account unless GMAIL_USERNAME/GMAIL_APP_PASSWORD below are
+# also set, since the forgot-password email needs somewhere to send from.) ──
 INITIAL_ADMIN_EMAIL=you@yourcompany.com
 INITIAL_ADMIN_PASSWORD=$(openssl rand -hex 12)
 
@@ -90,13 +90,26 @@ MINIO_EXTERNAL_ENDPOINT=https://fleettrack-storage.duckdns.org
 # admin URL (fill after Part B). Drives both the gateway CORS and gps-service's socket.
 CORS_ALLOWED_ORIGINS=https://YOUR-ADMIN.onrender.com
 
+# ── Email (Gmail SMTP) — powers password reset, welcome, critical incident alerts,
+# daily fleet summary and new-device-login emails. Leave both blank to disable sending
+# entirely (auth-service/notification-service log a warning and skip — nothing breaks).
+# GMAIL_APP_PASSWORD comes from a Google Account with 2-Step Verification enabled
+# (myaccount.google.com/apppasswords), NOT your normal Gmail password.
+GMAIL_USERNAME=your.address@gmail.com
+GMAIL_APP_PASSWORD=your-16-char-app-password
+
+# Same Render admin URL as CORS_ALLOWED_ORIGINS above — used inside the emails
+# themselves (forgot-password link, "View incident"/"View full dashboard" links).
+FRONTEND_URL=https://YOUR-ADMIN.onrender.com
+ADMIN_PORTAL_URL=https://YOUR-ADMIN.onrender.com
+
 # Bind all internal service ports (Postgres/Redis/Eureka/MinIO/RabbitMQ/OSRM/gateway) to
 # loopback only, so they're never reachable from the public internet — only Caddy's 80/443
 # face the world. REQUIRED in production.
 HOST_BIND=127.0.0.1
 EOF
 ```
-> After Part B you'll come back and set `CORS_ALLOWED_ORIGINS` to the real Render URL, then re-run the `docker compose ... up -d` command.
+> After Part B you'll come back and set `CORS_ALLOWED_ORIGINS`, `FRONTEND_URL`, and `ADMIN_PORTAL_URL` to the real Render URL, then re-run the `docker compose ... up -d` command.
 >
 > You only set `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` — the compose file automatically hands those same values to media-service as its MinIO access/secret key, so they can't drift out of sync.
 >
