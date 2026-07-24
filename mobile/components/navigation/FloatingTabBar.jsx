@@ -22,7 +22,11 @@ function getActiveKey(pathname) {
   if (pathname.includes('dashboard'))      return 'home';
   if (pathname.includes('history'))        return 'trips';
   if (pathname.includes('notification'))   return 'alerts';
+  // Profile and its sub-pages (reached only from the Profile screen's menu) should all
+  // keep the Profile tab highlighted, not silently fall through to Home.
   if (pathname.includes('profile'))        return 'profile';
+  if (pathname.includes('privacy-policy')) return 'profile';
+  if (pathname.includes('help-support'))   return 'profile';
   return 'home';
 }
 
