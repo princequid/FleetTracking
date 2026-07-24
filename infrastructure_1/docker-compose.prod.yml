@@ -24,12 +24,14 @@ services:
     depends_on:
       - api-gateway
       - minio
+      - osrm
     ports:
       - "80:80"
       - "443:443"
     environment:
       API_DOMAIN: ${API_DOMAIN}
       STORAGE_DOMAIN: ${STORAGE_DOMAIN}
+      OSRM_DOMAIN: ${OSRM_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
