@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getTripById, cancelTrip, getTripHistory } from "../services/tripService";
 import { getDrivers } from "../services/driverService";
@@ -124,6 +124,13 @@ export default function TripDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
+  // Shared across the mount-time load AND the focus-triggered refetch below, so that
+  // whichever of the two photo fetches was started MOST RECENTLY is the only one allowed
+  // to commit its result — without this, a focus event firing while the initial load is
+  // still in flight could have the (now-stale) initial fetch resolve after the newer
+  // refetch and silently overwrite fresher data with older data.
+  const photosRequestIdRef = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -149,8 +156,11 @@ export default function TripDetailPage() {
         }
 
         try {
+          const myRequestId = (photosRequestIdRef.current += 1);
           const photoData = await getTripPhotos(id);
-          if (!cancelled) setPhotos(Array.isArray(photoData) ? photoData : []);
+          if (!cancelled && photosRequestIdRef.current === myRequestId) {
+            setPhotos(Array.isArray(photoData) ? photoData : []);
+          }
         } catch {
           // photos are best-effort
         }
@@ -171,8 +181,13 @@ export default function TripDetailPage() {
   // keeps a trip's detail page open in one tab while the driver is out on the trip —
   // without this, newly-uploaded photos wouldn't appear until the page is reloaded.
   const refetchPhotos = useCallback(() => {
+    const myRequestId = (photosRequestIdRef.current += 1);
     getTripPhotos(id)
-      .then((photoData) => setPhotos(Array.isArray(photoData) ? photoData : []))
+      .then((photoData) => {
+        if (photosRequestIdRef.current === myRequestId) {
+          setPhotos(Array.isArray(photoData) ? photoData : []);
+        }
+      })
       .catch(() => {
         // photos are best-effort
       });

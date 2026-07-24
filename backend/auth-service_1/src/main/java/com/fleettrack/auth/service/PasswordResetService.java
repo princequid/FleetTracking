@@ -4,6 +4,7 @@ import com.fleettrack.auth.email.EmailService;
 import com.fleettrack.auth.email.EmailTemplates;
 import com.fleettrack.auth.model.entity.PasswordResetToken;
 import com.fleettrack.auth.model.entity.User;
+import com.fleettrack.auth.model.enums.Role;
 import com.fleettrack.auth.repository.PasswordResetTokenRepository;
 import com.fleettrack.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,10 +27,6 @@ import java.util.HexFormat;
 public class PasswordResetService {
 
     private static final int RESET_TOKEN_TTL_MINUTES = 15;
-    // Account-setup links (welcomed via email at creation time) get a much more
-    // generous window than a "you're locked out, act now" forgot-password link —
-    // the driver may not check email again for days.
-    private static final int SETUP_TOKEN_TTL_DAYS = 7;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
@@ -39,6 +36,9 @@ public class PasswordResetService {
 
     @Value("${fleetsync.frontend-url}")
     private String frontendUrl;
+
+    @Value("${fleetsync.mobile-app-scheme:fleettrack}")
+    private String mobileAppScheme;
 
     /**
      * Always succeeds from the caller's point of view (the controller returns 200
@@ -55,21 +55,14 @@ public class PasswordResetService {
 
         String rawToken = createToken(user.getId(), RESET_TOKEN_TTL_MINUTES, ChronoUnit.MINUTES);
 
-        String resetLink = frontendUrl + "/reset-password?token=" + rawToken;
+        // Drivers only ever use the mobile app, never the admin portal — send them a
+        // deep link straight into it. Everyone else (dispatcher/admin/super_admin) only
+        // ever uses the web admin portal, so they get the web reset-password page.
+        String resetLink = user.getRole() == Role.DRIVER
+                ? mobileAppScheme + "://reset-password?token=" + rawToken
+                : frontendUrl + "/reset-password?token=" + rawToken;
         emailService.sendEmail(user.getEmail(), "Reset your FleetSync password",
                 EmailTemplates.buildPasswordResetEmail(resetLink));
-    }
-
-    /**
-     * Issues a long-lived (7-day) reset token WITHOUT sending its own email — used by
-     * AuthService.registerUser, which embeds the raw token in the welcome email's
-     * "Set your password" link instead of a separate reset email. Reuses the same
-     * password_reset_tokens table/flow as requestReset/resetPassword so a driver who
-     * clicks this link goes through the exact same, already-audited code path.
-     */
-    @Transactional
-    public String issueSetupToken(User user) {
-        return createToken(user.getId(), SETUP_TOKEN_TTL_DAYS, ChronoUnit.DAYS);
     }
 
     @Transactional
@@ -86,9 +79,9 @@ public class PasswordResetService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid or expired reset link"));
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        // Setting a password through either flow (forgot-password OR the emailed
-        // account-setup link) satisfies the "you should change your default password"
-        // requirement, so the redundant first-login prompt shouldn't also fire.
+        // A driver resetting their password this way has, incidentally, also satisfied
+        // the "set your own password" first-login requirement — don't make them do it
+        // again in-app right after.
         user.setMustChangePassword(false);
         userRepository.save(user);
 

@@ -506,10 +506,10 @@ export default function HomeScreen() {
                 <View style={{ flex: 1.4 }}>
                   <PressableScale
                     onPress={() => router.push(`/(driver)/trip/${activeTrip.id}`)}
-                    style={ss.continueBtn}
+                    style={ss.viewDetailsBtn}
                   >
                     <Feather name="file-text" size={16} color="#fff" />
-                    <Text style={ss.continueBtnText}>View trip details</Text>
+                    <Text style={ss.viewDetailsBtnText}>View trip details</Text>
                   </PressableScale>
                 </View>
               </View>
@@ -832,7 +832,7 @@ const makeStyles = (C) => StyleSheet.create({
     fontSize: 14,
     color: C.navyPrimary,
   },
-  continueBtn: {
+  viewDetailsBtn: {
     height: 50,
     borderRadius: 14,
     backgroundColor: C.navyPrimary,
@@ -846,7 +846,7 @@ const makeStyles = (C) => StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
-  continueBtnText: {
+  viewDetailsBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 14,
     color: '#fff',

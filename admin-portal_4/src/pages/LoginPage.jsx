@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
 import { EyeIcon, EyeOffIcon } from "../components/common/Icons";
@@ -132,6 +132,9 @@ export default function LoginPage() {
                   {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
                 </button>
               </div>
+              <Link to="/forgot-password" className="auth-forgot-link">
+                Forgot password?
+              </Link>
             </div>
 
             <div className={`login-mfa-wrapper ${mfaRequired ? "login-mfa-visible" : ""}`}>

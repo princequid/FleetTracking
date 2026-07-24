@@ -63,13 +63,18 @@ public final class EmailTemplates {
         return wrapInFleetSyncTemplate(body);
     }
 
-    public static String buildWelcomeEmail(String name, String role, String setupLink) {
+    // No password/reset link here on purpose — the account already has a working
+    // password (set by the admin who created it), and the driver sets their own the
+    // first time they log in, via the in-app first-login prompt (mustChangePassword).
+    // The "set/reset your password" flow+wording is reserved for the genuine
+    // forgot-password case (buildPasswordResetEmail above), not account creation.
+    public static String buildWelcomeEmail(String name, String role) {
         String body = "<h1 style=\"font-size:20px;margin:0 0 16px;color:#111827;\">Welcome to FleetSync, " + name + "!</h1>"
                 + "<p style=\"font-size:14px;line-height:22px;color:#374151;margin:0;\">"
                 + "Your account has been created with the <strong>" + role + "</strong> role. "
-                + "Tap below to set your own password and get started — this link works for the next 7 days."
-                + "</p>"
-                + button("Set your password", setupLink);
+                + "Open the FleetSync app and sign in with the email and password your administrator gave you — "
+                + "you'll be asked to set your own password the first time you log in."
+                + "</p>";
         return wrapInFleetSyncTemplate(body);
     }
 
