@@ -1,5 +1,0 @@
-package com.fleettrack.auth/service;
-
-// rotation + family revocation
-public class RefreshTokenService {
-}

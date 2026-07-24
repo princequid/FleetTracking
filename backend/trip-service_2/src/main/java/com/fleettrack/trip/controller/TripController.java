@@ -138,8 +138,9 @@ public class TripController {
             @RequestBody RouteUpdateRequest request,
             HttpServletRequest httpRequest) {
         requireRole(httpRequest, TRANSITION_ROLES);
+        Long userId = extractUserId(httpRequest);
         Long requesterDriverId = resolveOwnDriverId(httpRequest);
-        tripService.updateRoute(id, request.getRouteGeometry(), requesterDriverId);
+        tripService.updateRoute(id, request.getRouteGeometry(), userId, requesterDriverId);
         return ResponseEntity.noContent().build();
     }
 

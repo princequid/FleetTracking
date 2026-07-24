@@ -1,7 +1,11 @@
 package com.fleettrack.gps.controller;
 
+import com.fleettrack.gps.client.DriverServiceClient;
+import com.fleettrack.gps.client.TripServiceClient;
+import com.fleettrack.gps.model.dto.DriverIdResponse;
 import com.fleettrack.gps.model.dto.GpsPingRequest;
 import com.fleettrack.gps.model.dto.GpsPingResponse;
+import com.fleettrack.gps.model.dto.TripOwnerResponse;
 import com.fleettrack.gps.service.GpsService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -18,6 +22,8 @@ import java.util.List;
 public class GpsController {
 
     private final GpsService gpsService;
+    private final DriverServiceClient driverServiceClient;
+    private final TripServiceClient tripServiceClient;
 
     // Roles allowed to see fleet-wide / cross-trip data (dispatch-desk style access).
     // Kept in sync with the role set trip-service's TripController enforces.
@@ -30,6 +36,7 @@ public class GpsController {
             @Valid @RequestBody GpsPingRequest request,
             HttpServletRequest httpRequest) {
         requireKnownRole(httpRequest);
+        verifyDriverOwnsTrip(httpRequest, tripId);
         Long driverId = extractUserId(httpRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(gpsService.savePing(tripId, request, driverId));
     }
@@ -40,12 +47,14 @@ public class GpsController {
             @RequestParam(required = false) Integer limit,
             HttpServletRequest httpRequest) {
         requireKnownRole(httpRequest);
+        verifyDriverOwnsTrip(httpRequest, tripId);
         return ResponseEntity.ok(gpsService.getRoute(tripId, limit));
     }
 
     @GetMapping("/trips/{tripId}/latest")
     public ResponseEntity<GpsPingResponse> getLatestPing(@PathVariable Long tripId, HttpServletRequest httpRequest) {
         requireKnownRole(httpRequest);
+        verifyDriverOwnsTrip(httpRequest, tripId);
         return ResponseEntity.ok(gpsService.getLatestPing(tripId));
     }
 
@@ -55,6 +64,7 @@ public class GpsController {
             @Valid @RequestBody List<GpsPingRequest> requests,
             HttpServletRequest httpRequest) {
         requireKnownRole(httpRequest);
+        verifyDriverOwnsTrip(httpRequest, tripId);
         Long driverId = extractUserId(httpRequest);
         return ResponseEntity.status(HttpStatus.CREATED).body(gpsService.saveBulkPings(tripId, requests, driverId));
     }
@@ -75,13 +85,6 @@ public class GpsController {
         return Long.parseLong(header);
     }
 
-    // NOTE: this only confirms the caller carries a recognized role — it does NOT verify
-    // that a DRIVER caller is actually assigned to the tripId in the path. Doing that would
-    // require a new cross-service lookup (X-User-Id is the auth-service user id, but trips
-    // are keyed by driver-profile id from driver-service — see trip-service's
-    // DriverServiceClient.getDriverByUserId for the equivalent mapping), which doesn't exist
-    // in this service today. Adding one under time pressure was judged too risky/fragile for
-    // this pass; deferred rather than built half-working. See audit report for detail.
     private void requireKnownRole(HttpServletRequest request) {
         requireRole(request, ALL_KNOWN_ROLES);
     }
@@ -90,6 +93,27 @@ public class GpsController {
         String role = request.getHeader("X-User-Role");
         if (role == null || !allowedRoles.contains(role)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+    }
+
+    // Confirms a DRIVER caller is actually assigned to the tripId in the path — a no-op
+    // for ADMIN/DISPATCHER/SUPER_ADMIN callers, who are allowed to see/post for any trip.
+    // X-User-Id is the auth-service user id, but trips are keyed by driver-profile id
+    // (from driver-service), so this resolves one to the other before comparing —
+    // same pattern as trip-service's/media-service's own ownership checks.
+    private void verifyDriverOwnsTrip(HttpServletRequest request, Long tripId) {
+        String role = request.getHeader("X-User-Role");
+        if (!"DRIVER".equals(role)) return;
+
+        Long userId = extractUserId(request);
+        DriverIdResponse driverProfile = driverServiceClient.getDriverByUserId(userId);
+        if (driverProfile == null || driverProfile.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+
+        TripOwnerResponse trip = tripServiceClient.getTrip(tripId);
+        if (trip == null || trip.getDriverId() == null || !trip.getDriverId().equals(driverProfile.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this trip");
         }
     }
 }

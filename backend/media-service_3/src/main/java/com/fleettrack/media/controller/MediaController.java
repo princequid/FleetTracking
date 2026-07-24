@@ -55,10 +55,12 @@ public class MediaController {
             HttpServletRequest httpRequest) {
         requireRoleOrInternal(httpRequest, ADMIN_DISPATCHER_ROLES);
         boolean hasPOD = mediaService.hasPOD(id);
+        boolean hasPreDispatch = mediaService.hasPreDispatchPhoto(id);
         // Include the POD photo's own geotag (if any) so trip-service can verify it was
         // actually captured near the destination before allowing trip completion.
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("hasPOD", hasPOD);
+        body.put("hasPreDispatch", hasPreDispatch);
         mediaService.getPodPhoto(id).ifPresent(photo -> {
             body.put("lat", photo.getLat());
             body.put("lng", photo.getLng());

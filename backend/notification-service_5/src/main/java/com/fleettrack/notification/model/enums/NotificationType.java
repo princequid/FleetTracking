@@ -5,6 +5,7 @@ public enum NotificationType {
     TRIP_STARTED,
     TRIP_CANCELLED,
     TRIP_DELIVERED,
+    TRIP_DEVIATED,
     INCIDENT_REPORTED,
     ALERT,
     INFO
