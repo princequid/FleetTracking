@@ -164,6 +164,10 @@ public class MediaService {
         return photoRepository.existsByTripIdAndPhotoType(tripId, PhotoType.POD);
     }
 
+    public boolean hasPreDispatchPhoto(Long tripId) {
+        return photoRepository.existsByTripIdAndPhotoType(tripId, PhotoType.PRE_DISPATCH);
+    }
+
     // Fresh, time-limited read link for viewing a photo (admin portal, etc.). Generated
     // on demand from presignMinioClient (already configured with the correct external
     // host), rather than trusting a URL baked in at upload time — that URL would go

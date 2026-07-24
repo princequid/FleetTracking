@@ -69,6 +69,11 @@ public class TripEventConsumer {
                         "Trip completed",
                         (tripId != null ? "Trip #" + tripId + " " : "") + "was marked as delivered. Great job!",
                         tripId);
+                case "trip.deviated" -> notificationService.createFromEvent(
+                        eventId, driverId, NotificationType.TRIP_DEVIATED,
+                        "You're off the planned route",
+                        deviationText(payload.get("deviationMetres"), tripId),
+                        tripId);
                 default -> log.debug("Ignoring event type {}", eventType);
             }
 
@@ -78,6 +83,14 @@ public class TripEventConsumer {
             // Don't requeue — a malformed event would loop forever
             channel.basicNack(deliveryTag, false, false);
         }
+    }
+
+    private static String deviationText(Object deviationMetres, Long tripId) {
+        String id = tripId != null ? "Trip #" + tripId : "Your trip";
+        Long metres = parseLong(deviationMetres);
+        return metres != null
+                ? id + " has drifted " + metres + "m from the planned route."
+                : id + " has drifted from the planned route.";
     }
 
     private static String routeText(String prefix, String origin, String dest, Long tripId) {

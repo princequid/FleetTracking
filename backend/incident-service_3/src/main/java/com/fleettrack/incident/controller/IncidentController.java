@@ -1,7 +1,11 @@
 package com.fleettrack.incident.controller;
 
+import com.fleettrack.incident.client.DriverServiceClient;
+import com.fleettrack.incident.client.TripServiceClient;
 import com.fleettrack.incident.model.dto.CreateIncidentRequest;
+import com.fleettrack.incident.model.dto.DriverIdResponse;
 import com.fleettrack.incident.model.dto.IncidentResponse;
+import com.fleettrack.incident.model.dto.TripOwnerResponse;
 import com.fleettrack.incident.model.dto.UpdateIncidentStatusRequest;
 import com.fleettrack.incident.model.enums.IncidentStatus;
 import com.fleettrack.incident.service.IncidentService;
@@ -22,6 +26,8 @@ import java.util.List;
 public class IncidentController {
 
     private final IncidentService incidentService;
+    private final DriverServiceClient driverServiceClient;
+    private final TripServiceClient tripServiceClient;
 
     private static final List<String> CREATE_ROLES = List.of("DRIVER", "ADMIN", "SUPER_ADMIN");
     private static final List<String> LIST_ROLES = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
@@ -33,11 +39,7 @@ public class IncidentController {
             HttpServletRequest httpRequest) {
         requireRole(httpRequest, CREATE_ROLES);
         Long driverId = extractUserId(httpRequest);
-        // NOTE: tripId ownership is not validated here — this service has no client for
-        // trip-service (only a MediaServiceClient stub exists), so there is currently no
-        // low-risk way to verify request.getTripId() actually belongs to driverId. Any
-        // DRIVER caller can report an incident against an arbitrary tripId until a
-        // trip-service client is wired up.
+        verifyDriverOwnsTrip(httpRequest, request.getTripId());
         return ResponseEntity.status(HttpStatus.CREATED).body(incidentService.reportIncident(request, driverId));
     }
 
@@ -86,6 +88,25 @@ public class IncidentController {
         String role = request.getHeader("X-User-Role");
         if (role == null || !allowedRoles.contains(role)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+    }
+
+    // Confirms a DRIVER caller is actually assigned to the tripId they're reporting an
+    // incident against — a no-op for ADMIN/SUPER_ADMIN callers (CREATE_ROLES), who may
+    // report against any trip. Same pattern as gps-service's/trip-service's own checks.
+    private void verifyDriverOwnsTrip(HttpServletRequest request, Long tripId) {
+        String role = request.getHeader("X-User-Role");
+        if (!"DRIVER".equals(role)) return;
+
+        Long userId = extractUserId(request);
+        DriverIdResponse driverProfile = driverServiceClient.getDriverByUserId(userId);
+        if (driverProfile == null || driverProfile.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+
+        TripOwnerResponse trip = tripServiceClient.getTrip(tripId);
+        if (trip == null || trip.getDriverId() == null || !trip.getDriverId().equals(driverProfile.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not assigned to this trip");
         }
     }
 }

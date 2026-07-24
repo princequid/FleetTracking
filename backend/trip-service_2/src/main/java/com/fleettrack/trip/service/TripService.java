@@ -7,7 +7,6 @@ import com.fleettrack.events.TripStartedEvent;
 import com.fleettrack.trip.client.DriverServiceClient;
 import com.fleettrack.trip.client.MediaServiceClient;
 import com.fleettrack.trip.client.VehicleServiceClient;
-import com.fleettrack.trip.event.TripEventPublisher;
 import com.fleettrack.trip.exception.TripNotFoundException;
 import com.fleettrack.trip.model.dto.*;
 import com.fleettrack.trip.model.entity.Trip;
@@ -46,7 +45,6 @@ public class TripService {
     private final DriverServiceClient driverServiceClient;
     private final VehicleServiceClient vehicleServiceClient;
     private final MediaServiceClient mediaServiceClient;
-    private final TripEventPublisher eventPublisher;
     private final OutboxPublisherService outboxPublisherService;
     private final EtaService etaService;
 
@@ -157,6 +155,20 @@ public class TripService {
         checkOwnership(trip, requesterDriverId);
         validateStatus(trip, TripStatus.ASSIGNED, "start");
         requireWithinGeofence(location, trip.getOriginLat(), trip.getOriginLng(), "pickup location");
+
+        // The mobile app already refuses to show "Start trip" until a pre-dispatch photo
+        // is captured (see map.jsx's PHASE.AT_START button logic) — this is the backend
+        // enforcing the same rule server-side, mirroring completeTrip's POD gate, so a
+        // direct API call can't bypass the client-only check.
+        MediaPodStatusResponse photoStatus;
+        try {
+            photoStatus = mediaServiceClient.getPodStatus(tripId);
+        } catch (Exception e) {
+            throw new RuntimeException("Pre-dispatch photo required before starting trip (media-service unavailable)");
+        }
+        if (!Boolean.TRUE.equals(photoStatus.getHasPreDispatch())) {
+            throw new RuntimeException("Pre-dispatch photo required before starting trip");
+        }
 
         TripStatus oldStatus = trip.getStatus();
         trip.setStatus(TripStatus.STARTED);
@@ -323,9 +335,21 @@ public class TripService {
     // Stores the road-following route geometry the driver app pushed (on trip start and
     // on each reroute). Ownership-checked so a driver can only set their own trip's route.
     @Transactional
-    public void updateRoute(Long tripId, String routeGeometry, Long requesterDriverId) {
+    public void updateRoute(Long tripId, String routeGeometry, Long userId, Long requesterDriverId) {
         Trip trip = findTrip(tripId);
         checkOwnership(trip, requesterDriverId);
+
+        // The driver app pushes a route the moment the trip is actually under way (not
+        // just when STARTED is set, which can happen while still stationary at pickup) —
+        // treat the first route push as the signal that the trip is genuinely moving,
+        // matching every frontend surface (mobile + admin) that already treats EN_ROUTE
+        // as equivalent to "STARTED, and now driving."
+        if (trip.getStatus() == TripStatus.STARTED) {
+            TripStatus oldStatus = trip.getStatus();
+            trip.setStatus(TripStatus.EN_ROUTE);
+            recordStatusChange(tripId, oldStatus, TripStatus.EN_ROUTE, userId);
+        }
+
         trip.setRouteGeometry(routeGeometry);
         tripRepository.save(trip);
     }
