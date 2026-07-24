@@ -18,7 +18,7 @@ This deploys the three pieces to **free** hosting:
 
 1. **Google Cloud** account — https://console.cloud.google.com (new accounts get a $300/90-day free trial credit; a card is required for verification but nothing is charged until the trial ends and you explicitly upgrade).
 2. **Render** account — https://render.com (sign in with GitHub).
-3. **A domain** — easiest free option is **DuckDNS** (https://duckdns.org). Create **two** names pointing at your VM's IP, e.g. `fleettrack.duckdns.org` (API) and `fleettrack-storage.duckdns.org` (storage).
+3. **A domain** — easiest free option is **DuckDNS** (https://duckdns.org). Create **three** names pointing at your VM's IP, e.g. `fleettrack.duckdns.org` (API), `fleettrack-storage.duckdns.org` (storage), and `fleettrack-routing.duckdns.org` (OSRM — the driver app's turn-by-turn/rerouting calls go straight to this, not through the gateway).
 4. **GitHub** — your code must be pushed to a repo (Render builds from it).
 5. *(Optional, for push notifications)* **Firebase** service‑account JSON.
 
@@ -38,9 +38,10 @@ This deploys the three pieces to **free** hosting:
 GCP's default network already allows SSH (22) via the `default-allow-ssh` rule, and checking the HTTP/HTTPS boxes in A1 added rules for 80/443. Double-check in **VPC network → Firewall** that no other rule opens a broader port range (e.g. `default-allow-all` shouldn't exist on a fresh project). Nothing else needs to be reachable — the Compose file publishes internal ports (Postgres, MinIO, etc.) on the VM's own loopback only (see A6's `HOST_BIND`), so they're never exposed even if you skip this check, but it's worth confirming.
 
 ### A3. Point your domains at the VM
-In DuckDNS, set **both** names' IP to the VM's **External IP** from A1:
+In DuckDNS, set **all three** names' IP to the VM's **External IP** from A1:
 - `fleettrack.duckdns.org` → VM External IP
 - `fleettrack-storage.duckdns.org` → VM External IP
+- `fleettrack-routing.duckdns.org` → VM External IP
 
 ### A4. Install Docker on the VM
 Connect via the Console's **SSH** button (opens a browser terminal, no key setup needed) or your own SSH client if you added a key in A1, then:
@@ -78,9 +79,10 @@ INTERNAL_SERVICE_SECRET=$(openssl rand -hex 32)
 INITIAL_ADMIN_EMAIL=you@yourcompany.com
 INITIAL_ADMIN_PASSWORD=$(openssl rand -hex 12)
 
-# ── Public hostnames (your two DuckDNS names) ──
+# ── Public hostnames (your three DuckDNS names) ──
 API_DOMAIN=fleettrack.duckdns.org
 STORAGE_DOMAIN=fleettrack-storage.duckdns.org
+OSRM_DOMAIN=fleettrack-routing.duckdns.org
 ACME_EMAIL=you@example.com
 
 # The endpoint baked into presigned photo URLs — must be the public storage domain.
@@ -141,6 +143,10 @@ First build takes a while (it compiles 9 Java services). Then Caddy fetches HTTP
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" https://fleettrack.duckdns.org/auth/login -X POST -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"y"}'
 # 400 = healthy (bad creds reached auth). 502/timeout = still starting or DNS/cert not ready yet.
+
+curl -s -o /dev/null -w "%{http_code}\n" "https://fleettrack-routing.duckdns.org/route/v1/driving/-0.186964,5.603717;-0.196964,5.613717?overview=false"
+# 200 = OSRM reachable and serving routes. 502/timeout = still starting, DNS/cert not ready, or
+# osrm-data was never generated (A6b) — check `docker compose logs osrm` on the VM.
 ```
 
 ---
@@ -168,12 +174,22 @@ curl -s -o /dev/null -w "%{http_code}\n" https://fleettrack.duckdns.org/auth/log
 Then build:
 ```bash
 cd fleettrack-pro/mobile
-# point the app at the public API (HTTPS)
-echo "EXPO_PUBLIC_API_URL=https://fleettrack.duckdns.org" > .env
+# point the app at the public API + routing domains (HTTPS)
+cat > .env <<EOF
+EXPO_PUBLIC_API_URL=https://fleettrack.duckdns.org
+EXPO_PUBLIC_OSRM_URL=https://fleettrack-routing.duckdns.org
+EOF
 npm i -g eas-cli
 eas login          # free Expo account
 eas build -p android --profile preview   # uses the "preview" profile in eas.json → installable APK
 ```
+> **`EXPO_PUBLIC_OSRM_URL` is REQUIRED, not optional** — the driver app calls OSRM directly
+> (turn-by-turn directions and rerouting when the driver goes off-route), bypassing the
+> gateway entirely. If this is left unset, it silently falls back to OSRM's public demo
+> server (`router.project-osrm.org`), which is rate-limited and not meant for real app
+> traffic — routing/rerouting will work sometimes and then mysteriously stop with no error
+> shown. Point it at your own `OSRM_DOMAIN` from Part A instead.
+
 Download the APK from the link and share/install it. (iOS needs an Apple Developer account — Android APK is the free path.)
 > Push notifications are disabled by default (no `google-services.json`) and the app runs fine without them — see Part D to enable later.
 
@@ -192,7 +208,7 @@ Admin in‑app notifications already work (the bell polls incidents + trip event
 - [ ] `.env` created on the server with **freshly generated** secrets (never the dev defaults).
 - [ ] Firewall opens **only** 22, 80, 443.
 - [ ] `CORS_ALLOWED_ORIGINS` set to the exact Render admin URL.
-- [ ] HTTPS working (Caddy got its certs) for both domains.
+- [ ] HTTPS working (Caddy got its certs) for all three domains, including `OSRM_DOMAIN`.
 - [ ] `firebase-service-account.json` is **not** in git (`git status` shows it ignored).
 - [ ] You've pushed the latest code (with all the security fixes) to GitHub.
 

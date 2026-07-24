@@ -891,15 +891,19 @@ export default function LiveMapScreen() {
   }, [currentPosition, focusOnDriver, loadLeg]);
 
   // ── Rerouting ──
+  // Ref/state setup lives INSIDE the try (not before it) so that if anything here ever
+  // throws synchronously, the finally block still runs and isReroutingRef always gets
+  // released — otherwise a single bad tick could wedge it at `true` and silently disable
+  // rerouting for the rest of the trip.
   const triggerReroute = useCallback(async (lat, lng) => {
     if (isReroutingRef.current) return;
-    isReroutingRef.current = true;
-    setIsRerouting(true);
-    reroutingOpacity.value = withTiming(1, { duration: 200 });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    if (nav.current.voice) Speech.speak('Rerouting', { language: 'en' });
-
     try {
+      isReroutingRef.current = true;
+      setIsRerouting(true);
+      reroutingOpacity.value = withTiming(1, { duration: 200 });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      if (nav.current.voice) Speech.speak('Rerouting', { language: 'en' });
+
       // Reroute from the driver's current position to the active leg's target
       // (the trip start during APPROACH, the destination during TRIP).
       const target = nav.current.target;
@@ -923,14 +927,21 @@ export default function LiveMapScreen() {
         if (duration != null) setRouteDurationSecs(Math.round(duration));
         // Push the rerouted path so the admin live map reflects the change.
         if (nav.current.phase === PHASE.TRIP) pushTripRoute(newCoords);
+      } else {
+        // fetchOsrm never throws (it swallows its own errors) — an empty `steps` here
+        // means the routing request itself failed (timeout/unreachable/no route), not
+        // that we're not actually off-route. Surface that instead of failing silently;
+        // the next off-route GPS tick will retry automatically.
+        showToast('Could not get a new route. Retrying…');
       }
-    } catch {}
-    finally {
+    } catch {
+      showToast('Could not get a new route. Retrying…');
+    } finally {
       reroutingOpacity.value = withTiming(0, { duration: 300 });
       setIsRerouting(false);
       isReroutingRef.current = false;
     }
-  }, [fetchOsrm, pushTripRoute]);
+  }, [fetchOsrm, pushTripRoute, showToast]);
 
   // ── GPS position handler — processes a location fed from the shared tracker/store.
   //    NOTE: this updates the driver marker + nav logic ONLY. It never moves the map
