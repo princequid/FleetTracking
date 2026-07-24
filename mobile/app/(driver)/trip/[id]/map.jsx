@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeepAwake } from 'expo-keep-awake';
 import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
@@ -320,6 +321,11 @@ function RouteMarker({ coordinate, color, number, label, styles, zIndex, trackKe
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function LiveMapScreen() {
+  // Keeps the device screen on for as long as this screen is mounted — a driver glancing
+  // between the road and the phone shouldn't have the screen lock mid-trip. Automatically
+  // released on unmount, so it never affects any other screen in the app.
+  useKeepAwake();
+
   const router          = useRouter();
   const { id: tripId }  = useLocalSearchParams();
   // Every entry point (Navigate, Mark arrived, View Map, a notification tap, ...) must
