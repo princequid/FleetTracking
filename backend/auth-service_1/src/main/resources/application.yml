@@ -72,9 +72,10 @@ fleetsync:
   # Base URL of the web app that hosts /reset-password — used by the forgot-password
   # email. The admin portal is the only web frontend in this project today.
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
-  # Deep-link scheme registered in mobile/app.json ("scheme": "fleettrack") — the
-  # welcome email's "Set your password" link opens straight into the app, since
-  # drivers only ever use the mobile app, not the admin portal web.
+  # Deep-link scheme registered in mobile/app.json ("scheme": "fleettrack") — used only
+  # by PasswordResetService's forgot-password link for DRIVER accounts, which opens
+  # straight into the app's reset-password screen instead of the web admin portal, since
+  # drivers only ever use the mobile app.
   mobile-app-scheme: ${MOBILE_APP_SCHEME:fleettrack}
 
 app:

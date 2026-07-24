@@ -407,6 +407,7 @@ export default function LiveMapScreen() {
   const speedSmoothRef      = useRef(0);      // low-pass smoothed speed (km/h)
   const movingRef           = useRef(false);  // confirmed-moving vs. parked (see onPositionUpdate)
   const pendingMoveRef      = useRef(null);   // unconfirmed candidate fix while parked
+  const toastTimersRef      = useRef([]);     // pending showToast timeouts, so a new toast can cancel a stale one's hide/clear
   const pendingFitRef       = useRef(null);
   const zoomRef             = useRef(15);
   const updateCounterRef    = useRef(0);
@@ -576,13 +577,22 @@ export default function LiveMapScreen() {
   );
 
   // ── Error toast helper ──
+  // Cancels any hide/clear timers left over from a previous call before scheduling new
+  // ones — without this, a fast repeat call (e.g. the reroute-failure path retrying every
+  // few seconds against an unreachable OSRM) could have an earlier call's timers fire
+  // after a newer toast is already showing, fading/clearing text that was just re-set.
   const showToast = useCallback((msg) => {
+    toastTimersRef.current.forEach(clearTimeout);
+    toastTimersRef.current = [];
+
     setErrorToast(msg);
     toastOpacity.value = withTiming(1, { duration: 200 });
-    setTimeout(() => {
+    const hideTimer = setTimeout(() => {
       toastOpacity.value = withTiming(0, { duration: 300 });
-      setTimeout(() => setErrorToast(''), 300);
+      const clearTimer = setTimeout(() => setErrorToast(''), 300);
+      toastTimersRef.current.push(clearTimer);
     }, 3000);
+    toastTimersRef.current.push(hideTimer);
   }, []);
 
   // ── Back button handler ──
@@ -903,6 +913,11 @@ export default function LiveMapScreen() {
   // rerouting for the rest of the trip.
   const triggerReroute = useCallback(async (lat, lng) => {
     if (isReroutingRef.current) return;
+    // Bail before any visible side effect (haptic/speech/overlay) if there's nothing to
+    // reroute to — otherwise a null target (e.g. destination geocoding failed) still
+    // buzzes the phone and speaks "Rerouting" for a reroute that was never going to happen.
+    const target = nav.current.target;
+    if (!target) return;
     try {
       isReroutingRef.current = true;
       setIsRerouting(true);
@@ -912,8 +927,6 @@ export default function LiveMapScreen() {
 
       // Reroute from the driver's current position to the active leg's target
       // (the trip start during APPROACH, the destination during TRIP).
-      const target = nav.current.target;
-      if (!target) return;
       const { steps, overviewCoords, duration } = await fetchOsrm([
         { latitude: lat, longitude: lng },
         { latitude: target.latitude, longitude: target.longitude },

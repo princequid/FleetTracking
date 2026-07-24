@@ -14,7 +14,6 @@ import com.fleettrack.auth.repository.RefreshTokenRepository;
 import com.fleettrack.auth.repository.UserRepository;
 import com.fleettrack.events.BaseEvent;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -43,16 +42,6 @@ public class AuthService {
     private final JwtService jwtService;
     private final AuthEventPublisher authEventPublisher;
     private final EmailService emailService;
-    private final PasswordResetService passwordResetService;
-
-    @Value("${fleetsync.frontend-url}")
-    private String frontendUrl;
-
-    // Deep-link scheme registered in the mobile app's app.json ("scheme": "fleettrack")
-    // — the welcome email's "Set your password" link opens straight into the app's
-    // reset-password screen, not a web page, since drivers only ever use the mobile app.
-    @Value("${fleetsync.mobile-app-scheme:fleettrack}")
-    private String mobileAppScheme;
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final int LOCK_DURATION_MINUTES = 15;
@@ -93,9 +82,9 @@ public class AuthService {
                 .role(Role.DRIVER)
                 // The password on this request was set by whoever filled out the form —
                 // in practice, the admin portal's "Add Driver" flow, on the driver's
-                // behalf. Rather than have the admin communicate that password to the
-                // driver out of band, the welcome email below carries a one-time setup
-                // link so the driver sets their OWN password before ever using this one.
+                // behalf — and is usable immediately. This flag just forces the in-app
+                // first-login prompt so the driver can set their own password (or keep
+                // this one) the first time they log in.
                 .mustChangePassword(true)
                 .build();
         User saved = userRepository.save(user);
@@ -104,10 +93,8 @@ public class AuthService {
         // failed send must never delay or fail the registration response.
         // RegisterRequest has no name field (self-registration only collects email +
         // password), so the email address itself is the closest thing to a display name.
-        String setupToken = passwordResetService.issueSetupToken(saved);
-        String setupLink = mobileAppScheme + "://reset-password?token=" + setupToken;
         emailService.sendEmail(saved.getEmail(), "Welcome to FleetSync",
-                EmailTemplates.buildWelcomeEmail(saved.getEmail(), saved.getRole().name(), setupLink));
+                EmailTemplates.buildWelcomeEmail(saved.getEmail(), saved.getRole().name()));
 
         return saved;
     }

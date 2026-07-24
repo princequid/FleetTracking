@@ -1,12 +1,16 @@
 # FleetTrack Pro — production reverse proxy (auto-HTTPS via Let's Encrypt).
 # Domains come from the environment (see .env / DEPLOYMENT.md). Caddy obtains and
 # renews TLS certificates automatically, provided:
-#   1. API_DOMAIN and STORAGE_DOMAIN both resolve (DNS A record) to this server's IP.
+#   1. API_DOMAIN, STORAGE_DOMAIN, and OSRM_DOMAIN all resolve (DNS A record) to this
+#      server's IP.
 #   2. Ports 80 and 443 are open to the internet on the server.
 #
-# Two separate hostnames on purpose: MinIO signs presigned photo URLs against its own
-# host, so it needs a clean hostname (STORAGE_DOMAIN) with no path prefix — otherwise
-# the signatures won't validate.
+# Three separate hostnames on purpose:
+#   - MinIO signs presigned photo URLs against its own host, so it needs a clean
+#     hostname (STORAGE_DOMAIN) with no path prefix — otherwise the signatures won't
+#     validate.
+#   - OSRM (OSRM_DOMAIN) is called directly by the mobile app for turn-by-turn/
+#     rerouting, bypassing the gateway entirely — it needs its own public hostname too.
 
 {
 	email {$ACME_EMAIL}

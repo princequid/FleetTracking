@@ -6,6 +6,8 @@ import { ThemeProvider } from "./context/ThemeContext";
 import PrivateRoute from "./components/common/PrivateRoute";
 import Layout from "./pages/Layout";
 import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 
 // Route-level code splitting: each page (and its heavy deps — Recharts on the
 // dashboard/reports, Leaflet on the map) ships as its own chunk that loads only
@@ -30,6 +32,8 @@ root.render(
     <BrowserRouter>
       <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/"
         element={

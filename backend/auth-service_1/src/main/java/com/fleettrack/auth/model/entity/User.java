@@ -47,7 +47,7 @@ public class User {
     // whenever an account is created via /auth/register (the admin portal's "Add
     // Driver" flow sets the driver's initial password on their behalf), cleared once
     // the driver acknowledges the prompt (see AuthService.firstLoginAck) or resets
-    // their password via the emailed setup link (see PasswordResetService).
+    // their password via the forgot-password flow (see PasswordResetService.resetPassword).
     @Column(name = "must_change_password", nullable = false)
     @Builder.Default
     private Boolean mustChangePassword = false;

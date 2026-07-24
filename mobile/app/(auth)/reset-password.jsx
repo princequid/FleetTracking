@@ -13,9 +13,11 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 
 const { height } = Dimensions.get('window');
 
-// Reached two ways: tapping the "Set your password" link in the welcome email
-// (fleettrack://reset-password?token=...), or a future forgot-password flow — both
-// land here since they share the same backend endpoint (POST /auth/reset-password).
+// Reached only via the forgot-password flow: tapping "Reset your password" in the
+// emailed reset link (fleettrack://reset-password?token=...), sent when a driver taps
+// "Forgot password?" on the login screen. Account creation no longer uses this screen
+// or wording — a newly-created driver already has a working password and instead sets
+// their own via the in-app first-login prompt.
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const insets  = useSafeAreaInsets();
