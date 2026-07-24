@@ -1,5 +1,0 @@
-package com.fleettrack.auth/service;
-
-// TOTP + backup codes
-public class MfaService {
-}

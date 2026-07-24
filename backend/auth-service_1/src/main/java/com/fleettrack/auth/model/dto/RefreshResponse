@@ -1,5 +1,0 @@
-package com.fleettrack.auth/model/dto;
-
-// 
-public class RefreshResponse {
-}

@@ -56,14 +56,17 @@ public class IncidentEventConsumer {
                 return;
             }
 
-            // Baseline in-app/push acknowledgement to the reporting driver.
-            notificationService.createFromEvent(
+            // Baseline in-app/push acknowledgement to the reporting driver. Its return
+            // value doubles as this handler's own dedup signal — false means this exact
+            // eventId was already processed (a redelivery), so the critical-incident email
+            // below must also be skipped, or a redelivered message would send it twice.
+            boolean isNewEvent = notificationService.createFromEvent(
                     event.getEventId(), event.getDriverId(), NotificationType.INCIDENT_REPORTED,
                     "Incident reported",
                     "Your " + event.getIncidentType() + " report has been submitted for review.",
                     event.getTripId());
 
-            if ("CRITICAL".equals(event.getSeverity())) {
+            if (isNewEvent && "CRITICAL".equals(event.getSeverity())) {
                 notifyAdminsOfCriticalIncident(event);
             }
 
