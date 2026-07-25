@@ -49,11 +49,10 @@ services:
       - "5672:5672"
       - "15672:15672"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     deploy:
       resources:
         limits:
@@ -105,8 +104,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1024M
-          cpus: "1.0"
+          memory: 128M
+          cpus: "0.25"
     restart: unless-stopped
 
   # ── Eureka Server ──────────────────────────────────────────────────────
@@ -190,26 +189,6 @@ services:
           cpus: "0.5"
     restart: unless-stopped
 
-  # ── TLS reverse proxy ──────────────────────────────────────────────────
-  # Terminates HTTPS and forwards to the gateway over the internal network.
-  # Run infrastructure_1/tls/generate-cert.sh once to create the dev cert.
-  reverse-proxy:
-    image: nginx:1.27-alpine
-    depends_on:
-      - api-gateway
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./tls/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./tls/certs:/etc/nginx/certs:ro
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-          cpus: "0.25"
-    restart: unless-stopped
-
   # ── Business Services ──────────────────────────────────────────────────
 
   driver-service:
@@ -224,7 +203,6 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
@@ -279,7 +257,6 @@ services:
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
@@ -436,6 +413,7 @@ services:
       SPRING_RABBITMQ_USERNAME: fleettrack
       SPRING_RABBITMQ_PASSWORD: fleettrack
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
         condition: service_healthy
@@ -443,6 +421,11 @@ services:
         condition: service_healthy
       eureka-server:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
     restart: unless-stopped
 
   gps-service:
