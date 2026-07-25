@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import api from "../../services/api";
 import {
@@ -41,11 +41,12 @@ function getInitials(email) {
   return email.split("@")[0].slice(0, 2).toUpperCase();
 }
 
-export default function Sidebar({ mobileOpen, onNavigate }) {
+export default function Sidebar() {
   const role = useAuthStore((state) => state.role) || "";
   const email = useAuthStore((state) => state.email);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -66,7 +67,6 @@ export default function Sidebar({ mobileOpen, onNavigate }) {
   const sidebarClass = [
     "sidebar",
     mounted ? "sidebar-mounted" : "",
-    mobileOpen ? "sidebar-mobile-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -94,7 +94,16 @@ export default function Sidebar({ mobileOpen, onNavigate }) {
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    onClick={onNavigate}
+                    // Ignore clicks on the route we're already viewing — no navigation,
+                    // no history entry, no page re-render/scroll reset.
+                    onClick={(e) => {
+                      if (pathname === item.to) {
+                        e.preventDefault();
+                        if (import.meta.env.DEV) console.log(`[Nav] ignored — already on "${item.to}"`);
+                      } else if (import.meta.env.DEV) {
+                        console.log(`[Nav] navigate → "${item.to}"`);
+                      }
+                    }}
                     className={({ isActive }) =>
                       `sidebar-link ${isActive ? "sidebar-link-active" : ""}`
                     }

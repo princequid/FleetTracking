@@ -11,6 +11,81 @@ import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import { ArrowLeftIcon } from "../components/common/Icons";
 
+function EtaField({ trip }) {
+  const { status, eta } = trip;
+
+  if (status === "ASSIGNED") {
+    return (
+      <span className="trip-eta-pending">
+        Pending — trip not yet started
+      </span>
+    );
+  }
+
+  if (status === "STARTED" || status === "EN_ROUTE") {
+    if (!eta) {
+      return <span className="trip-eta-calculating">Calculating…</span>;
+    }
+    const etaDate = new Date(eta);
+    const diffMs  = etaDate - Date.now();
+    const diffMin = Math.round(diffMs / 60000);
+    const timeStr = etaDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const label   = diffMin > 0 ? `in ${diffMin < 60 ? `${diffMin} min` : `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`}` : "arriving now";
+    return (
+      <span className="trip-eta-live">
+        {timeStr}
+        <span className="trip-eta-relative">{label}</span>
+      </span>
+    );
+  }
+
+  if (status === "ARRIVED") {
+    const when = trip.arrivedAt ? new Date(trip.arrivedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+    return (
+      <span className="trip-eta-arrived">
+        Driver arrived{when ? ` at ${when}` : ""}
+      </span>
+    );
+  }
+
+  if (status === "DELIVERED") {
+    const when = trip.completedAt ? new Date(trip.completedAt).toLocaleString() : null;
+    return (
+      <span className="trip-eta-done">
+        Delivered{when ? ` · ${when}` : ""}
+      </span>
+    );
+  }
+
+  if (status === "CANCELLED") {
+    return <span className="trip-eta-cancelled">Trip cancelled</span>;
+  }
+
+  // Fallback for any other status
+  return (
+    <span className="trip-meta-value">
+      {eta ? new Date(eta).toLocaleString() : "—"}
+    </span>
+  );
+}
+
+function TripRouteNode({ dot, stopNumber, typeLabel, name, showLine }) {
+  return (
+    <div className="trip-route-node">
+      <div className="trip-route-dot-col">
+        <div className={`trip-route-dot trip-route-dot--${dot}`}>
+          {dot === "stop" && <span>{stopNumber}</span>}
+        </div>
+        {showLine && <div className="trip-route-line" />}
+      </div>
+      <div className="trip-route-text">
+        <span className="trip-route-type">{typeLabel}</span>
+        <span className="trip-route-name">{name || "—"}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function TripDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -144,6 +219,49 @@ export default function TripDetailPage() {
         {error && <div className="error-message">{error}</div>}
 
         <div className="trip-detail-card">
+          {/* ── Route ── */}
+          <div className="trip-route-section">
+            <span className="trip-route-heading">
+              Route
+              {trip.stops?.length > 0 && (
+                <span className="trip-route-stop-count">
+                  {trip.stops.length} stop{trip.stops.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </span>
+
+            <div className="trip-route-track">
+              {/* Origin */}
+              <TripRouteNode
+                dot="origin"
+                typeLabel="Origin"
+                name={trip.origin}
+                showLine
+              />
+
+              {/* Stops */}
+              {trip.stops?.map((stop, idx) => (
+                <TripRouteNode
+                  key={idx}
+                  dot="stop"
+                  stopNumber={idx + 1}
+                  typeLabel={`Stop ${idx + 1}`}
+                  name={stop.name}
+                  showLine
+                />
+              ))}
+
+              {/* Destination */}
+              <TripRouteNode
+                dot="dest"
+                typeLabel="Destination"
+                name={trip.destination}
+                showLine={false}
+              />
+            </div>
+          </div>
+
+          {/* ── Meta grid (driver / vehicle / ETA / created) ── */}
           <div className="trip-detail-meta-grid">
             <div className="trip-meta-field">
               <span className="trip-meta-label">Driver</span>
@@ -158,18 +276,8 @@ export default function TripDetailPage() {
               </span>
             </div>
             <div className="trip-meta-field">
-              <span className="trip-meta-label">Origin</span>
-              <span className="trip-meta-value">{trip.origin || "—"}</span>
-            </div>
-            <div className="trip-meta-field">
-              <span className="trip-meta-label">Destination</span>
-              <span className="trip-meta-value">{trip.destination || "—"}</span>
-            </div>
-            <div className="trip-meta-field">
               <span className="trip-meta-label">ETA</span>
-              <span className="trip-meta-value">
-                {trip.eta ? new Date(trip.eta).toLocaleString() : "—"}
-              </span>
+              <EtaField trip={trip} />
             </div>
             <div className="trip-meta-field">
               <span className="trip-meta-label">Created At</span>

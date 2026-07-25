@@ -27,7 +27,7 @@ export default function TripsPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  useEffect(() => {
+  function loadTrips() {
     setLoading(true);
     setError("");
     Promise.all([getTrips(), getDrivers(), getVehicles()])
@@ -38,7 +38,9 @@ export default function TripsPage() {
       })
       .catch(() => setError("Unable to load trips."))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(() => { loadTrips(); }, []);
 
   useEffect(() => {
     setPage(1);
@@ -116,6 +118,7 @@ export default function TripsPage() {
               driversById={driversById}
               vehiclesById={vehiclesById}
               loading={loading}
+              onRefresh={loadTrips}
             />
             {!loading && (
               <div className="trips-pagination">

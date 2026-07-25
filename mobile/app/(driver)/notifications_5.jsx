@@ -1,22 +1,31 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  FlatList, SafeAreaView, RefreshControl, Animated,
+  FlatList, SafeAreaView, RefreshControl, ActivityIndicator, Animated,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import api from '../../services/api_1';
+import { useAlertsStore } from '../../store/alertsStore';
 import { C } from '../../constants/colors';
 
-const TYPE_META = {
-  TRIP_ASSIGNED:  { icon: 'briefcase',    color: C.navyMid, bg: '#EEF3FB' },
-  TRIP_CANCELLED: { icon: 'x-circle',     color: C.red,     bg: '#FEE2E2' },
-  TRIP_STARTED:   { icon: 'play-circle',  color: C.teal,    bg: C.tealPale },
-  TRIP_DELIVERED: { icon: 'check-circle', color: C.green,   bg: '#D1FAE5' },
-  ALERT:          { icon: 'alert-triangle', color: C.amber, bg: '#FEF3C7' },
-  INFO:           { icon: 'info',          color: C.navyMid, bg: '#EEF3FB' },
+// The Alerts page is a live view of the driver's ACTIVE trips. Assigned trips (from the
+// admin) and started trips show here; once a trip is DELIVERED or CANCELLED it drops off
+// this list and appears in Trip History instead.
+const ACTIVE_STATUSES = ['ASSIGNED', 'STARTED', 'EN_ROUTE', 'ARRIVED'];
+
+const STATUS_META = {
+  ASSIGNED: { title: 'New trip assigned',      icon: 'briefcase',     color: C.navyMid, bg: '#EEF3FB', tag: 'Assigned' },
+  STARTED:  { title: 'Trip started',           icon: 'navigation',    color: C.teal,    bg: C.tealPale, tag: 'Started' },
+  EN_ROUTE: { title: 'Trip in progress',       icon: 'navigation',    color: C.teal,    bg: C.tealPale, tag: 'En route' },
+  ARRIVED:  { title: 'Arrived at destination', icon: 'map-pin',       color: C.green,   bg: C.greenLight, tag: 'Arrived' },
 };
+
+function shortLocation(name) {
+  if (!name) return '—';
+  const words = name.trim().split(/\s+/);
+  return words.length <= 3 ? name : words.slice(0, 3).join(' ') + '…';
+}
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
@@ -29,83 +38,105 @@ function timeAgo(dateStr) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function NotifItem({ item, onPress }) {
-  const meta  = TYPE_META[item.type] || TYPE_META.INFO;
-  const scale = useRef(new Animated.Value(1)).current;
+// Most relevant timestamp for ordering/age of an active trip
+function tripStamp(t) {
+  return t.startedAt || t.createdAt || 0;
+}
 
+const AlertCard = React.memo(function AlertCard({ trip, onPress }) {
+  const meta  = STATUS_META[trip.status] || STATUS_META.ASSIGNED;
+  const scale = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
-        style={[styles.notifCard, !item.isRead && styles.notifUnread]}
-        onPress={() => onPress(item)}
+        style={styles.card}
+        activeOpacity={1}
+        onPress={() => onPress(trip)}
         onPressIn={() => Animated.spring(scale, { toValue: 0.97, damping: 14, useNativeDriver: true }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1, damping: 14, useNativeDriver: true }).start()}
-        activeOpacity={1}
       >
-        <View style={[styles.notifIcon, { backgroundColor: meta.bg }]}>
+        <View style={[styles.iconWrap, { backgroundColor: meta.bg }]}>
           <Feather name={meta.icon} size={18} color={meta.color} />
         </View>
         <View style={{ flex: 1, gap: 3 }}>
-          <Text style={styles.notifTitle} numberOfLines={1}>{item.title || item.type}</Text>
-          <Text style={styles.notifBody} numberOfLines={2}>{item.message || item.body || '–'}</Text>
-          <Text style={styles.notifTime}>{timeAgo(item.createdAt)}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title} numberOfLines={1}>{meta.title}</Text>
+            <View style={[styles.tag, { backgroundColor: meta.bg }]}>
+              <Text style={[styles.tagText, { color: meta.color }]}>{meta.tag}</Text>
+            </View>
+          </View>
+          <View style={styles.routeRow}>
+            <Text style={styles.routeText} numberOfLines={1}>{shortLocation(trip.origin)}</Text>
+            <Feather name="arrow-right" size={11} color={C.text3} />
+            <Text style={styles.routeText} numberOfLines={1}>{shortLocation(trip.destination)}</Text>
+          </View>
+          <Text style={styles.metaText}>Trip #{trip.id} · {timeAgo(tripStamp(trip))}</Text>
         </View>
-        {!item.isRead && <View style={styles.unreadDot} />}
       </TouchableOpacity>
     </Animated.View>
   );
-}
-
-const MOCK = [
-  { id: '1', type: 'TRIP_ASSIGNED',  title: 'New trip assigned',    message: 'Trip #1042 — Accra → Tema. Departs 08:00',                 isRead: false, createdAt: new Date(Date.now() - 12 * 60000).toISOString() },
-  { id: '2', type: 'ALERT',          title: 'Traffic on N1 Highway', message: 'Heavy traffic reported near Tema Motorway toll booth',     isRead: false, createdAt: new Date(Date.now() - 45 * 60000).toISOString() },
-  { id: '3', type: 'TRIP_DELIVERED', title: 'Trip #1040 completed',  message: 'Proof of delivery confirmed. Great job!',                  isRead: true,  createdAt: new Date(Date.now() - 2 * 3600000).toISOString() },
-  { id: '4', type: 'INFO',           title: 'Schedule updated',      message: 'Your Monday schedule has been revised by fleet manager',  isRead: true,  createdAt: new Date(Date.now() - 5 * 3600000).toISOString() },
-  { id: '5', type: 'TRIP_CANCELLED', title: 'Trip #1038 cancelled',  message: 'This trip was cancelled by fleet management.',            isRead: true,  createdAt: new Date(Date.now() - 24 * 3600000).toISOString() },
-];
+});
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [items, setItems]    = useState([]);
-  const [tab, setTab]        = useState('all');
-  const [refreshing, setRef] = useState(false);
+  const [trips, setTrips]     = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRef]  = useState(false);
+  const [error, setError]     = useState('');
 
   const load = useCallback(async () => {
+    setError('');
     try {
-      const r = await api.get('/notifications');
-      setItems(r.data?.length ? r.data : MOCK);
-    } catch (_) {
-      setItems(MOCK);
+      const res = await api.get('/trips');
+      const raw = res.data;
+      const all = Array.isArray(raw) ? raw
+        : Array.isArray(raw?.content) ? raw.content
+        : Array.isArray(raw?.data) ? raw.data
+        : [];
+      const active = all
+        .filter((t) => ACTIVE_STATUSES.includes(t.status))
+        .sort((a, b) => new Date(tripStamp(b)) - new Date(tripStamp(a)));
+      setTrips(active);
+      // Keep the badge store in sync and mark everything here as seen — viewing the
+      // Alerts page clears the red dot on the tab.
+      const store = useAlertsStore.getState();
+      store.setActiveIds(active.map((t) => t.id));
+      store.markAllSeen();
+    } catch {
+      setError('Could not load alerts. Pull to retry.');
+      setTrips([]);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, []);
+  // Reload on focus AND poll every 15s while focused, so admin actions (cancel a trip,
+  // assign a new one) show up on their own within ~15s without a manual refresh.
+  // The interval is cleared on blur so it never runs off-screen.
+  useFocusEffect(useCallback(() => {
+    load();
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
+  }, [load]));
 
-  const onRefresh = async () => {
-    setRef(true);
-    await load();
-    setRef(false);
-  };
+  const onRefresh = async () => { setRef(true); await load(); setRef(false); };
 
-  const markAllRead = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setItems((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    api.put('/notifications/read-all').catch(() => {});
-  };
+  // Assigned → trip detail (review/start); already-started → straight to the map.
+  // useCallback keeps the reference stable so React.memo'd rows don't re-render.
+  const openTrip = useCallback((trip) => {
+    if (trip.status === 'ASSIGNED') router.push(`/(driver)/trip/${trip.id}_2`);
+    else router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: trip.id } });
+  }, [router]);
 
-  const handlePress = (item) => {
-    setItems((prev) => prev.map((n) => n.id === item.id ? { ...n, isRead: true } : n));
-    api.put(`/notifications/${item.id}/read`).catch(() => {});
-  };
-
-  const filtered  = tab === 'unread' ? items.filter((n) => !n.isRead) : items;
-  const unreadCnt = items.filter((n) => !n.isRead).length;
+  const renderItem = useCallback(({ item }) => <AlertCard trip={item} onPress={openTrip} />, [openTrip]);
 
   const renderEmpty = () => (
     <View style={styles.empty}>
-      <Feather name="bell-off" size={44} color={C.border} />
-      <Text style={styles.emptyTitle}>{tab === 'unread' ? 'All caught up!' : 'No notifications yet'}</Text>
-      <Text style={styles.emptySub}>{tab === 'unread' ? 'You have no unread notifications' : 'Notifications will appear here'}</Text>
+      <Feather name={error ? 'wifi-off' : 'bell-off'} size={44} color={C.border} />
+      <Text style={styles.emptyTitle}>{error ? 'Couldn’t load alerts' : 'No active trips'}</Text>
+      <Text style={styles.emptySub}>
+        {error ? error : 'New trips assigned by dispatch will appear here'}
+      </Text>
     </View>
   );
 
@@ -116,39 +147,33 @@ export default function NotificationsScreen() {
           <Feather name="chevron-left" size={20} color="#fff" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          {unreadCnt > 0 && <Text style={styles.headerSub}>{unreadCnt} unread</Text>}
+          <Text style={styles.headerTitle}>Alerts</Text>
+          {trips.length > 0 && (
+            <Text style={styles.headerSub}>{trips.length} active trip{trips.length !== 1 ? 's' : ''}</Text>
+          )}
         </View>
-        {unreadCnt > 0 && (
-          <TouchableOpacity style={styles.markBtn} onPress={markAllRead}>
-            <Text style={styles.markBtnText}>Mark all read</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
-      <View style={styles.tabRow}>
-        {['all', 'unread'].map((t) => (
-          <TouchableOpacity
-            key={t}
-            style={[styles.tabBtn, tab === t && styles.tabBtnActive]}
-            onPress={() => setTab(t)}
-          >
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'all' ? `All (${items.length})` : `Unread (${unreadCnt})`}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <FlatList
-        data={filtered}
-        keyExtractor={(it) => String(it.id)}
-        contentContainerStyle={{ padding: 16, gap: 8, flexGrow: 1 }}
-        renderItem={({ item }) => <NotifItem item={item} onPress={handlePress} />}
-        ListEmptyComponent={renderEmpty}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.teal} colors={[C.teal]} />}
-        showsVerticalScrollIndicator={false}
-      />
+      {loading ? (
+        <View style={styles.empty}>
+          <ActivityIndicator size="large" color={C.teal} />
+          <Text style={styles.emptySub}>Loading alerts…</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={trips}
+          keyExtractor={(t) => String(t.id)}
+          contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1, paddingBottom: 110 }}
+          renderItem={renderItem}
+          ListEmptyComponent={renderEmpty}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.teal} colors={[C.teal]} />}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          removeClippedSubviews
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -161,25 +186,22 @@ const styles = StyleSheet.create({
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
   headerSub: { fontFamily: 'Inter-Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 1 },
-  markBtn: { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
-  markBtnText: { fontFamily: 'Inter-Medium', fontSize: 12, color: 'rgba(255,255,255,0.8)' },
-  tabRow: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: C.border, paddingHorizontal: 16, gap: 4 },
-  tabBtn: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabBtnActive: { borderBottomColor: C.navyPrimary },
-  tabText: { fontFamily: 'Inter-Medium', fontSize: 14, color: C.text3 },
-  tabTextActive: { color: C.navyPrimary, fontFamily: 'Inter-SemiBold' },
-  notifCard: {
+
+  card: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     backgroundColor: '#fff', borderRadius: 14, padding: 14,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
-  notifUnread: { borderLeftWidth: 3, borderLeftColor: C.navyPrimary },
-  notifIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  notifTitle: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1 },
-  notifBody:  { fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3, lineHeight: 18 },
-  notifTime:  { fontFamily: 'Inter-Regular', fontSize: 11, color: C.text3 },
-  unreadDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: C.navyPrimary, marginTop: 4 },
+  iconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1, flexShrink: 1 },
+  tag: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  tagText: { fontFamily: 'Inter-SemiBold', fontSize: 10 },
+  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  routeText: { fontFamily: 'Inter-Medium', fontSize: 13, color: C.text2, flexShrink: 1 },
+  metaText: { fontFamily: 'Inter-Regular', fontSize: 11, color: C.text3 },
+
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 32, paddingTop: 60 },
   emptyTitle: { fontFamily: 'Inter-SemiBold', fontSize: 18, color: C.text1 },
-  emptySub:   { fontFamily: 'Inter-Regular', fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
+  emptySub: { fontFamily: 'Inter-Regular', fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
 });
