@@ -1,14 +1,14 @@
+import React from "react";
 import { useLocation, Navigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 
 export default function PrivateRoute({ children }) {
-  const auth = useAuthStore();
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const location = useLocation();
 
-  if (!auth.authenticated) {
+  if (!isLoggedIn) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return children;
 }
-
