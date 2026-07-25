@@ -1,21 +1,33 @@
 import * as SecureStore from 'expo-secure-store';
 import api from './api_1';
 
+function decodeJwtPayload(token) {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(base64));
+  } catch {
+    return {};
+  }
+}
+
 const TOKEN_KEYS = {
   ACCESS: 'ft_access_token',
   REFRESH: 'ft_refresh_token',
 };
 
 export const authService = {
-  async login(email, password) {
+  async login(emailAddr, password) {
     try {
-      const response = await api.post('/auth/login', { email, password });
+      const response = await api.post('/auth/login', { email: emailAddr, password });
       const { accessToken, refreshToken, userId, role } = response.data;
 
       await SecureStore.setItemAsync(TOKEN_KEYS.ACCESS, accessToken);
       await SecureStore.setItemAsync(TOKEN_KEYS.REFRESH, refreshToken);
 
-      return { userId, role };
+      const payload = decodeJwtPayload(accessToken);
+      const email = payload.sub || payload.email || emailAddr;
+
+      return { userId, role, email };
     } catch (error) {
       console.error('Login failed:', error);
       throw error;

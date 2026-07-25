@@ -173,6 +173,17 @@ public class TripService {
                 .orElseThrow(() -> new RuntimeException("Trip not found"));
     }
 
+    public List<TripStatusHistoryResponse> getTripStatusHistory(Long tripId) {
+        return statusHistoryRepository.findByTripIdOrderByChangedAtAsc(tripId).stream()
+                .map(h -> TripStatusHistoryResponse.builder()
+                        .oldStatus(h.getOldStatus())
+                        .newStatus(h.getNewStatus())
+                        .changedBy(h.getChangedBy())
+                        .changedAt(h.getChangedAt())
+                        .build())
+                .toList();
+    }
+
     private Trip findTrip(Long tripId) {
         return tripRepository.findById(tripId)
                 .orElseThrow(() -> new RuntimeException("Trip not found"));
