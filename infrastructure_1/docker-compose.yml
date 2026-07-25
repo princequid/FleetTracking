@@ -1,5 +1,79 @@
-# all 12 backend modules + Postgres/RabbitMQ/Redis/MinIO
+# ===========================================================================
+# FleetTrack Pro — Docker Compose
+# ===========================================================================
+# Start order:
+#   1. Infrastructure  — postgres, rabbitmq, redis, minio, osrm
+#   2. Eureka Server   — service registry (waits for postgres healthcheck)
+#   3. Auth Service    — JWT auth (waits for postgres + eureka)
+#   4. API Gateway     — single entry point (waits for eureka + auth)
+#   5. Business services — driver, vehicle, trip, etc. (wait for postgres + eureka)
+#
+# Run:  docker compose up -d
+# Logs: docker compose logs -f
+# Stop: docker compose down
+# ===========================================================================
+
 services:
+
+  # ── Infrastructure ─────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fleettrack
+      POSTGRES_PASSWORD: fleettrack
+      POSTGRES_DB: fleettrack
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleettrack -d fleettrack"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: fleettrack
+      RABBITMQ_DEFAULT_PASS: fleettrack
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: fleettrack
+      MINIO_ROOT_PASSWORD: fleettrack123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+
   osrm:
     image: osrm/osrm-backend
     command: osrm-routed --algorithm mld /data/ghana-latest.osrm
@@ -8,3 +82,82 @@ services:
     ports:
       - "5000:5000"
     restart: unless-stopped
+
+  # ── Eureka Server ──────────────────────────────────────────────────────
+
+  eureka-server:
+    build:
+      context: ../backend/eureka-server_1
+      dockerfile: Dockerfile
+    ports:
+      - "8761:8761"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Auth Service ───────────────────────────────────────────────────────
+
+  auth-service:
+    build:
+      context: ../backend
+      dockerfile: auth-service_1/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: fleettrack
+      SPRING_RABBITMQ_PASSWORD: fleettrack
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── API Gateway ────────────────────────────────────────────────────────
+
+  api-gateway:
+    build:
+      context: ../backend/api-gateway_1
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      eureka-server:
+        condition: service_started
+      auth-service:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── Business Services ──────────────────────────────────────────────────
+
+  driver-service:
+    build:
+      context: ../backend/driver-service_1
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
+      SPRING_DATASOURCE_USERNAME: fleettrack
+      SPRING_DATASOURCE_PASSWORD: fleettrack
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  minio-data:
