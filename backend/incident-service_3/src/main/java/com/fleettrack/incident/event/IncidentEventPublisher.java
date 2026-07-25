@@ -25,7 +25,7 @@ public class IncidentEventPublisher {
                 incident.getIncidentType().name()
         );
         try {
-            rabbitTemplate.convertAndSend("incident.reported", "incident.reported", event);
+            rabbitTemplate.convertAndSend("fleettrack.events", "incident.reported", event);
         } catch (AmqpException ex) {
             log.warn("Failed to publish incident reported event for incident {}", incident.getId(), ex);
         }
