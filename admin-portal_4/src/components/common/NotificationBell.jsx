@@ -1,6 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Client } from "@stomp/stompjs";
-import SockJS from "sockjs-client";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import {
@@ -139,39 +137,53 @@ export default function NotificationBell() {
   useEffect(() => {
     if (!userId || !accessToken) return undefined;
 
-    const client = new Client({
-      webSocketFactory: () => new SockJS(WS_URL),
-      connectHeaders: { Authorization: `Bearer ${accessToken}` },
-      reconnectDelay: 5000,
-      onConnect: () => {
-        client.subscribe("/topic/admin/notifications", (message) => {
-          try {
-            const incoming = JSON.parse(message.body);
-            const payload = Array.isArray(incoming) ? incoming : [incoming];
-            setNotifications((prev) => {
-              const next = [...prev];
-              payload.forEach((notification) => {
-                if (!notification?.id) return;
-                const index = next.findIndex((item) => item.id === notification.id);
-                if (index >= 0) next[index] = { ...next[index], ...notification };
-                else next.unshift(notification);
-              });
-              return sortNotifications(next);
-            });
-            setUnreadCount((count) => count + payload.filter(isUnread).length);
-          } catch {
-            // ignore malformed payloads
-          }
-        });
-      },
-    });
+    let active = true;
 
-    client.activate();
-    clientRef.current = client;
+    // The realtime libs (stomp + sockjs) power a background connection, not first
+    // paint — load them dynamically so they stay off the critical path.
+    Promise.all([import("@stomp/stompjs"), import("sockjs-client")]).then(
+      ([{ Client }, sockjs]) => {
+        if (!active) return;
+        const SockJS = sockjs.default;
+
+        const client = new Client({
+          webSocketFactory: () => new SockJS(WS_URL),
+          connectHeaders: { Authorization: `Bearer ${accessToken}` },
+          reconnectDelay: 5000,
+          onConnect: () => {
+            client.subscribe("/topic/admin/notifications", (message) => {
+              try {
+                const incoming = JSON.parse(message.body);
+                const payload = Array.isArray(incoming) ? incoming : [incoming];
+                setNotifications((prev) => {
+                  const next = [...prev];
+                  payload.forEach((notification) => {
+                    if (!notification?.id) return;
+                    const index = next.findIndex((item) => item.id === notification.id);
+                    if (index >= 0) next[index] = { ...next[index], ...notification };
+                    else next.unshift(notification);
+                  });
+                  return sortNotifications(next);
+                });
+                setUnreadCount((count) => count + payload.filter(isUnread).length);
+              } catch {
+                // ignore malformed payloads
+              }
+            });
+          },
+        });
+
+        client.activate();
+        clientRef.current = client;
+      }
+    );
 
     return () => {
-      client.deactivate();
-      clientRef.current = null;
+      active = false;
+      if (clientRef.current) {
+        clientRef.current.deactivate();
+        clientRef.current = null;
+      }
     };
   }, [accessToken, userId]);
 

@@ -28,6 +28,11 @@ eureka:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
+
+internal:
+  service:
+    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+
 logging:
   level:
     com.fleettrack.vehicle: DEBUG

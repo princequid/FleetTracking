@@ -4,8 +4,11 @@ import { FloatingTabBar } from '../../components/navigation/FloatingTabBar';
 import { useDriverLocationTracker } from '../../hooks/useDriverLocationTracker';
 import { usePushNotifications } from '../../hooks/usePushNotifications';
 import { useAlertsPoller } from '../../hooks/useAlertsPoller';
+import { useInactivityLogout } from '../../hooks/useInactivityLogout';
 
 export default function DriverLayout() {
+  // Sign the driver out after a prolonged background period (lost/left-device protection).
+  useInactivityLogout();
   // Single shared GPS watch for the whole driver session — keeps location updating as
   // the driver moves between screens (Map, Earnings, …), not just while the map is open.
   useDriverLocationTracker();
@@ -22,11 +25,11 @@ export default function DriverLayout() {
           options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal', headerShown: false }}
         />
         <Stack.Screen
-          name="delivery/pre-dispatch/[id]_3"
+          name="delivery/pre-dispatch/[id]"
           options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
         />
         <Stack.Screen
-          name="delivery/pod/[id]_3"
+          name="delivery/pod/[id]"
           options={{ animation: 'slide_from_bottom', presentation: 'modal' }}
         />
       </Stack>

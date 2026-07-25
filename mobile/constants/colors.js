@@ -17,6 +17,7 @@ export const C = {
   bg:          '#F9FAFB',
   surface:     '#FFFFFF',
   border:      '#E5E7EB',
+  accentSoft:  '#EEF3FB', // soft tinted background for icon chips / insets
 };
 
 export default C;
