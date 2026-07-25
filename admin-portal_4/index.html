@@ -3,7 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <title>FleetTrack Admin</title>
+    <!-- Apply the saved (or system) theme before first paint to avoid a flash of the wrong theme -->
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem("ft-admin-theme") || "system";
+          var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = pref === "system" ? (prefersDark ? "dark" : "light") : pref;
+          var el = document.documentElement;
+          el.setAttribute("data-theme", resolved);
+          el.style.colorScheme = resolved;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -3,6 +3,8 @@ package com.fleettrack.trip.model.dto;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
+import java.util.List;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -17,8 +19,12 @@ public class CreateTripRequest {
 
     private String origin;
     private String destination;
+    private String description;
     private Double originLat;
     private Double originLng;
     private Double destLat;
     private Double destLng;
+
+    /** Optional ordered waypoints between origin and destination (max 7). */
+    private List<StopRequest> stops;
 }

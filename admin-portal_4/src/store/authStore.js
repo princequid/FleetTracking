@@ -1,42 +1,37 @@
-import { useSyncExternalStore } from "react";
+import { create } from "zustand";
 
-const state = {
-  email: "",
-  role: "",
-  authenticated: false,
+export const useAuthStore = create((set) => ({
+  isLoggedIn: false,
+  userId: null,
+  email: null,
+  role: null,
+  accessToken: null,
+  refreshToken: null,
+
+  setAuth: (data) =>
+    set({
+      isLoggedIn: true,
+      userId: data.userId ?? null,
+      email: data.email ?? null,
+      role: data.role ?? null,
+      accessToken: data.accessToken ?? null,
+      refreshToken: data.refreshToken ?? null,
+    }),
+
+  clearAuth: () =>
+    set({
+      isLoggedIn: false,
+      userId: null,
+      email: null,
+      role: null,
+      accessToken: null,
+      refreshToken: null,
+    }),
+}));
+
+// Compatibility shim for non-component callers (Sidebar logout, etc.)
+export const authStore = {
+  getAuth: () => useAuthStore.getState(),
+  setAuth: (data) => useAuthStore.getState().setAuth(data),
+  clearAuth: () => useAuthStore.getState().clearAuth(),
 };
-
-const listeners = new Set();
-
-function notify() {
-  listeners.forEach((listener) => listener());
-}
-
-const authStore = {
-  subscribe(listener) {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  },
-  getAuth() {
-    return { ...state };
-  },
-  setAuth(auth) {
-    state.email = auth.email || "";
-    state.role = auth.role || "";
-    state.authenticated = Boolean(auth.authenticated);
-    notify();
-  },
-  clearAuth() {
-    state.email = "";
-    state.role = "";
-    state.authenticated = false;
-    notify();
-  },
-};
-
-export function useAuthStore() {
-  return useSyncExternalStore(authStore.subscribe, authStore.getAuth);
-}
-
-export { authStore };
-
