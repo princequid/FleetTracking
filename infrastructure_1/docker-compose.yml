@@ -20,9 +20,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: fleettrack
-      POSTGRES_PASSWORD: fleettrack
-      POSTGRES_DB: fleettrack
+      POSTGRES_USER: ${POSTGRES_USER:-fleettrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
+      POSTGRES_DB: ${POSTGRES_DB:-fleettrack}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
@@ -43,8 +43,8 @@ services:
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: fleettrack
-      RABBITMQ_DEFAULT_PASS: fleettrack
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fleettrack}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-fleettrack}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -81,8 +81,8 @@ services:
     image: minio/minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: fleettrack
-      MINIO_ROOT_PASSWORD: fleettrack123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-fleettrack}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-fleettrack123}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -135,15 +135,20 @@ services:
     build:
       context: ../backend
       dockerfile: auth-service_1/Dockerfile
-    ports:
-      - "8091:8081"
+    # SECURITY: internal-only. Reached exclusively through the API gateway over the
+    # compose network — NOT published to the host, so clients can't bypass the
+    # gateway (and its JWT check) to hit the service directly.
+    expose:
+      - "8081"
     environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-this-to-a-long-random-string-before-prod}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: fleettrack
-      SPRING_RABBITMQ_PASSWORD: fleettrack
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
@@ -169,6 +174,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-this-to-a-long-random-string-before-prod}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_OPTS: "-Xmx256m -Xms128m"
     depends_on:
@@ -183,20 +190,41 @@ services:
           cpus: "0.5"
     restart: unless-stopped
 
+  # ── TLS reverse proxy ──────────────────────────────────────────────────
+  # Terminates HTTPS and forwards to the gateway over the internal network.
+  # Run infrastructure_1/tls/generate-cert.sh once to create the dev cert.
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./tls/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./tls/certs:/etc/nginx/certs:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.25"
+    restart: unless-stopped
+
   # ── Business Services ──────────────────────────────────────────────────
 
   driver-service:
     build:
       context: ../backend/driver-service_1
       dockerfile: Dockerfile
-    ports:
-      - "8082:8082"
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8082"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      INTERNAL_SERVICE_SECRET: fleettrack-internal-dev-secret
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
@@ -214,12 +242,14 @@ services:
     build:
       context: ../backend/vehicle-service_1
       dockerfile: Dockerfile
-    ports:
-      - "8083:8083"
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8083"
     environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
@@ -238,17 +268,18 @@ services:
     build:
       context: ../backend
       dockerfile: trip-service_2/Dockerfile
-    ports:
-      - "8084:8084"
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8084"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: fleettrack
-      SPRING_RABBITMQ_PASSWORD: fleettrack
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      INTERNAL_SERVICE_SECRET: fleettrack-internal-dev-secret
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
       postgres:
@@ -268,16 +299,18 @@ services:
     build:
       context: ../backend
       dockerfile: gps-service_2/Dockerfile
-    ports:
-      - "8085:8085"
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8085"
     environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: fleettrack
-      SPRING_RABBITMQ_PASSWORD: fleettrack
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
@@ -298,15 +331,17 @@ services:
     build:
       context: ../backend
       dockerfile: incident-service_3/Dockerfile
-    ports:
-      - "8087:8087"
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8087"
     environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: fleettrack
-      SPRING_RABBITMQ_PASSWORD: fleettrack
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
@@ -327,16 +362,20 @@ services:
     build:
       context: ../backend/media-service_3
       dockerfile: Dockerfile
-    ports:
-      - "8086:8086"
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8086"
     environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_EXTERNAL_ENDPOINT: http://localhost:9000
-      MINIO_ACCESS_KEY: fleettrack
-      MINIO_SECRET_KEY: fleettrack123
+      # MUST be the dev machine's LAN IP (the value the phone uses for the API), NOT
+      # localhost — the presigned upload URL is opened by the phone, not the server.
+      MINIO_EXTERNAL_ENDPOINT: http://172.20.10.4:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-fleettrack}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-fleettrack123}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:
@@ -357,15 +396,16 @@ services:
     build:
       context: ../backend
       dockerfile: audit-service/Dockerfile
-    ports:
-      - "8090:8090"
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8090"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: fleettrack
-      SPRING_RABBITMQ_PASSWORD: fleettrack
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
       JAVA_OPTS: "-Xmx384m -Xms128m"
     depends_on:

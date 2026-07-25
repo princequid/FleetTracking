@@ -44,11 +44,19 @@ eureka:
   instance:
     prefer-ip-address: true
 
-# JWT configuration — used in later sub-steps (3b/3c)
+internal:
+  service:
+    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+
+# JWT configuration
 jwt:
   secret: ${JWT_SECRET:dev-only-change-this-to-a-long-random-string-before-prod}
-  access-token-expiry-minutes: 60 # 1hr for dev, 15min recommended for prod
+  # Short-lived access tokens (both clients silently refresh on 401 with rotation,
+  # so this is invisible to users but shrinks the window for a stolen access token).
+  access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:15}
   refresh-token-expiry-days: 7
+  issuer: ${JWT_ISSUER:fleettrack-auth}
+  audience: ${JWT_AUDIENCE:fleettrack-clients}
 
 logging:
   level:

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
   FlatList, RefreshControl, ActivityIndicator,
@@ -6,15 +6,15 @@ import {
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../../services/api_1';
-import { C } from '../../../constants/colors';
+import { useTheme } from '../../../theme/ThemeContext';
 
 // Only finished trips belong in history
 const HISTORY_STATUSES = ['DELIVERED', 'CANCELLED'];
 
-const STATUS_META = {
-  DELIVERED: { label: 'Completed', color: C.green, bg: '#ECFDF5', icon: 'check-circle' },
-  CANCELLED: { label: 'Cancelled', color: C.red,   bg: '#FEF2F2', icon: 'x-circle' },
-};
+const statusMeta = (C) => ({
+  DELIVERED: { label: 'Completed', color: C.green, bg: C.greenLight, icon: 'check-circle' },
+  CANCELLED: { label: 'Cancelled', color: C.red,   bg: C.redLight,   icon: 'x-circle' },
+});
 
 const TABS = [
   { key: 'all',       label: 'All' },
@@ -36,8 +36,8 @@ function tripDate(trip) {
        + ' · ' + new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-const HistoryRow = React.memo(function HistoryRow({ trip, onPress }) {
-  const meta = STATUS_META[trip.status] || STATUS_META.DELIVERED;
+const HistoryRow = React.memo(function HistoryRow({ trip, onPress, C, styles }) {
+  const meta = statusMeta(C)[trip.status] || statusMeta(C).DELIVERED;
   return (
     <TouchableOpacity style={styles.card} onPress={() => onPress(trip)} activeOpacity={0.85}>
       <View style={[styles.iconWrap, { backgroundColor: meta.bg }]}>
@@ -60,6 +60,9 @@ const HistoryRow = React.memo(function HistoryRow({ trip, onPress }) {
 
 export default function TripHistoryScreen() {
   const router = useRouter();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
+
   const [trips, setTrips]       = useState([]);
   const [tab, setTab]           = useState('all');
   const [loading, setLoading]   = useState(true);
@@ -97,8 +100,11 @@ export default function TripHistoryScreen() {
   const cancelledCount = trips.filter((t) => t.status === 'CANCELLED').length;
   const filtered = tab === 'all' ? trips : trips.filter((t) => t.status === tab);
 
-  const openTrip = useCallback((trip) => router.push(`/(driver)/trip/${trip.id}_2`), [router]);
-  const renderItem = useCallback(({ item }) => <HistoryRow trip={item} onPress={openTrip} />, [openTrip]);
+  const openTrip = useCallback((trip) => router.push(`/(driver)/trip/${trip.id}`), [router]);
+  const renderItem = useCallback(
+    ({ item }) => <HistoryRow trip={item} onPress={openTrip} C={C} styles={styles} />,
+    [openTrip, C, styles],
+  );
 
   const renderEmpty = () => (
     <View style={styles.empty}>
@@ -162,12 +168,12 @@ export default function TripHistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   header: { backgroundColor: C.navyDark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
   title: { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
 
-  tabRow: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: C.border, paddingHorizontal: 12, gap: 2 },
+  tabRow: { flexDirection: 'row', backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border, paddingHorizontal: 12, gap: 2 },
   tabBtn: { paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabBtnActive: { borderBottomColor: C.navyPrimary },
   tabText: { fontFamily: 'Inter-Medium', fontSize: 13, color: C.text3 },
@@ -175,7 +181,7 @@ const styles = StyleSheet.create({
 
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14,
+    backgroundColor: C.surface, borderRadius: 14, padding: 14,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   iconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

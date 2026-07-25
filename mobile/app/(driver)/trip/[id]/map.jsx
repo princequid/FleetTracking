@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ActivityIndicator, Linking, BackHandler, Platform, Dimensions,
 } from 'react-native';
@@ -15,7 +15,7 @@ import Animated, {
   withTiming, withSpring, withRepeat, withSequence,
   Easing, interpolate,
 } from 'react-native-reanimated';
-import { C } from '../../../../constants/colors';
+import { useTheme, useThemeMode } from '../../../../theme/ThemeContext';
 import api from '../../../../services/api_1';
 import { useNavStore } from '../../../../store/navStore_2';
 
@@ -225,7 +225,7 @@ function parseOsrmSteps(steps) {
 // Icon-font glyphs (e.g. Feather) don't reliably rasterise inside a react-native-maps
 // custom marker on Android, which left the start/destination pins blank. A number (Text)
 // or a solid white centre dot (View) always renders.
-function Pin({ color, number, label }) {
+function Pin({ color, number, label, styles }) {
   return (
     <View style={{ alignItems: 'center' }}>
       {label ? (
@@ -247,6 +247,13 @@ function Pin({ color, number, label }) {
 export default function LiveMapScreen() {
   const router          = useRouter();
   const { id: tripId }  = useLocalSearchParams();
+  const C = useTheme();
+  const { resolved } = useThemeMode();
+  const styles = useMemo(() => makeStyles(C), [C]);
+  // Android renders CARTO raster tiles — swap to the dark basemap in dark mode.
+  const mapTileUrl = resolved === 'dark'
+    ? 'https://basemaps.cartocdn.com/rastertiles/dark-matter/{z}/{x}/{y}.png'
+    : 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
   const insets          = useSafeAreaInsets();
   const mapRef          = useRef(null);
 
@@ -1211,7 +1218,7 @@ export default function LiveMapScreen() {
       routeCache.delete(tripId);                                       // trip done — drop cache
       clearStoreCamera(tripId);                                        // and the saved camera
       SecureStore.deleteItemAsync(`ft_nav_${tripId}`).catch(() => {}); // and saved state
-      router.replace(`/(driver)/trip/${tripId}_2`);
+      router.replace(`/(driver)/trip/${tripId}`);
     };
 
     try {
@@ -1408,6 +1415,7 @@ export default function LiveMapScreen() {
           style={StyleSheet.absoluteFillObject}
           provider={PROVIDER_DEFAULT}
           mapType="standard"
+          userInterfaceStyle={resolved}
           showsUserLocation={false}
           showsCompass={false}
           showsMyLocationButton={false}
@@ -1461,7 +1469,7 @@ export default function LiveMapScreen() {
               - tileSize 256 matches the raster tile size. */}
           {Platform.OS === 'android' && (
             <UrlTile
-              urlTemplate="https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+              urlTemplate={mapTileUrl}
               minimumZ={1}
               maximumZ={20}
               maximumNativeZ={20}
@@ -1509,7 +1517,7 @@ export default function LiveMapScreen() {
               tracksViewChanges={trackMarkers}
               zIndex={2}
             >
-              <Pin color={C.green} label="Start" />
+              <Pin color={C.green} label="Start" styles={styles} />
             </Marker>
           )}
 
@@ -1522,7 +1530,7 @@ export default function LiveMapScreen() {
               tracksViewChanges={trackMarkers}
               zIndex={2}
             >
-              <Pin color={C.navyPrimary} number={i + 1} />
+              <Pin color={C.navyPrimary} number={i + 1} styles={styles} />
             </Marker>
           ))}
 
@@ -1534,7 +1542,7 @@ export default function LiveMapScreen() {
               tracksViewChanges={trackMarkers}
               zIndex={3}
             >
-              <Pin color={C.red} label={trip?.destination || 'Destination'} />
+              <Pin color={C.red} label={trip?.destination || 'Destination'} styles={styles} />
             </Marker>
           )}
 
@@ -1801,7 +1809,7 @@ export default function LiveMapScreen() {
           {/* Incident report button */}
           <Pressable
             style={styles.incidentBtn}
-            onPress={() => router.push({ pathname: '/(driver)/incident/report/[tripId]_3', params: { tripId } })}
+            onPress={() => router.push(`/(driver)/incident/report/${tripId}`)}
           >
             <Feather name="alert-triangle" size={14} color={C.red} />
             <Text style={styles.incidentBtnText}>Report incident</Text>
@@ -1815,7 +1823,7 @@ export default function LiveMapScreen() {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   // Permission denied
   permWrap: {
     flex: 1, alignItems: 'center', justifyContent: 'center',
@@ -1832,7 +1840,7 @@ const styles = StyleSheet.create({
   loadingPill: {
     position: 'absolute', alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#fff', borderRadius: 20,
+    backgroundColor: C.surface, borderRadius: 20,
     paddingHorizontal: 16, paddingVertical: 10,
     shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 12, shadowOffset: { width: 0, height: 3 },
     elevation: 6,
@@ -1845,7 +1853,7 @@ const styles = StyleSheet.create({
 
   // Back button
   backBtn: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
+    width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 10, shadowOffset: { width: 0, height: 2 },
     elevation: 4,
@@ -1853,7 +1861,7 @@ const styles = StyleSheet.create({
 
   // Instruction card
   instructionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: C.surface,
     borderRadius: 20, overflow: 'hidden',
     shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: 4 },
     elevation: 6,
@@ -1870,7 +1878,7 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, marginLeft: 8,
     alignItems: 'center', justifyContent: 'center',
   },
-  cardDivider: { height: 1, backgroundColor: '#F9FAFB', marginHorizontal: 16 },
+  cardDivider: { height: 1, backgroundColor: C.border, marginHorizontal: 16 },
   previewRow:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
   previewText: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3, flex: 1 },
   streetText:  { fontFamily: 'Inter-Medium', fontSize: 12, color: C.teal },
@@ -1878,7 +1886,7 @@ const styles = StyleSheet.create({
   // Speed bubble
   speedBubble: {
     position: 'absolute', left: 16,
-    backgroundColor: '#fff', borderRadius: 12,
+    backgroundColor: C.surface, borderRadius: 12,
     paddingHorizontal: 12, paddingVertical: 8, alignItems: 'center',
     shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
     elevation: 4,
@@ -1906,7 +1914,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   controlBtn: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff',
+    width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface,
     alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
     elevation: 4,
@@ -1919,7 +1927,7 @@ const styles = StyleSheet.create({
 
   // Markers — distinct teardrop pins
   pinLabel: {
-    backgroundColor: '#fff',
+    backgroundColor: C.surface,
     paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: 10, marginBottom: 4, maxWidth: 170,
     shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
@@ -1962,7 +1970,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   reroutingCard: {
-    backgroundColor: '#fff', borderRadius: 20, padding: 28,
+    backgroundColor: C.surface, borderRadius: 20, padding: 28,
     alignItems: 'center', gap: 8,
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 20,
   },
@@ -1973,7 +1981,7 @@ const styles = StyleSheet.create({
   errorToast: {
     position: 'absolute', alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEF2F2', borderRadius: 12,
+    backgroundColor: C.surface, borderRadius: 12,
     paddingHorizontal: 16, paddingVertical: 10,
     shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
   },
@@ -1982,7 +1990,7 @@ const styles = StyleSheet.create({
   // Bottom panel
   bottomPanel: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#fff',
+    backgroundColor: C.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: -4 },
   },
@@ -1993,15 +2001,15 @@ const styles = StyleSheet.create({
   // Stats
   statsRow:        { flexDirection: 'row', marginBottom: 14 },
   statCell:        { flex: 1, alignItems: 'center' },
-  statCellBorder:  { borderRightWidth: 1, borderRightColor: '#F3F4F6' },
+  statCellBorder:  { borderRightWidth: 1, borderRightColor: C.border },
   statVal:         { fontFamily: 'Inter-Bold', fontSize: 22, color: C.text1 },
   statLbl:         { fontFamily: 'Inter-Regular', fontSize: 11, color: C.text3, marginTop: 2 },
 
   // Upcoming steps
   upcomingLabel:     { fontFamily: 'Inter-SemiBold', fontSize: 11, color: C.text3, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 10 },
   stepRow:           { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  stepRowBorder:     { borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-  stepIconBox:       { width: 32, height: 32, borderRadius: 8, marginRight: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6' },
+  stepRowBorder:     { borderBottomWidth: 1, borderBottomColor: C.border },
+  stepIconBox:       { width: 32, height: 32, borderRadius: 8, marginRight: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg },
   stepIconBoxActive: { backgroundColor: C.navyPrimary },
   stepInstruction:   { flex: 1, fontFamily: 'Inter-Regular', fontSize: 13, color: C.text3 },
   stepDist:          { fontFamily: 'Inter-Medium', fontSize: 12, color: C.text3, marginLeft: 8 },

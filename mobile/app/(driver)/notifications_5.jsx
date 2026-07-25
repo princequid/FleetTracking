@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   FlatList, SafeAreaView, RefreshControl, ActivityIndicator, Animated,
@@ -7,19 +7,19 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../services/api_1';
 import { useAlertsStore } from '../../store/alertsStore';
-import { C } from '../../constants/colors';
+import { useTheme } from '../../theme/ThemeContext';
 
 // The Alerts page is a live view of the driver's ACTIVE trips. Assigned trips (from the
 // admin) and started trips show here; once a trip is DELIVERED or CANCELLED it drops off
 // this list and appears in Trip History instead.
 const ACTIVE_STATUSES = ['ASSIGNED', 'STARTED', 'EN_ROUTE', 'ARRIVED'];
 
-const STATUS_META = {
-  ASSIGNED: { title: 'New trip assigned',      icon: 'briefcase',     color: C.navyMid, bg: '#EEF3FB', tag: 'Assigned' },
-  STARTED:  { title: 'Trip started',           icon: 'navigation',    color: C.teal,    bg: C.tealPale, tag: 'Started' },
-  EN_ROUTE: { title: 'Trip in progress',       icon: 'navigation',    color: C.teal,    bg: C.tealPale, tag: 'En route' },
-  ARRIVED:  { title: 'Arrived at destination', icon: 'map-pin',       color: C.green,   bg: C.greenLight, tag: 'Arrived' },
-};
+const statusMeta = (C) => ({
+  ASSIGNED: { title: 'New trip assigned',      icon: 'briefcase',  color: C.navyMid, bg: C.accentSoft, tag: 'Assigned' },
+  STARTED:  { title: 'Trip started',           icon: 'navigation', color: C.teal,    bg: C.tealPale,   tag: 'Started' },
+  EN_ROUTE: { title: 'Trip in progress',       icon: 'navigation', color: C.teal,    bg: C.tealPale,   tag: 'En route' },
+  ARRIVED:  { title: 'Arrived at destination', icon: 'map-pin',    color: C.green,   bg: C.greenLight, tag: 'Arrived' },
+});
 
 function shortLocation(name) {
   if (!name) return '—';
@@ -43,8 +43,8 @@ function tripStamp(t) {
   return t.startedAt || t.createdAt || 0;
 }
 
-const AlertCard = React.memo(function AlertCard({ trip, onPress }) {
-  const meta  = STATUS_META[trip.status] || STATUS_META.ASSIGNED;
+const AlertCard = React.memo(function AlertCard({ trip, onPress, C, styles }) {
+  const meta  = statusMeta(C)[trip.status] || statusMeta(C).ASSIGNED;
   const scale = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
@@ -79,6 +79,9 @@ const AlertCard = React.memo(function AlertCard({ trip, onPress }) {
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const C = useTheme();
+  const styles = useMemo(() => makeStyles(C), [C]);
+
   const [trips, setTrips]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRef]  = useState(false);
@@ -124,11 +127,14 @@ export default function NotificationsScreen() {
   // Assigned → trip detail (review/start); already-started → straight to the map.
   // useCallback keeps the reference stable so React.memo'd rows don't re-render.
   const openTrip = useCallback((trip) => {
-    if (trip.status === 'ASSIGNED') router.push(`/(driver)/trip/${trip.id}_2`);
+    if (trip.status === 'ASSIGNED') router.push(`/(driver)/trip/${trip.id}`);
     else router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: trip.id } });
   }, [router]);
 
-  const renderItem = useCallback(({ item }) => <AlertCard trip={item} onPress={openTrip} />, [openTrip]);
+  const renderItem = useCallback(
+    ({ item }) => <AlertCard trip={item} onPress={openTrip} C={C} styles={styles} />,
+    [openTrip, C, styles],
+  );
 
   const renderEmpty = () => (
     <View style={styles.empty}>
@@ -178,7 +184,7 @@ export default function NotificationsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (C) => StyleSheet.create({
   header: {
     backgroundColor: C.navyDark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 20,
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -189,7 +195,7 @@ const styles = StyleSheet.create({
 
   card: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14,
+    backgroundColor: C.surface, borderRadius: 14, padding: 14,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   iconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
