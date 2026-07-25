@@ -1,5 +1,92 @@
 package com.fleettrack.media.controller;
 
-// /presign /photos /dashcam/sessions/*
+import com.fleettrack.media.model.dto.PhotoRegistrationRequest;
+import com.fleettrack.media.model.dto.PhotoResponse;
+import com.fleettrack.media.model.dto.PresignRequest;
+import com.fleettrack.media.model.dto.PresignResponse;
+import com.fleettrack.media.model.entity.Photo;
+import com.fleettrack.media.service.MediaService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequiredArgsConstructor
 public class MediaController {
+
+    private final MediaService mediaService;
+
+    private static final List<String> DRIVER_ROLES = List.of("DRIVER");
+    private static final List<String> ADMIN_DISPATCHER_ROLES = List.of("ADMIN", "DISPATCHER");
+
+    @PostMapping("/presign")
+    public ResponseEntity<PresignResponse> generatePresignedUrl(
+            @Valid @RequestBody PresignRequest request,
+            HttpServletRequest httpRequest) {
+        requireRole(httpRequest, DRIVER_ROLES);
+        Long driverId = extractUserId(httpRequest);
+        return ResponseEntity.ok(mediaService.generatePresignedUrl(request, driverId));
+    }
+
+    @PostMapping("/photos")
+    public ResponseEntity<PhotoResponse> registerPhoto(
+            @Valid @RequestBody PhotoRegistrationRequest request,
+            HttpServletRequest httpRequest) {
+        requireRole(httpRequest, DRIVER_ROLES);
+        Long driverId = extractUserId(httpRequest);
+        Photo photo = mediaService.registerPhoto(request, driverId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(photo));
+    }
+
+    @GetMapping("/photos/trips/{id}/status")
+    public ResponseEntity<Map<String, Boolean>> getTripPhotoStatus(@PathVariable Long id) {
+        boolean hasPOD = mediaService.hasPOD(id);
+        return ResponseEntity.ok(Map.of("hasPOD", hasPOD));
+    }
+
+    @GetMapping("/photos/trips/{id}")
+    public ResponseEntity<List<PhotoResponse>> getTripPhotos(
+            @PathVariable Long id,
+            HttpServletRequest httpRequest) {
+        requireRole(httpRequest, ADMIN_DISPATCHER_ROLES);
+        List<Photo> photos = mediaService.getPhotosByTrip(id);
+        return ResponseEntity.ok(photos.stream().map(this::toResponse).toList());
+    }
+
+    private Long extractUserId(HttpServletRequest request) {
+        String header = request.getHeader("X-User-Id");
+        if (header == null || header.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "X-User-Id header required");
+        }
+        try {
+            return Long.parseLong(header.trim());
+        } catch (NumberFormatException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "X-User-Id header must be numeric");
+        }
+    }
+
+    private void requireRole(HttpServletRequest request, List<String> allowedRoles) {
+        String role = request.getHeader("X-User-Role");
+        if (role == null || !allowedRoles.contains(role)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+    }
+
+    private PhotoResponse toResponse(Photo photo) {
+        return PhotoResponse.builder()
+                .id(photo.getId())
+                .tripId(photo.getTripId())
+                .photoUrl(photo.getPhotoUrl())
+                .photoType(photo.getPhotoType())
+                .sha256Hash(photo.getSha256Hash())
+                .uploadedAt(photo.getUploadedAt())
+                .build();
+    }
 }
