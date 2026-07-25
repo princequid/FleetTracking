@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import Animated, {
@@ -22,17 +23,24 @@ const { width: SW, height: SH } = Dimensions.get('window');
 const TW = 120;
 const TH = 55;
 const TX = (SW - TW) / 2;   // left offset so truck is centered when translateX=0
-const TY = SH * 0.33;        // truck vertical position
 
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 // ─── Truck SVG ────────────────────────────────────────────────────────────────
 function TruckSvg({ wheelAngle }) {
+  // Use react-native-svg's numeric rotation/origin props rather than a `transform`
+  // string. Android's Fabric renderer expects transform as an array and crashes on a
+  // string ("String cannot be cast to ReadableArray"); iOS tolerates it. This is
+  // cross-platform safe.
   const rearAP = useAnimatedProps(() => ({
-    transform: `rotate(${wheelAngle.value}, 18, 44)`,
+    rotation: wheelAngle.value,
+    originX: 18,
+    originY: 44,
   }));
   const frontAP = useAnimatedProps(() => ({
-    transform: `rotate(${wheelAngle.value}, 100, 44)`,
+    rotation: wheelAngle.value,
+    originX: 100,
+    originY: 44,
   }));
 
   return (
@@ -87,9 +95,9 @@ function TruckSvg({ wheelAngle }) {
 }
 
 // ─── Track line (gradient fade at ends) ───────────────────────────────────────
-function TrackLine() {
+function TrackLine({ ty }) {
   return (
-    <View style={[styles.trackWrap, { top: TY + TH - 3 }]} pointerEvents="none">
+    <View style={[styles.trackWrap, { top: ty + TH - 3 }]} pointerEvents="none">
       <Svg width={SW} height={4}>
         <Defs>
           <LinearGradient id="tg" x1="0" y1="0" x2="1" y2="0">
@@ -116,7 +124,10 @@ const SPEED_LINES = [
 
 // ─── Main splash ──────────────────────────────────────────────────────────────
 export default function SplashScreen() {
-  const router = useRouter();
+  const router  = useRouter();
+  const insets  = useSafeAreaInsets();
+  // Truck sits at ~33% of the safe-area height, shifted down by the top inset
+  const TY = insets.top + (SH - insets.top - insets.bottom) * 0.30;
 
   const truckX         = useSharedValue(-SW * 0.65);
   const wheelAngle     = useSharedValue(0);
@@ -147,47 +158,49 @@ export default function SplashScreen() {
       withTiming(360, { duration: 500, easing: Easing.linear }), -1, false,
     );
 
-    // Motion blur trail: show during enter (0–200ms), hide on stop (800–1100ms),
-    //                     show during exit (2250–2400ms)
+    // Motion blur trail: enter, hide mid, re-show during the exit (~1400ms)
     trailOp.value = withSequence(
-      withTiming(1, { duration: 200 }),
-      withDelay(600, withTiming(0, { duration: 300 })),
-      withDelay(1150, withTiming(1, { duration: 150 })),
+      withTiming(1, { duration: 240 }),
+      withDelay(500, withTiming(0, { duration: 300 })),
+      withDelay(380, withTiming(1, { duration: 180 })),
     );
 
     // Speed lines: same cadence
     speedOp.value = withSequence(
-      withTiming(0.85, { duration: 150 }),
-      withDelay(650, withTiming(0, { duration: 300 })),
-      withDelay(1150, withTiming(0.85, { duration: 150 })),
+      withTiming(0.85, { duration: 200 }),
+      withDelay(500, withTiming(0, { duration: 300 })),
+      withDelay(380, withTiming(0.85, { duration: 180 })),
     );
 
-    // Truck: spring into center, pause 1400ms, then launch right
+    // Truck: glide into centre with a spring-like overshoot, pause, then launch off the
+    // right. Uses a DETERMINISTIC timing (not withSpring) for the entry so the chained
+    // exit fires at the same moment on iOS and Android — a spring's settle time varies by
+    // platform, which previously left the truck stranded (no exit) on iOS.
     truckX.value = withSequence(
-      withSpring(0, { damping: 12, stiffness: 70, mass: 0.8 }),
-      withDelay(1400, withTiming(SW * 0.6 + TW, {
-        duration: 450,
+      withTiming(0, { duration: 720, easing: Easing.out(Easing.back(1.3)) }),
+      withDelay(680, withTiming(SW + TW, {
+        duration: 440,
         easing: Easing.in(Easing.quad),
       })),
     );
 
-    // Name reveal at ~900ms (when spring settles)
-    nameOp.value = withDelay(900, withTiming(1, { duration: 350 }));
-    nameY.value  = withDelay(900, withSpring(0, { damping: 14, stiffness: 120 }));
+    // Name reveal when the truck settles (+20% timeline)
+    nameOp.value = withDelay(660, withTiming(1, { duration: 360 }));
+    nameY.value  = withDelay(660, withTiming(0, { duration: 360, easing: Easing.out(Easing.back(1.2)) }));
 
-    // Underline expand at 1150ms
-    underlineScaleX.value = withDelay(1150, withSpring(1, { damping: 10, stiffness: 100 }));
+    // Underline + tagline
+    underlineScaleX.value = withDelay(900,  withTiming(1, { duration: 420, easing: Easing.out(Easing.back(1.5)) }));
+    taglineOp.value       = withDelay(1140, withTiming(1, { duration: 420 }));
 
-    // Tagline fade at 1400ms
-    taglineOp.value = withDelay(1400, withTiming(1, { duration: 450 }));
-
-    // Progress bar fills over the full duration
+    // Progress bar fills over the full display duration
     progressW.value = withTiming(SW - 48, {
-      duration: 2700,
+      duration: 1980,
       easing: Easing.out(Easing.cubic),
     });
 
-    const t = setTimeout(navigate, 2750);
+    // Display time increased by 20% (1700ms → 2040ms). The truck exit finishes (~1840ms)
+    // before we navigate, so the launch is fully visible on both platforms.
+    const t = setTimeout(navigate, 2040);
     return () => clearTimeout(t);
   }, []);
 
@@ -206,8 +219,11 @@ export default function SplashScreen() {
     opacity: trailOp.value * 0.07,
   }));
 
+  // Wind/speed lines trail the truck: translate them by the same truckX so they move
+  // WITH the car instead of staying stuck in the middle.
   const speedLineStyle = useAnimatedStyle(() => ({
     opacity: speedOp.value,
+    transform: [{ translateX: truckX.value }],
   }));
 
   const nameStyle = useAnimatedStyle(() => ({
@@ -232,7 +248,7 @@ export default function SplashScreen() {
       <StatusBar hidden />
 
       {/* Track line */}
-      <TrackLine />
+      <TrackLine ty={TY} />
 
       {/* Speed lines — static position, opacity animated */}
       <Animated.View
@@ -254,20 +270,20 @@ export default function SplashScreen() {
       </Animated.View>
 
       {/* Ghost (motion blur) copies */}
-      <Animated.View style={[styles.truckBase, ghost2Style]} pointerEvents="none">
+      <Animated.View style={[styles.truckBase, { top: TY }, ghost2Style]} pointerEvents="none">
         <TruckSvg wheelAngle={wheelAngle} />
       </Animated.View>
-      <Animated.View style={[styles.truckBase, ghost1Style]} pointerEvents="none">
+      <Animated.View style={[styles.truckBase, { top: TY }, ghost1Style]} pointerEvents="none">
         <TruckSvg wheelAngle={wheelAngle} />
       </Animated.View>
 
       {/* Main truck */}
-      <Animated.View style={[styles.truckBase, mainTruckStyle]} pointerEvents="none">
+      <Animated.View style={[styles.truckBase, { top: TY }, mainTruckStyle]} pointerEvents="none">
         <TruckSvg wheelAngle={wheelAngle} />
       </Animated.View>
 
       {/* Brand text */}
-      <Animated.View style={[styles.textSection, nameStyle]} pointerEvents="none">
+      <Animated.View style={[styles.textSection, { top: TY + TH + 36 }, nameStyle]} pointerEvents="none">
         <View style={styles.nameRow}>
           <Text style={styles.appName}>FleetTrack</Text>
           <View style={styles.proBadge}>
@@ -283,7 +299,7 @@ export default function SplashScreen() {
       </Animated.View>
 
       {/* Progress bar */}
-      <View style={styles.progressTrack}>
+      <View style={[styles.progressTrack, { bottom: Math.max(52, insets.bottom + 24) }]}>
         <Animated.View style={[styles.progressFill, progressStyle]} />
       </View>
     </View>
@@ -306,14 +322,12 @@ const styles = StyleSheet.create({
   },
   truckBase: {
     position: 'absolute',
-    top: TY,
     left: TX,
     width: TW,
     height: TH,
   },
   textSection: {
     position: 'absolute',
-    top: TY + TH + 36,
     left: 0,
     right: 0,
     alignItems: 'center',

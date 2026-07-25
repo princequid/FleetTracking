@@ -1,75 +1,73 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import { router } from 'expo-router';
 
-const API_BASE_URL = 'http://172.20.10.4:8080';
+// Backend gateway URL. Override per-device/network without editing code by setting
+// EXPO_PUBLIC_API_URL in a .env file (e.g. EXPO_PUBLIC_API_URL=http://192.168.1.20:8080).
+// The phone MUST be on the same network as the machine running the backend, and that
+// IP must be reachable from the phone. 172.20.10.x is an iPhone hotspot subnet.
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://172.20.10.5:8080';
+
+// Auth endpoints that must never trigger the refresh interceptor
+const AUTH_PATHS = ['/auth/login', '/auth/logout', '/auth/refresh'];
+const isAuthEndpoint = (url = '') => AUTH_PATHS.some((p) => url.includes(p));
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor - add auth token
+// ── Request: attach access token ──────────────────────────────────────────────
 api.interceptors.request.use(
   async (config) => {
     try {
       const token = await SecureStore.getItemAsync('ft_access_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    } catch (error) {
-      console.error('Error reading access token:', error);
-    }
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+    } catch {}
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error),
 );
 
-// Response interceptor - handle 401 and token refresh
+// ── Response: refresh on 401, skip for auth endpoints ─────────────────────────
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
+    const original = error.config;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
+    const is401       = error.response?.status === 401;
+    const alreadyTried = original?._retry;
+    const skipRefresh  = isAuthEndpoint(original?.url);
 
+    if (is401 && !alreadyTried && !skipRefresh) {
+      original._retry = true;
       try {
         const refreshToken = await SecureStore.getItemAsync('ft_refresh_token');
-        
-        if (!refreshToken) {
-          throw new Error('No refresh token available');
-        }
+        if (!refreshToken) throw new Error('no_refresh_token');
 
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken,
-        });
+        const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, { refreshToken });
 
-        const { accessToken, refreshToken: newRefreshToken } = response.data;
+        await SecureStore.setItemAsync('ft_access_token',  data.accessToken);
+        await SecureStore.setItemAsync('ft_refresh_token', data.refreshToken);
 
-        await SecureStore.setItemAsync('ft_access_token', accessToken);
-        await SecureStore.setItemAsync('ft_refresh_token', newRefreshToken);
-
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        return api(originalRequest);
-      } catch (refreshError) {
-        // Refresh failed - clear tokens and navigate to login
+        original.headers.Authorization = `Bearer ${data.accessToken}`;
+        return api(original);
+      } catch {
+        // Tokens are invalid — clear everything and send user to login
         await SecureStore.deleteItemAsync('ft_access_token');
         await SecureStore.deleteItemAsync('ft_refresh_token');
-        
-        // Navigate to login - this would need to be implemented based on your navigation setup
-        // For example: navigation.navigate('Login');
-        console.error('Token refresh failed:', refreshError);
-        
-        return Promise.reject(refreshError);
+        try {
+          // Lazy-import to avoid circular dep at module load time
+          const { useAuthStore } = await import('../store/authStore_1');
+          useAuthStore.getState().clearAuth();
+        } catch {}
+        router.replace('/(auth)/login_1');
       }
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 export default api;

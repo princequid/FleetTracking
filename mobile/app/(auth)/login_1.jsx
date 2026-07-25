@@ -4,6 +4,7 @@ import {
   StyleSheet, Dimensions, KeyboardAvoidingView, Platform, ScrollView,
   Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { authService } from '../../services/authService_1';
@@ -14,6 +15,7 @@ const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router  = useRouter();
+  const insets  = useSafeAreaInsets();
   const setLoggedIn = useAuthStore((s) => s.setLoggedIn);
 
   const [email, setEmail]       = useState('');
@@ -85,7 +87,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         bounces={false}
       >
-        <View style={styles.topSection}>
+        <View style={[styles.topSection, { paddingTop: Math.max(60, insets.top + 20) }]}>
           <View style={styles.brandRow}>
             <View style={styles.brandIcon}>
               <Feather name="truck" size={16} color="#fff" />
@@ -101,7 +103,7 @@ export default function LoginScreen() {
           <Text style={styles.heroSub}>Sign in to your account to continue your shifts</Text>
         </View>
 
-        <View style={styles.bottomSection}>
+        <View style={[styles.bottomSection, { paddingBottom: Math.max(40, insets.bottom + 16) }]}>
           <Animated.View style={{ transform: [{ translateX: formShake }] }}>
             {!!error && (
               <Animated.View style={[styles.errorBanner, { opacity: errorOpacity }]}>

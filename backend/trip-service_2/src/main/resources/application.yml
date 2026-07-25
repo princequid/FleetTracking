@@ -44,6 +44,11 @@ internal:
   service:
     secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
 
+osrm:
+  # Backend and OSRM run on the same host, so localhost is correct and stable (the LAN
+  # IP changes with the hotspot). Override with OSRM_BASE_URL if OSRM runs elsewhere.
+  base-url: ${OSRM_BASE_URL:http://localhost:5000}
+
 logging:
   level:
     com.fleettrack.trip: DEBUG
