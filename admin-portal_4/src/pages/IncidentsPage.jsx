@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { getIncidents, updateIncidentStatus } from "../services/incidentService";
 import Badge from "../components/common/Badge";
-import { AlertTriangleIcon, CheckCircleIcon } from "../components/common/Icons";
+import StatCard from "../components/common/StatCard";
+import { AlertTriangleIcon, CheckCircleIcon, ClockIcon } from "../components/common/Icons";
 
 const SEVERITIES = ["All", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
 const STATUSES = ["All", "OPEN", "UNDER_REVIEW", "RESOLVED", "DISMISSED"];
@@ -77,48 +78,20 @@ export default function IncidentsPage() {
       incidents.filter((i) => {
         if (incidentIdFilter && String(i.id) !== String(incidentIdFilter)) return false;
         if (severityFilter !== "All" && i.severity !== severityFilter) return false;
-        const SEVERITIES = ["All", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
-        const STATUSES = ["All", "OPEN", "UNDER_REVIEW", "RESOLVED", "DISMISSED"];
-
-        const SEVERITY_BADGE = {
-          LOW: "default",
-          MEDIUM: "info",
-          HIGH: "warning",
-          CRITICAL: "danger",
-        };
-
-        const STATUS_BADGE = {
-          OPEN: "danger",
-          UNDER_REVIEW: "warning",
-          RESOLVED: "success",
-          DISMISSED: "default",
-        };
-
-        const STATUS_LABELS = {
-          OPEN: "Open",
-          UNDER_REVIEW: "Under Review",
-          RESOLVED: "Resolved",
-          DISMISSED: "Dismissed",
-        };
-
-        function timeAgo(iso) {
-          if (!iso) return "—";
-          const diff = Date.now() - new Date(iso).getTime();
-          const m = Math.floor(diff / 60000);
-          if (m < 60) return `${m}m ago`;
-          const h = Math.floor(m / 60);
-          if (h < 24) return `${h}h ago`;
-          return `${Math.floor(h / 24)}d ago`;
-        }
-
-        function labelify(str) {
-          if (!str) return "—";
-          return str.charAt(0) + str.slice(1).toLowerCase().replace(/_/g, " ");
-        }
         if (statusFilter !== "All" && i.status !== statusFilter) return false;
         return true;
       }),
     [incidents, severityFilter, statusFilter, incidentIdFilter]
+  );
+
+  const summary = useMemo(
+    () => ({
+      open: incidents.filter((i) => i.status === "OPEN").length,
+      critical: incidents.filter((i) => i.severity === "CRITICAL" && i.status !== "RESOLVED" && i.status !== "DISMISSED").length,
+      underReview: incidents.filter((i) => i.status === "UNDER_REVIEW").length,
+      resolved: incidents.filter((i) => i.status === "RESOLVED").length,
+    }),
+    [incidents]
   );
 
   const handleStatusUpdate = async (incident, newStatus) => {
@@ -154,6 +127,39 @@ export default function IncidentsPage() {
         )}
       </div>
 
+      {!loading && incidents.length > 0 && (
+        <div className="stats-row stats-row-4">
+          <StatCard
+            className="stagger-child"
+            title="Open"
+            value={summary.open}
+            icon={AlertTriangleIcon}
+            color="var(--color-danger)"
+          />
+          <StatCard
+            className="stagger-child"
+            title="Critical"
+            value={summary.critical}
+            icon={AlertTriangleIcon}
+            color="#B91C1C"
+          />
+          <StatCard
+            className="stagger-child"
+            title="Under Review"
+            value={summary.underReview}
+            icon={ClockIcon}
+            color="var(--color-warning)"
+          />
+          <StatCard
+            className="stagger-child"
+            title="Resolved"
+            value={summary.resolved}
+            icon={CheckCircleIcon}
+            color="var(--color-success)"
+          />
+        </div>
+      )}
+
       <div className="incidents-filters-bar">
         <div className="incidents-filter-block">
           <span className="incidents-filter-label">Severity</span>
@@ -188,8 +194,8 @@ export default function IncidentsPage() {
       </div>
 
       {/* Table */}
-      <div className="trips-table-card">
-        <table className="trips-data-table">
+      <div className="trips-table-card incidents-table-card">
+        <table className="trips-data-table incidents-data-table">
           <thead>
             <tr>
               <th>ID</th>
@@ -236,25 +242,22 @@ export default function IncidentsPage() {
                 <React.Fragment key={incident.id}>
                   <tr
                     onClick={() => toggleExpand(incident.id)}
-                    style={{ cursor: "pointer" }}
-                    className={expandedId === incident.id ? "expanded-row" : ""}
+                    className={`incident-row${expandedId === incident.id ? " expanded-row" : ""}`}
                   >
-                    <td style={{ fontWeight: 600, color: "var(--color-navy)" }}>
-                      #{incident.id}
-                    </td>
-                    <td style={{ color: "var(--color-text-3)" }}>
+                    <td className="incident-id-cell">#{incident.id}</td>
+                    <td className="incident-muted-cell">
                       {incident.tripId ? `#${incident.tripId}` : "—"}
                     </td>
-                    <td style={{ color: "var(--color-text-3)" }}>
+                    <td className="incident-muted-cell">
                       {incident.driverId ? `#${incident.driverId}` : "—"}
                     </td>
-                    <td style={{ fontSize: 13, color: "var(--color-text-2)" }}>
+                    <td className="incident-type-cell">
                       {incident.incidentType
                         ? incident.incidentType.replace(/_/g, " ")
                         : "—"}
                     </td>
                     <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div className="incident-severity-cell">
                         {incident.severity === "CRITICAL" && (
                           <span className="critical-pulse-dot" />
                         )}
@@ -268,101 +271,47 @@ export default function IncidentsPage() {
                         {STATUS_LABELS[incident.status] || incident.status || "—"}
                       </Badge>
                     </td>
-                    <td
-                      style={{
-                        fontSize: 13,
-                        color: "var(--color-text-3)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
+                    <td className="incident-time-cell">
                       {timeAgo(incident.createdAt)}
                     </td>
-                    <td style={{ textAlign: "center", color: "var(--color-teal)", fontSize: 10 }}>
+                    <td className="incident-chevron-cell">
                       {expandedId === incident.id ? "▲" : "▼"}
                     </td>
                   </tr>
 
                   {expandedId === incident.id && (
                     <tr className="detail-expansion-row">
-                      <td
-                        colSpan={8}
-                        style={{
-                          padding: 0,
-                          borderBottom: "1px solid var(--color-border)",
-                        }}
-                      >
+                      <td colSpan={8} className="incident-detail-cell">
                         <div className="incident-detail-panel">
                           <div className="incident-detail-grid">
-                            <div>
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  letterSpacing: "0.06em",
-                                  textTransform: "uppercase",
-                                  color: "var(--color-text-3)",
-                                  marginBottom: 6,
-                                }}
-                              >
-                                Description
-                              </div>
-                              <div style={{ fontSize: 14, color: "var(--color-text-2)" }}>
+                            <div className="incident-detail-field">
+                              <div className="incident-detail-label">Description</div>
+                              <div className="incident-detail-value">
                                 {incident.description || "No description provided."}
                               </div>
                             </div>
                             {incident.resolutionNotes && (
-                              <div>
-                                <div
-                                  style={{
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    letterSpacing: "0.06em",
-                                    textTransform: "uppercase",
-                                    color: "var(--color-text-3)",
-                                    marginBottom: 6,
-                                  }}
-                                >
-                                  Resolution Notes
-                                </div>
-                                <div style={{ fontSize: 14, color: "var(--color-text-2)" }}>
+                              <div className="incident-detail-field">
+                                <div className="incident-detail-label">Resolution Notes</div>
+                                <div className="incident-detail-value">
                                   {incident.resolutionNotes}
                                 </div>
                               </div>
                             )}
                             {incident.resolvedAt && (
-                              <div>
-                                <div
-                                  style={{
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    letterSpacing: "0.06em",
-                                    textTransform: "uppercase",
-                                    color: "var(--color-text-3)",
-                                    marginBottom: 6,
-                                  }}
-                                >
-                                  Resolved At
-                                </div>
-                                <div style={{ fontSize: 14, color: "var(--color-text-2)" }}>
+                              <div className="incident-detail-field">
+                                <div className="incident-detail-label">Resolved At</div>
+                                <div className="incident-detail-value">
                                   {new Date(incident.resolvedAt).toLocaleString()}
                                 </div>
                               </div>
                             )}
                           </div>
                           <div className="incident-status-update">
-                            <span
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 500,
-                                color: "var(--color-text-2)",
-                              }}
-                            >
-                              Update status:
-                            </span>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span className="incident-status-update-label">Update status:</span>
+                            <div className="incident-status-update-control">
                               <select
                                 className="dispatch-input"
-                                style={{ minWidth: 160, fontSize: 13 }}
                                 value={incident.status}
                                 disabled={updatingId === incident.id}
                                 onChange={(e) => handleStatusUpdate(incident, e.target.value)}
@@ -374,10 +323,7 @@ export default function IncidentsPage() {
                                 <option value="DISMISSED">Dismissed</option>
                               </select>
                               {successId === incident.id && (
-                                <CheckCircleIcon
-                                  size={16}
-                                  style={{ color: "var(--color-success)" }}
-                                />
+                                <CheckCircleIcon size={16} className="incident-status-success-icon" />
                               )}
                             </div>
                           </div>
