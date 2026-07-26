@@ -19,6 +19,12 @@ infrastructure_1/tls/certs/
 *.key
 *.crt
 
+# TLS certificates / private keys (generated locally, never committed)
+infrastructure_1/tls/certs/
+*.pem
+*.key
+*.crt
+
 # Build artifacts
 build/
 dist/
