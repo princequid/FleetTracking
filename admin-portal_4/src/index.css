@@ -3892,6 +3892,7 @@ h1 {
   background: var(--color-white);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 .incidents-filter-block {
@@ -3980,6 +3981,108 @@ h1 {
   gap: 10px;
   padding-top: 1rem;
   border-top: 1px solid var(--color-border);
+}
+
+/* Incidents table card — a slim severity-gradient accent along the top marks this
+   table as the safety-critical one, distinct from the plain trips/drivers tables. */
+.incidents-table-card {
+  position: relative;
+}
+
+.incidents-table-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-danger), var(--color-warning));
+  z-index: 1;
+}
+
+.incident-id-cell {
+  font-weight: 600;
+  color: var(--color-navy);
+}
+
+.incident-muted-cell {
+  color: var(--color-text-3);
+}
+
+.incident-type-cell {
+  font-size: 13px;
+  color: var(--color-text-2);
+  text-transform: capitalize;
+}
+
+.incident-severity-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.incident-time-cell {
+  font-size: 13px;
+  color: var(--color-text-3);
+  white-space: nowrap;
+}
+
+.incident-chevron-cell {
+  text-align: center;
+  color: var(--color-teal);
+  font-size: 10px;
+  transition: color var(--transition-fast);
+}
+
+.incident-row.expanded-row .incident-chevron-cell {
+  color: var(--color-navy);
+}
+
+.incident-detail-cell {
+  padding: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.incident-detail-field {
+  min-width: 0;
+}
+
+.incident-detail-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-3);
+  margin-bottom: 6px;
+}
+
+.incident-detail-value {
+  font-size: 14px;
+  color: var(--color-text-2);
+  line-height: 1.5;
+}
+
+.incident-status-update-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-2);
+  flex-shrink: 0;
+}
+
+.incident-status-update-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.incident-status-update-control select.dispatch-input {
+  min-width: 160px;
+  font-size: 13px;
+}
+
+.incident-status-success-icon {
+  color: var(--color-success);
+  animation: fadeSlideUp 200ms both;
 }
 
 /* Responsive breakpoints for dashboard grids */
