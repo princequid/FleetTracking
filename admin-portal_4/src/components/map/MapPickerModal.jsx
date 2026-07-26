@@ -41,6 +41,19 @@ function ClickHandler({ onMapClick }) {
   return null;
 }
 
+// Recenters the map camera on the pin whenever it changes — a fresh click, or the
+// modal opening with an already-chosen origin/destination/stop seeded in. Without
+// this, the camera stayed wherever it happened to be pointed (the browser's GPS
+// location, the previous field's location, or the Accra fallback), and a newly
+// dropped/reopened pin could end up off-center or even out of view.
+function CenterOnPin({ pin }) {
+  const map = useMap();
+  useEffect(() => {
+    if (pin) map.flyTo([pin.lat, pin.lng], map.getZoom(), { duration: 0.5 });
+  }, [pin, map]);
+  return null;
+}
+
 // Nominatim reverse-geocode a {lat, lng} into a human-readable address string
 async function reverseGeocode(lat, lng) {
   const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`;
@@ -50,17 +63,24 @@ async function reverseGeocode(lat, lng) {
   return data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
-export default function MapPickerModal({ isOpen, onClose, onConfirm, initialCenter, title }) {
+export default function MapPickerModal({
+  isOpen, onClose, onConfirm, initialCenter, initialPin, initialAddress, title,
+}) {
   const [pin,            setPin]            = useState(null);
   const [address,        setAddress]        = useState("");
   const [loadingAddress, setLoadingAddress] = useState(false);
 
-  // Reset state each time the modal opens
+  // Seed from the field's already-confirmed location (if any) each time the modal
+  // opens, so re-opening the picker to review/adjust an existing origin, stop, or
+  // destination shows that location pinned immediately — not a blank map that looks
+  // like nothing was ever selected. A fresh field (no prior pin) still opens empty,
+  // exactly as before.
   useEffect(() => {
     if (isOpen) {
-      setPin(null);
-      setAddress("");
+      setPin(initialPin ?? null);
+      setAddress(initialPin ? (initialAddress || `${initialPin.lat.toFixed(5)}, ${initialPin.lng.toFixed(5)}`) : "");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Accra, Ghana as global fallback
@@ -132,6 +152,7 @@ export default function MapPickerModal({ isOpen, onClose, onConfirm, initialCent
             />
             <MapAutoResize />
             <ClickHandler onMapClick={handleMapClick} />
+            <CenterOnPin pin={pin} />
             {pin && <Marker position={pin} icon={PIN_ICON} />}
           </MapContainer>
         </div>

@@ -13,7 +13,7 @@ function routeForNotification(data) {
   const tripId = data.tripId;
   switch (data.type) {
     case 'TRIP_ASSIGNED':
-      return tripId ? `/(driver)/trip/${tripId}_2` : '/(driver)/notifications_5';
+      return tripId ? `/(driver)/trip/${tripId}` : '/(driver)/notifications_5';
     case 'TRIP_STARTED':
     case 'NAVIGATION':
       return tripId ? { pathname: '/(driver)/trip/[id]/map', params: { id: tripId } } : '/(driver)/notifications_5';
@@ -66,15 +66,28 @@ export function usePushNotifications() {
       const data = resp?.notification?.request?.content?.data;
       const route = routeForNotification(data);
       if (route) router.push(route);
+      // The OS also caches this as the "last notification response," which the
+      // cold-start check below reads — clear it so a tap handled here doesn't ALSO
+      // replay and re-navigate on the next app open/login (see cold-start comment).
+      Notifications.clearLastNotificationResponseAsync().catch(() => {});
     });
 
     // Cold start: ONLY deep-link if the app was actually launched by tapping a
     // notification. If not (normal launch), do nothing so the app stays on home.
+    //
+    // getLastNotificationResponseAsync() is a STICKY native cache — it keeps returning
+    // the same tapped notification on every future launch until explicitly cleared.
+    // This hook remounts on every login (not just a true cold start), so without
+    // clearing it, tapping any notification ONCE would silently hijack every login
+    // after it, bouncing the driver from dashboard to notifications/a trip screen
+    // ~400ms after landing on home. Clear it right after reading so it only ever
+    // fires once per real tap.
     (async () => {
       if (handledColdStart.current) return;
       handledColdStart.current = true;
       try {
         const last = await Notifications.getLastNotificationResponseAsync();
+        Notifications.clearLastNotificationResponseAsync().catch(() => {});
         if (!last) return; // not launched from a notification → don't redirect
         const data = last?.notification?.request?.content?.data;
         const route = routeForNotification(data);

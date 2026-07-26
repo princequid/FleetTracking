@@ -3,7 +3,6 @@ import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import api from "../../services/api";
 import {
-  HexagonLogoIcon,
   GridIcon,
   MapPinIcon,
   PlusCircleIcon,
@@ -12,6 +11,7 @@ import {
   CarIcon,
   AlertTriangleIcon,
   BarChartIcon,
+  ShieldIcon,
   LogOutIcon,
 } from "./Icons";
 
@@ -32,6 +32,7 @@ const navSections = [
       { to: "/vehicles", label: "Vehicles", icon: CarIcon },
       { to: "/incidents", label: "Incidents", icon: AlertTriangleIcon, hideFor: ["DISPATCHER"] },
       { to: "/reports", label: "Reports", icon: BarChartIcon, hideFor: ["DISPATCHER"] },
+      { to: "/staff", label: "Staff", icon: ShieldIcon, hideFor: ["DISPATCHER"] },
     ],
   },
 ];
@@ -41,7 +42,7 @@ function getInitials(email) {
   return email.split("@")[0].slice(0, 2).toUpperCase();
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const role = useAuthStore((state) => state.role) || "";
   const email = useAuthStore((state) => state.email);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -67,6 +68,7 @@ export default function Sidebar() {
   const sidebarClass = [
     "sidebar",
     mounted ? "sidebar-mounted" : "",
+    isOpen ? "sidebar-open" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -74,10 +76,8 @@ export default function Sidebar() {
   return (
     <aside className={sidebarClass}>
       <div className="sidebar-header">
-        <HexagonLogoIcon size={24} />
-        <span className="sidebar-brand">
-          FleetTrack<span className="sidebar-brand-pro">Pro</span>
-        </span>
+        <img src="/images/logo.png" alt="FleetSync" className="sidebar-logo" />
+        <span className="sidebar-brand">FleetSync</span>
       </div>
       <div className="sidebar-rule" />
 
@@ -103,6 +103,9 @@ export default function Sidebar() {
                       } else if (import.meta.env.DEV) {
                         console.log(`[Nav] navigate → "${item.to}"`);
                       }
+                      // Close the off-canvas menu on mobile — Layout also closes on
+                      // pathname change, but that doesn't fire for a same-route click.
+                      onClose?.();
                     }}
                     className={({ isActive }) =>
                       `sidebar-link ${isActive ? "sidebar-link-active" : ""}`

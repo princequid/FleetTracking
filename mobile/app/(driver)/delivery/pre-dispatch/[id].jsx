@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
   Image, Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -12,9 +13,11 @@ import Svg, { Circle } from 'react-native-svg';
 import RAnimated, {
   useSharedValue, useAnimatedProps, withTiming,
 } from 'react-native-reanimated';
-import { mediaService } from '../../../../services/mediaService_3';
+import api from '../../../../services/api_1';
+import { mediaService, describeUploadError } from '../../../../services/mediaService_3';
 import { useTripStore } from '../../../../store/tripStore_2';
 import { useTheme } from '../../../../theme/ThemeContext';
+import { haversineMetres, GEOFENCE_RADIUS_M } from '../../../../utils/geo';
 
 const AnimatedImage  = Animated.createAnimatedComponent(Image);
 const AnimatedCircle = RAnimated.createAnimatedComponent(Circle);
@@ -92,12 +95,14 @@ const makeRingStyles = (C) => StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function PreDispatchScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   const ringStyles = useMemo(() => makeRingStyles(C), [C]);
   const { id }  = useLocalSearchParams();
-  const tripId  = String(id).replace('_3', '');
+  const tripId  = String(id);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
+  const setPreDispatchUploaded = useTripStore((s) => s.setPreDispatchUploaded);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [photo,          setPhoto]          = useState(null);
@@ -106,6 +111,11 @@ export default function PreDispatchScreen() {
   const [uploadDone,     setUploadDone]     = useState(false);
   const [facing,         setFacing]         = useState('back');
   const [error,          setError]          = useState('');
+  const [trip,           setTrip]           = useState(null);
+
+  useEffect(() => {
+    api.get(`/trips/${tripId}`).then((r) => setTrip(r.data)).catch(() => {});
+  }, [tripId]);
 
   const cameraRef      = useRef(null);
   const btnScale       = useRef(new Animated.Value(1)).current;
@@ -167,18 +177,42 @@ export default function PreDispatchScreen() {
         const loc = await Location.getCurrentPositionAsync({});
         coords = loc.coords;
       }
+
+      // Fail closed: this photo is proof the driver is at the pickup location, so a
+      // missing GPS fix blocks the upload rather than silently accepting an untagged photo.
+      if (!coords) {
+        showError('Enable location services to submit this photo.');
+        setLoading(false);
+        setUploadProgress({ step: '', percent: 0 });
+        return;
+      }
+
+      if (trip?.originLat != null && trip?.originLng != null) {
+        const distance = haversineMetres(
+          coords.latitude, coords.longitude,
+          Number(trip.originLat), Number(trip.originLng),
+        );
+        if (distance > GEOFENCE_RADIUS_M) {
+          showError(`You must be within ${GEOFENCE_RADIUS_M}m of the pickup location to submit this photo. You're ${Math.round(distance)}m away.`);
+          setLoading(false);
+          setUploadProgress({ step: '', percent: 0 });
+          return;
+        }
+      }
+
       await mediaService.fullUploadFlow(
         parseInt(tripId), 'PRE_DISPATCH', photo, coords,
         (p) => setUploadProgress(p),
       );
       setUploadDone(true);
+      setPreDispatchUploaded(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => {
         setActiveTrip({ id: parseInt(tripId) });
-        router.replace(`/(driver)/trip/${tripId}`);
+        router.back(); // returns to wherever this was launched from (the live map)
       }, 950);
-    } catch {
-      showError('Upload failed. Check your connection.');
+    } catch (error) {
+      showError(describeUploadError(error));
       setLoading(false);
       setUploadProgress({ step: '', percent: 0 });
     }
@@ -220,7 +254,7 @@ export default function PreDispatchScreen() {
       )}
 
       {/* Top overlay */}
-      <View style={styles.topOverlay}>
+      <View style={[styles.topOverlay, { paddingTop: Math.max(48, insets.top + 12) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="x" size={20} color="#fff" />
         </TouchableOpacity>

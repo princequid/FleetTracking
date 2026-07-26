@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withTiming, withSpring, withSequence,
 } from 'react-native-reanimated';
 import { useAlertsStore } from '../../store/alertsStore';
+import { useTabTransitionStore } from '../../store/tabTransitionStore';
 
 const TABS = [
   { key: 'home',    icon: 'home', label: 'Home',    route: '/(driver)/dashboard_2' },
@@ -21,7 +22,11 @@ function getActiveKey(pathname) {
   if (pathname.includes('dashboard'))      return 'home';
   if (pathname.includes('history'))        return 'trips';
   if (pathname.includes('notification'))   return 'alerts';
+  // Profile and its sub-pages (reached only from the Profile screen's menu) should all
+  // keep the Profile tab highlighted, not silently fall through to Home.
   if (pathname.includes('profile'))        return 'profile';
+  if (pathname.includes('privacy-policy')) return 'profile';
+  if (pathname.includes('help-support'))   return 'profile';
   return 'home';
 }
 
@@ -76,6 +81,7 @@ function TabButton({ tab, isActive, showDot, onPress }) {
 export function FloatingTabBar() {
   const router   = useRouter();
   const pathname = usePathname();
+  const setTabDirection = useTabTransitionStore((s) => s.setDirection);
 
   const activeIds = useAlertsStore((s) => s.activeIds);
   const seenIds   = useAlertsStore((s) => s.seenIds);
@@ -95,7 +101,21 @@ export function FloatingTabBar() {
       return;
     }
     if (__DEV__) console.log(`[Nav] navigate → "${tab.key}"`);
+
+    // Direction is driven by tab ORDER, not stack history: moving to a tab further
+    // right in the bar feels forward (slide from right); moving to one further left
+    // feels like going back (slide from left) — matching what the tab bar visually
+    // implies, regardless of which screen was pushed when.
+    const fromIndex = TABS.findIndex((t) => t.key === activeKey);
+    const toIndex   = TABS.findIndex((t) => t.key === tab.key);
+    setTabDirection(toIndex < fromIndex ? 'back' : 'forward');
+
     router.navigate(tab.route);
+
+    // Revert to the default shortly after the transition starts, so any LATER,
+    // unrelated push (e.g. tapping into a trip's details) isn't accidentally
+    // affected by whichever direction the last tab switch happened to use.
+    setTimeout(() => setTabDirection('forward'), 600);
   };
 
   return (

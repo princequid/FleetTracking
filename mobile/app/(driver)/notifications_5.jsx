@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  FlatList, SafeAreaView, RefreshControl, ActivityIndicator, Animated,
+  FlatList, RefreshControl, ActivityIndicator, Animated,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../services/api_1';
@@ -79,6 +80,7 @@ const AlertCard = React.memo(function AlertCard({ trip, onPress, C, styles }) {
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -147,8 +149,8 @@ export default function NotificationsScreen() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="chevron-left" size={20} color="#fff" />
         </TouchableOpacity>
@@ -180,7 +182,7 @@ export default function NotificationsScreen() {
           removeClippedSubviews
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 

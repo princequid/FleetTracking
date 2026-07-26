@@ -18,6 +18,8 @@ import Svg, {
   Rect, Circle, G, Line, Defs, LinearGradient, Stop,
 } from 'react-native-svg';
 import { useTheme } from '../theme/ThemeContext';
+import { useAuthStore } from '../store/authStore_1';
+import { useDriverStore } from '../store/driverStore_1';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 const TW = 120;
@@ -144,9 +146,20 @@ export default function SplashScreen() {
   const navigate = () => {
     try {
       SecureStore.getItemAsync('ft_access_token')
-        .then((token) => {
-          if (token) router.replace('/(driver)/dashboard_2');
-          else        router.replace('/(auth)/login_1');
+        .then(async (token) => {
+          if (token) {
+            // Cold start (app was killed, not just backgrounded): authStore is
+            // in-memory only, so userId is gone even though the token is still
+            // valid. Restore it before landing on the dashboard so the profile
+            // fetch there doesn't silently hit /drivers/user/undefined.
+            const userId = await useAuthStore.getState().hydrate();
+            // Fire-and-forget so it's already in flight (or resolved) by the
+            // time the dashboard/profile screens mount and ask for it.
+            if (userId) useDriverStore.getState().fetchProfile(userId).catch(() => {});
+            router.replace('/(driver)/dashboard_2');
+          } else {
+            router.replace('/(auth)/login_1');
+          }
         })
         .catch(() => router.replace('/(auth)/login_1'));
     } catch {
@@ -287,10 +300,7 @@ export default function SplashScreen() {
       {/* Brand text */}
       <Animated.View style={[styles.textSection, { top: TY + TH + 36 }, nameStyle]} pointerEvents="none">
         <View style={styles.nameRow}>
-          <Text style={styles.appName}>FleetTrack</Text>
-          <View style={styles.proBadge}>
-            <Text style={styles.proText}>PRO</Text>
-          </View>
+          <Text style={styles.appName}>FleetSync</Text>
         </View>
 
         <Animated.View style={[styles.underline, underlineStyle]} />
@@ -345,19 +355,6 @@ const makeStyles = (C) => StyleSheet.create({
     fontSize: 34,
     color: '#fff',
     letterSpacing: -0.8,
-  },
-  proBadge: {
-    backgroundColor: C.teal,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 7,
-    marginBottom: 4,
-  },
-  proText: {
-    fontFamily: 'Inter-Bold',
-    fontSize: 11,
-    color: '#fff',
-    letterSpacing: 1.5,
   },
   underline: {
     width: 200,

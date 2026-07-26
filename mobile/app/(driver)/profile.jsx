@@ -1,26 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Pressable,
-  ScrollView, SafeAreaView, Modal,
+  ScrollView, Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as SecureStore from 'expo-secure-store';
 import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming,
-  runOnJS,
+  runOnJS, Easing,
 } from 'react-native-reanimated';
 import { useAuthStore } from '../../store/authStore_1';
+import { useDriverStore } from '../../store/driverStore_1';
+import { useTripStore } from '../../store/tripStore_2';
+import authService from '../../services/authService_1';
 import api from '../../services/api_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import LoadingSpinner from '../../components/common/LoadingSpinner';
 
 const MENU = [
   { key: 'notif',   icon: 'bell',        label: 'Notifications', sub: 'Manage alerts & push settings',  route: '/(driver)/notifications_5' },
   { key: 'history', icon: 'clock',       label: 'Trip history',  sub: 'View all completed deliveries',  route: '/(driver)/trip/history_2' },
-  { key: 'support', icon: 'help-circle', label: 'Help & Support',sub: 'FAQs, contact fleet manager',    route: null },
-  { key: 'privacy', icon: 'shield',      label: 'Privacy policy',sub: 'Data usage and permissions',     route: null },
+  { key: 'support', icon: 'help-circle', label: 'Help & Support',sub: 'FAQs, contact fleet manager',    route: '/(driver)/help-support' },
+  { key: 'privacy', icon: 'shield',      label: 'Privacy policy',sub: 'Data usage and permissions',     route: '/(driver)/privacy-policy' },
 ];
 
 function MenuItem({ item, onPress, styles, C }) {
@@ -55,8 +59,10 @@ function SignOutRow({ onPress, styles, C }) {
       <Pressable
         style={[styles.menuItem, { borderBottomWidth: 0 }]}
         onPress={onPress}
-        onPressIn={() => { scale.value = withSpring(0.97, { damping: 14, stiffness: 300 }); }}
-        onPressOut={() => { scale.value = withSpring(1,    { damping: 14, stiffness: 300 }); }}
+        // withTiming (not withSpring) — a flat ease-out with no overshoot, so the
+        // press feels solid rather than bouncy for this destructive action.
+        onPressIn={() => { scale.value = withTiming(0.97, { duration: 100 }); }}
+        onPressOut={() => { scale.value = withTiming(1,    { duration: 100 }); }}
       >
         <View style={[styles.menuIcon, { backgroundColor: C.redLight }]}>
           <Feather name="log-out" size={18} color={C.red} />
@@ -79,6 +85,7 @@ function initials(name = '') {
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -86,9 +93,34 @@ export default function ProfileScreen() {
     (s) => ({ userId: s.userId, email: s.email, clearAuth: s.clearAuth })
   );
 
-  const [driver, setDriver] = useState(null);
-  const [stats,  setStats]  = useState({ trips: 0, onTime: 100 });
+  // Read straight from the shared driver cache — already populated by splash's
+  // prefetch or the dashboard's own fetch, so this screen can paint real data
+  // on first render instead of showing placeholders while it re-fetches.
+  const driver = useDriverStore((s) => s.driver);
+  // totalTrips/onTimePercent come straight from GET /drivers/{id}/stats (driver-service,
+  // which in turn pulls real completed/on-time counts from trip-service). onTimePercent
+  // is null — not 0 — until the driver has a completed trip to compute a rate from.
+  const stats  = useDriverStore((s) => s.stats) || { totalTrips: null, onTimePercent: null, rating: null };
+  const fetchProfile = useDriverStore((s) => s.fetchProfile);
+  const fetchStats   = useDriverStore((s) => s.fetchStats);
+  const clearDriver  = useDriverStore((s) => s.clearDriver);
   const [showSignOut, setShowSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  // A driver profile has no permanent vehicle of its own — vehicles are assigned
+  // per-trip. Resolve the plate number of whichever vehicle is on the driver's
+  // current active trip (set by the dashboard), rather than always showing "Not
+  // assigned" for a field that never existed on the driver profile response.
+  const activeTrip = useTripStore((s) => s.activeTrip);
+  const [vehicle, setVehicle] = useState(null);
+  useEffect(() => {
+    if (!activeTrip?.vehicleId) { setVehicle(null); return; }
+    let cancelled = false;
+    api.get(`/vehicles/${activeTrip.vehicleId}`)
+      .then((res) => { if (!cancelled) setVehicle(res.data); })
+      .catch(() => { if (!cancelled) setVehicle(null); });
+    return () => { cancelled = true; };
+  }, [activeTrip?.vehicleId]);
 
   /* avatar entrance */
   const avatarScale   = useSharedValue(0.8);
@@ -109,22 +141,32 @@ export default function ProfileScreen() {
   const openSignOut = () => {
     setShowSignOut(true);
     backdropOpac.value = withTiming(1, { duration: 250 });
-    sheetY.value = withSpring(0, { damping: 18, stiffness: 180 });
+    // withTiming + ease-out (not withSpring) — a smooth, solid slide-in with no
+    // overshoot/bounce at the end.
+    sheetY.value = withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const closeSignOut = () => {
+    // Don't let a backdrop tap dismiss the sheet mid sign-out — the request is
+    // already in flight and about to navigate away.
+    if (signingOut) return;
     backdropOpac.value = withTiming(0, { duration: 200 });
-    sheetY.value = withSpring(300, { damping: 18, stiffness: 180 }, () => {
+    sheetY.value = withTiming(300, { duration: 220, easing: Easing.in(Easing.cubic) }, () => {
       runOnJS(setShowSignOut)(false);
     });
   };
 
   const confirmSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await SecureStore.deleteItemAsync('ft_access_token');
-    await SecureStore.deleteItemAsync('ft_refresh_token');
+    setSigningOut(true);
+    // authService.logout() POSTs /auth/logout to revoke the refresh token server-side,
+    // then deletes both tokens from SecureStore — so we no longer need to delete them
+    // here ourselves. It never throws (network failure is swallowed internally), so no
+    // try/catch is needed — this always resolves and navigates away.
+    await authService.logout();
     clearAuth();
+    clearDriver();
     router.replace('/(auth)/login_1');
   };
 
@@ -133,20 +175,19 @@ export default function ProfileScreen() {
     avatarOpacity.value = withTiming(1, { duration: 300 });
 
     if (!userId) return;
-    api.get(`/drivers/user/${userId}`)
-      .then((r) => {
-        setDriver(r.data);
-        return api.get(`/drivers/${r.data.id}/stats`);
-      })
-      .then((r) => setStats(r.data))
+    // Only the stats call is truly sequential (it needs the driver's internal
+    // id) — but fetchProfile resolves near-instantly from cache when splash or
+    // the dashboard already fetched it, so this rarely waits on a real request.
+    fetchProfile(userId)
+      .then((d) => (d?.id ? fetchStats(d.id) : null))
       .catch(() => {});
-  }, [userId]);
+  }, [userId, fetchProfile, fetchStats]);
 
   const driverName = driver?.fullName || 'Driver';
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="chevron-left" size={20} color="#fff" />
         </Pressable>
@@ -175,7 +216,7 @@ export default function ProfileScreen() {
           {[
             { icon: 'mail',  label: 'Email',   val: authEmail || '–' },
             { icon: 'phone', label: 'Phone',   val: driver?.phone || '–' },
-            { icon: 'truck', label: 'Vehicle', val: driver?.vehicle?.plateNumber || 'Not assigned' },
+            { icon: 'truck', label: 'Vehicle', val: vehicle?.plateNumber || 'Not assigned' },
           ].map((row, i) => (
             <React.Fragment key={row.label}>
               {i > 0 && <View style={styles.infoDivider} />}
@@ -195,9 +236,9 @@ export default function ProfileScreen() {
         <Text style={styles.sectionLabel}>PERFORMANCE</Text>
         <View style={styles.statsRow}>
           {[
-            { label: 'Trips done', val: String(stats.trips || driver?.tripsCompleted || '–'), icon: 'check-circle', color: C.green },
-            { label: 'On time',    val: `${stats.onTime ?? 100}%`,                            icon: 'clock',        color: C.teal },
-            { label: 'Rating',     val: driver?.rating ? `${driver.rating}/5` : '–',          icon: 'star',         color: C.amber },
+            { label: 'Trips done', val: stats.totalTrips != null ? String(stats.totalTrips) : '–',    icon: 'check-circle', color: C.green },
+            { label: 'On time',    val: stats.onTimePercent != null ? `${stats.onTimePercent}%` : '–', icon: 'clock',        color: C.teal },
+            { label: 'Rating',     val: stats.rating != null ? `${stats.rating}/5` : '–',      icon: 'star',         color: C.amber },
           ].map((s) => (
             <View key={s.label} style={styles.statCard}>
               <Feather name={s.icon} size={18} color={s.color} />
@@ -229,7 +270,7 @@ export default function ProfileScreen() {
           <SignOutRow onPress={openSignOut} styles={styles} C={C} />
         </View>
 
-        <Text style={styles.version}>FleetTrack Driver App v1.0.0</Text>
+        <Text style={styles.version}>FleetSync Driver App v1.0.0</Text>
       </ScrollView>
 
       {/* Sign out bottom sheet */}
@@ -247,18 +288,30 @@ export default function ProfileScreen() {
                 You will need to sign in again to access your trips.
               </Text>
               <View style={styles.sheetBtns}>
-                <Pressable style={[styles.sheetBtn, styles.sheetBtnCancel]} onPress={closeSignOut}>
+                <Pressable
+                  style={[styles.sheetBtn, styles.sheetBtnCancel, signingOut && styles.sheetBtnDisabled]}
+                  onPress={closeSignOut}
+                  disabled={signingOut}
+                >
                   <Text style={styles.sheetBtnCancelText}>Cancel</Text>
                 </Pressable>
-                <Pressable style={[styles.sheetBtn, styles.sheetBtnConfirm]} onPress={confirmSignOut}>
-                  <Text style={styles.sheetBtnConfirmText}>Sign out</Text>
+                <Pressable
+                  style={[styles.sheetBtn, styles.sheetBtnConfirm, signingOut && styles.sheetBtnDisabled]}
+                  onPress={confirmSignOut}
+                  disabled={signingOut}
+                >
+                  {signingOut ? (
+                    <LoadingSpinner color="#fff" />
+                  ) : (
+                    <Text style={styles.sheetBtnConfirmText}>Sign out</Text>
+                  )}
                 </Pressable>
               </View>
             </Animated.View>
           </View>
         </Modal>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -448,4 +501,5 @@ const makeStyles = (C) => StyleSheet.create({
   sheetBtnCancelText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: C.text2 },
   sheetBtnConfirm:    { backgroundColor: C.red },
   sheetBtnConfirmText: { fontFamily: 'Inter-SemiBold', fontSize: 15, color: '#fff' },
+  sheetBtnDisabled: { opacity: 0.7 },
 });

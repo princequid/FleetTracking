@@ -1,5 +1,9 @@
 import api from './api_1';
-import * as FileSystem from 'expo-file-system';
+// The top-level 'expo-file-system' export deprecated getInfoAsync/readAsStringAsync/
+// writeAsStringAsync in SDK 54 in favor of new File/Directory classes. The 'legacy'
+// subpath keeps the exact same API this file already uses, just without the warning —
+// a full migration to the new class-based API is a separate, bigger change.
+import * as FileSystem from 'expo-file-system/legacy';
 
 const QUEUE_FILE = `${FileSystem.documentDirectory}ft_upload_queue.json`;
 
@@ -18,6 +22,24 @@ async function writeQueue(queue) {
   try {
     await FileSystem.writeAsStringAsync(QUEUE_FILE, JSON.stringify(queue));
   } catch {}
+}
+
+// Turns whatever fullUploadFlow threw into a message that actually says what went
+// wrong (server validation error, timeout, storage-PUT failure, etc.) instead of the
+// generic "check your connection" every capture screen used to show regardless of
+// cause — that made a real 4xx (e.g. photo too large) indistinguishable from the
+// phone genuinely being offline.
+export function describeUploadError(error) {
+  const apiMessage = error?.response?.data?.error || error?.response?.data?.message;
+  if (apiMessage) return apiMessage;
+  if (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || '')) {
+    return 'Upload timed out — check your connection and try again.';
+  }
+  if (!error?.response && error?.message === 'Network Error') {
+    return 'Cannot reach the server. Check your network connection.';
+  }
+  if (error?.message) return error.message;
+  return 'Upload failed. Check your connection.';
 }
 
 export const mediaService = {
@@ -41,16 +63,26 @@ export const mediaService = {
     return true;
   },
 
-  async registerPhoto(tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt) {
+  // Photos already uploaded for a trip (pre-dispatch / POD / stop PODs), each with a
+  // fresh presigned view URL. The backend authorizes a DRIVER to read only their OWN trip.
+  async getTripPhotos(tripId) {
+    const res = await api.get(`/media/photos/trips/${tripId}`);
+    return Array.isArray(res.data) ? res.data : [];
+  },
+
+
+  async registerPhoto(tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt, stopId) {
     const response = await api.post('/media/photos', {
-      tripId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt,
+      tripId, stopId, photoKey, photoType, mimeType, fileSizeBytes, lat, lng, takenAt,
     });
     return response.data;
   },
 
   // Main entry point called by camera screens.
   // onProgress: ({ step: string, percent: number }) => void
-  async fullUploadFlow(tripId, photoType, fileUri, location, onProgress) {
+  // options.stopId: set only for an (optional) STOP_POD captured at an intermediate stop.
+  async fullUploadFlow(tripId, photoType, fileUri, location, onProgress, options = {}) {
+    const { stopId = null } = options;
     try {
       onProgress?.({ step: 'Preparing upload...', percent: 10 });
 
@@ -67,7 +99,7 @@ export const mediaService = {
       const { latitude, longitude } = location || {};
       const result = await this.registerPhoto(
         tripId, photoKey, photoType, 'image/jpeg',
-        fileInfo.size || 0, latitude, longitude, new Date().toISOString(),
+        fileInfo.size || 0, latitude, longitude, new Date().toISOString(), stopId,
       );
 
       onProgress?.({ step: 'Complete', percent: 100 });
@@ -77,7 +109,7 @@ export const mediaService = {
       try {
         const queue = await readQueue();
         queue.push({
-          tripId, photoType, fileUri,
+          tripId, photoType, fileUri, stopId,
           lat: location?.latitude, lng: location?.longitude,
           takenAt: new Date().toISOString(),
           retryCount: 0,
@@ -103,6 +135,7 @@ export const mediaService = {
           item.tripId, item.photoType, item.fileUri,
           item.lat ? { latitude: item.lat, longitude: item.lng } : null,
           null,
+          { stopId: item.stopId ?? null },
         );
       } catch {
         remaining.push({ ...item, retryCount: (item.retryCount || 0) + 1 });

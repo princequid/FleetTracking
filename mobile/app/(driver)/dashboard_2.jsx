@@ -4,6 +4,7 @@ import {
   RefreshControl, Linking, Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAuthStore } from '../../store/authStore_1';
 import { useTripStore } from '../../store/tripStore_2';
+import { useDriverStore } from '../../store/driverStore_1';
 import api from '../../services/api_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { DISPATCH_PHONE } from '../../constants/config';
@@ -186,13 +188,20 @@ function TripRow({ trip, isLast, onPress, ss, C }) {
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const ss = useMemo(() => makeStyles(C), [C]);
 
   const { userId }   = useAuthStore();
   const { activeTrip, setActiveTrip } = useTripStore();
 
-  const [driverName, setDriverName] = useState('Driver');
+  // Read straight from the shared driver cache so a name already fetched by
+  // splash (prefetch) or a prior visit renders instantly, with no local-state
+  // hop needed once loadData's fetchProfile call resolves.
+  const cachedDriverName = useDriverStore((s) => s.driver?.fullName);
+  const fetchDriverProfile = useDriverStore((s) => s.fetchProfile);
+
+  const [driverName, setDriverName] = useState(cachedDriverName || 'Driver');
   const [trips, setTrips]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -280,15 +289,15 @@ export default function HomeScreen() {
   }, []);
 
   /* data */
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (force = false) => {
     try {
       const [profileRes, tripsRes] = await Promise.allSettled([
-        api.get(`/drivers/user/${userId}`),
+        fetchDriverProfile(userId, { force }),
         api.get('/trips'),
       ]);
 
-      if (profileRes.status === 'fulfilled') {
-        setDriverName(profileRes.value.data?.fullName || 'Driver');
+      if (profileRes.status === 'fulfilled' && profileRes.value) {
+        setDriverName(profileRes.value.fullName || 'Driver');
       }
 
       if (tripsRes.status === 'fulfilled') {
@@ -311,7 +320,7 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, fetchDriverProfile]);
 
   useEffect(() => {
     // Animate the shell in immediately so the screen appears instantly (skeleton first),
@@ -328,21 +337,21 @@ export default function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await loadData(true);
     setRefreshing(false);
   }, [loadData]);
 
-  const handleMarkArrived = useCallback(async () => {
+  // "Mark arrived" is a geofence-gated action — hand off to the live map screen,
+  // which confirms the driver's current location is within range of the destination
+  // before allowing the arrive action, rather than flipping the trip status here with
+  // no location check.
+  const handleMarkArrived = useCallback(() => {
     if (!activeTrip) { showToastMsg('No active trip to mark as arrived', 'warn'); return; }
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await api.put(`/trips/${activeTrip.id}/arrive`);
-      showToastMsg('Marked as arrived!', 'success');
-      loadData();
-    } catch {
-      showToastMsg('Could not mark as arrived', 'error');
-    }
-  }, [activeTrip, loadData]);
+    router.push({
+      pathname: '/(driver)/trip/[id]/map',
+      params: { id: activeTrip.id },
+    });
+  }, [activeTrip, router, showToastMsg]);
 
   const initials = driverName
     ? driverName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()
@@ -388,13 +397,13 @@ export default function HomeScreen() {
 
         {/* ── Header ────────────────────────────────────────────── */}
         <Animated.View style={headerStyle}>
-          <View style={ss.header}>
+          <View style={[ss.header, { paddingTop: Math.max(56, insets.top + 16) }]}>
             <View style={ss.headerTop}>
-              <View>
-                <Text style={ss.greeting}>{getGreeting()}</Text>
-                <Text style={ss.driverName}>{driverName}</Text>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={ss.greeting} numberOfLines={1}>{getGreeting()}</Text>
+                <Text style={ss.driverName} numberOfLines={1} ellipsizeMode="tail">{driverName}</Text>
               </View>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 10, flexShrink: 0 }}>
                 <PressableScale
                   onPress={() => router.push('/(driver)/notifications_5')}
                   style={ss.headerCircleBtn}
@@ -497,22 +506,13 @@ export default function HomeScreen() {
                 <View style={{ flex: 1.4 }}>
                   <PressableScale
                     onPress={() => router.push(`/(driver)/trip/${activeTrip.id}`)}
-                    style={ss.continueBtn}
+                    style={ss.viewDetailsBtn}
                   >
-                    <Feather name="arrow-right" size={16} color="#fff" />
-                    <Text style={ss.continueBtnText}>Continue trip</Text>
+                    <Feather name="file-text" size={16} color="#fff" />
+                    <Text style={ss.viewDetailsBtnText}>View trip details</Text>
                   </PressableScale>
                 </View>
               </View>
-
-              {/* View full trip details (available before the trip is started) */}
-              <PressableScale
-                onPress={() => router.push(`/(driver)/trip/${activeTrip.id}`)}
-                style={ss.detailsBtn}
-              >
-                <Feather name="file-text" size={15} color={C.teal} />
-                <Text style={ss.detailsBtnText}>View trip details</Text>
-              </PressableScale>
             </View>
           ) : (
             <View style={ss.noTripBox}>
@@ -832,7 +832,7 @@ const makeStyles = (C) => StyleSheet.create({
     fontSize: 14,
     color: C.navyPrimary,
   },
-  continueBtn: {
+  viewDetailsBtn: {
     height: 50,
     borderRadius: 14,
     backgroundColor: C.navyPrimary,
@@ -846,26 +846,11 @@ const makeStyles = (C) => StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
-  continueBtnText: {
+  viewDetailsBtnText: {
     fontFamily: 'Inter-SemiBold',
     fontSize: 14,
     color: '#fff',
     letterSpacing: -0.2,
-  },
-  detailsBtn: {
-    height: 44,
-    borderRadius: 12,
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    backgroundColor: C.tealPale,
-  },
-  detailsBtnText: {
-    fontFamily: 'Inter-SemiBold',
-    fontSize: 13.5,
-    color: C.teal,
   },
   noTripBox: {
     alignItems: 'center',

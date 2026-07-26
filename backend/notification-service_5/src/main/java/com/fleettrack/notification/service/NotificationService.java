@@ -43,6 +43,12 @@ public class NotificationService {
         });
     }
 
+    /** Used by the controller to authorize PUT /{id}/read against the calling user. */
+    @Transactional(readOnly = true)
+    public boolean belongsToRecipient(Long id, Long recipientId) {
+        return notificationRepository.existsByIdAndRecipientId(id, recipientId);
+    }
+
     @Transactional
     public void markAllRead(Long recipientId) {
         List<Notification> unread = notificationRepository.findByRecipientIdAndIsReadFalse(recipientId);
@@ -52,18 +58,21 @@ public class NotificationService {
 
     /**
      * Persist a notification created from a domain event. De-duplicated by eventId so
-     * a redelivered message never creates a second notification.
+     * a redelivered message never creates a second notification. Returns whether a new
+     * notification was actually created (false = no recipient, or already processed) —
+     * callers that ALSO trigger a side effect for the same event (e.g. an email) should
+     * check this and skip that side effect too on a duplicate delivery.
      */
     @Transactional
-    public void createFromEvent(UUID eventId, Long recipientId, NotificationType type,
-                                String title, String message, Long tripId) {
+    public boolean createFromEvent(UUID eventId, Long recipientId, NotificationType type,
+                                   String title, String message, Long tripId) {
         if (recipientId == null) {
             log.warn("Skipping notification with no recipient (type={}, event={})", type, eventId);
-            return;
+            return false;
         }
         if (eventId != null && notificationRepository.existsByEventId(eventId)) {
             log.debug("Skipping duplicate notification for event {}", eventId);
-            return;
+            return false;
         }
         Notification n = Notification.builder()
                 .recipientId(recipientId)
@@ -84,5 +93,6 @@ public class NotificationService {
         if (tripId != null) data.put("tripId", String.valueOf(tripId));
         data.put("notificationId", String.valueOf(n.getId()));
         fcmService.sendToRecipient(recipientId, title, message, data);
+        return true;
     }
 }

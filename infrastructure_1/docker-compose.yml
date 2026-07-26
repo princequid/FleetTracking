@@ -27,9 +27,9 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
     ports:
-      - "5433:5432"
+      - "${HOST_BIND:-0.0.0.0}:5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fleettrack -d fleettrack"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,14 +45,18 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-fleettrack}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-fleettrack}
+    # NOTE: persisting /var/lib/rabbitmq via a named volume hit an .erlang.cookie
+    # permission error (eacces) on this Docker setup. Left ephemeral for now; queues are
+    # re-declared by services on startup. Revisit for prod with a mnesia-subdir mount.
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${HOST_BIND:-0.0.0.0}:5672:5672"
+      - "${HOST_BIND:-0.0.0.0}:15672:15672"
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -63,7 +67,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${HOST_BIND:-0.0.0.0}:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -83,8 +87,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-fleettrack}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-fleettrack123}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${HOST_BIND:-0.0.0.0}:9000:9000"
+      - "${HOST_BIND:-0.0.0.0}:9001:9001"
     volumes:
       - minio-data:/data
     deploy:
@@ -100,12 +104,12 @@ services:
     volumes:
       - ./osrm-data:/data
     ports:
-      - "5000:5000"
+      - "${HOST_BIND:-0.0.0.0}:5000:5000"
     deploy:
       resources:
         limits:
-          memory: 128M
-          cpus: "0.25"
+          memory: 1024M
+          cpus: "1.0"
     restart: unless-stopped
 
   # ── Eureka Server ──────────────────────────────────────────────────────
@@ -115,12 +119,28 @@ services:
       context: ../backend/eureka-server_1
       dockerfile: Dockerfile
     ports:
-      - "8761:8761"
+      - "${HOST_BIND:-0.0.0.0}:8761:8761"
     environment:
-      JAVA_OPTS: "-Xmx256m -Xms128m"
+      # JAVA_TOOL_OPTIONS is read automatically by the JVM from the environment (unlike
+      # the old JAVA_OPTS here, which the Dockerfile's exec-form ENTRYPOINT never actually
+      # expanded — it was silently a no-op). TieredStopAtLevel=1 skips the C2 JIT tier,
+      # cutting cold-start time significantly at a negligible cost to steady-state
+      # throughput, which suits these low-traffic, frequently-restarted dev containers.
+      JAVA_TOOL_OPTIONS: "-Xmx256m -Xms128m -XX:TieredStopAtLevel=1"
     depends_on:
       postgres:
         condition: service_healthy
+    # NOTE: eureka-server_1 has no spring-boot-starter-actuator dependency (so no
+    # /actuator/health), and its runtime image (eclipse-temurin:17-jre-alpine) has no
+    # curl. Alpine's busybox does ship wget, and Eureka's default (unsecured) dashboard
+    # at "/" returns 200 once the server is actually serving requests, so that's the
+    # cheapest reliable readiness signal without touching eureka-server_1 itself.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8761/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -142,21 +162,42 @@ services:
     environment:
       INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-this-to-a-long-random-string-before-prod}
+      # Creates the first SUPER_ADMIN account on boot if none exists yet — unset/blank in
+      # local dev (default) disables it entirely; set both in the server .env for prod.
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
+      # Gmail SMTP — blank in local dev (default) silently disables sending (EmailService
+      # logs a warning and skips); set both in the server .env to actually deliver mail.
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      # Base URL for the forgot-password email's link — must be the real deployed admin
+      # portal URL in prod (localhost is only correct for local dev).
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      # See eureka-server's comment: JAVA_TOOL_OPTIONS (not JAVA_OPTS) is what the JVM
+      # actually reads from the environment.
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      # Faster registration + faster discovery: defaults (~40s initial replication, 30s
+      # registry fetch/lease renewal) make a freshly-booted service invisible to the
+      # gateway/other services for tens of seconds after it's actually ready. Shrinking
+      # these closes that gap — this is pure timing, it changes no application behavior.
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -171,15 +212,24 @@ services:
       context: ../backend/api-gateway_1
       dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${HOST_BIND:-0.0.0.0}:8080:8080"
     environment:
       INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-this-to-a-long-random-string-before-prod}
+      # Browser origins allowed to call the API. Prod: set to the deployed admin URL.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx256m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx256m -Xms128m -XX:TieredStopAtLevel=1"
+      # The gateway discovers EVERY other service via lb://<name> — its own registry-fetch
+      # interval is the single biggest lever for "a service just started but the gateway
+      # still 503s/404s it." Default 30s; shrunk so newly-up services route within ~5s.
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       eureka-server:
-        condition: service_started
+        condition: service_healthy
       auth-service:
         condition: service_started
     deploy:
@@ -187,6 +237,26 @@ services:
         limits:
           memory: 384M
           cpus: "0.5"
+    restart: unless-stopped
+
+  # ── TLS reverse proxy ──────────────────────────────────────────────────
+  # Terminates HTTPS and forwards to the gateway over the internal network.
+  # Run infrastructure_1/tls/generate-cert.sh once to create the dev cert.
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./tls/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./tls/certs:/etc/nginx/certs:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.25"
     restart: unless-stopped
 
   # ── Business Services ──────────────────────────────────────────────────
@@ -203,12 +273,17 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -229,12 +304,16 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -257,13 +336,26 @@ services:
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
+      # trip-service's EtaService calls OSRM for route/ETA calculations. The application.yml
+      # default (localhost:5000) only works when both processes run on the same host outside
+      # Docker — in Compose, "localhost" inside the trip-service container is the container
+      # itself, not the separate "osrm" container, so this MUST be set or OSRM calls silently
+      # fail with connection-refused (driver navigation + admin live route ETAs break).
+      OSRM_BASE_URL: http://osrm:5000
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       eureka-server:
+        condition: service_healthy
+      osrm:
         condition: service_started
     deploy:
       resources:
@@ -288,15 +380,22 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
+      # Origins allowed on the live-tracking STOMP websocket — must include the deployed
+      # admin URL in prod, or the admin live map's socket handshake is rejected.
+      APP_CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -320,14 +419,18 @@ services:
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -350,18 +453,22 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       # MUST be the dev machine's LAN IP (the value the phone uses for the API), NOT
       # localhost — the presigned upload URL is opened by the phone, not the server.
-      MINIO_EXTERNAL_ENDPOINT: http://172.20.10.4:9000
+      MINIO_EXTERNAL_ENDPOINT: ${MINIO_EXTERNAL_ENDPOINT:-http://172.20.10.4:9000}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-fleettrack}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-fleettrack123}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_started
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -384,14 +491,18 @@ services:
       SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
       SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -399,28 +510,47 @@ services:
           cpus: "0.5"
     restart: unless-stopped
 
-  trip-service:
+  notification-service:
     build:
       context: ../backend
-      dockerfile: trip-service_2/Dockerfile
-    ports:
-      - "8084:8084"
+      dockerfile: notification-service_5/Dockerfile
+    # SECURITY: internal-only — reachable via the gateway, not published to the host.
+    expose:
+      - "8088"
     environment:
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-fleettrack-internal-dev-secret}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-fleettrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-fleettrack}
       SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_USERNAME: fleettrack
-      SPRING_RABBITMQ_PASSWORD: fleettrack
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-fleettrack}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-fleettrack}
+      # Gmail SMTP — blank in local dev (default) silently disables sending (EmailService
+      # logs a warning and skips); set both in the server .env to actually deliver mail.
+      GMAIL_USERNAME: ${GMAIL_USERNAME:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
+      # "View incident" / "View full dashboard" links in emails — must be the real
+      # deployed admin portal URL in prod (localhost is only correct for local dev).
+      ADMIN_PORTAL_URL: ${ADMIN_PORTAL_URL:-http://localhost:5173}
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JAVA_OPTS: "-Xmx384m -Xms128m"
+      JAVA_TOOL_OPTIONS: "-Xmx384m -Xms128m -XX:TieredStopAtLevel=1"
+      EUREKA_CLIENT_INITIALINSTANCEINFOREPLICATIONINTERVALSECONDS: "5"
+      EUREKA_CLIENT_INSTANCEINFOREPLICATIONINTERVALSECONDS: "10"
+      EUREKA_CLIENT_REGISTRYFETCHINTERVALSECONDS: "5"
+      EUREKA_INSTANCE_LEASERENEWALINTERVALINSECONDS: "5"
+    # NOTE: Firebase push is loaded from a classpath resource (firebase-service-account.json
+    # under notification-service_5/src/main/resources), guarded by FirebaseConfig to no-op
+    # if that file is absent/placeholder — see FirebaseConfig.java. No such file exists in
+    # the repo today, so no volume mount is added here; push simply stays disabled. If real
+    # push credentials are ever added, prefer a volume mount over baking the key into the
+    # image/committed resources.
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       eureka-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -428,26 +558,9 @@ services:
           cpus: "0.5"
     restart: unless-stopped
 
-  gps-service:
-    build:
-      context: ../backend/gps-service_2
-      dockerfile: Dockerfile
-    ports:
-      - "8085:8085"
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/fleettrack
-      SPRING_DATASOURCE_USERNAME: fleettrack
-      SPRING_DATASOURCE_PASSWORD: fleettrack
-      SPRING_DATA_REDIS_HOST: redis
-      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka/
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      eureka-server:
-        condition: service_started
-    restart: unless-stopped
+  # analytics-service_5 intentionally has no entry here: per the infra audit it is a 100%
+  # unimplemented stub (no pom.xml, no main class) and cannot run. Add an entry once it's
+  # actually implemented.
 
 volumes:
   postgres-data:

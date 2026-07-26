@@ -101,8 +101,12 @@ export default function AssignTripForm({ onDispatched, onError }) {
     setOrigin({ name, lat, lng });
   }
   async function openOriginMap() {
-    const center = await getBrowserLocation();
-    setMapPicker({ field: "origin", center });
+    // If an origin is already chosen (typed via autocomplete or a previous pin),
+    // center on THAT — not the browser's current location, which used to override
+    // it even when reopening the picker just to review/adjust an existing origin.
+    const center = origin.lat != null ? [origin.lat, origin.lng] : await getBrowserLocation();
+    const initialPin = origin.lat != null ? { lat: origin.lat, lng: origin.lng } : null;
+    setMapPicker({ field: "origin", center, initialPin, initialAddress: origin.name });
   }
 
   // ── Destination ──────────────────────────────────────────────────────────────
@@ -114,7 +118,8 @@ export default function AssignTripForm({ onDispatched, onError }) {
   }
   function openDestinationMap() {
     const center = destination.lat != null ? [destination.lat, destination.lng] : null;
-    setMapPicker({ field: "destination", center });
+    const initialPin = destination.lat != null ? { lat: destination.lat, lng: destination.lng } : null;
+    setMapPicker({ field: "destination", center, initialPin, initialAddress: destination.name });
   }
 
   // ── Stops ────────────────────────────────────────────────────────────────────
@@ -148,7 +153,8 @@ export default function AssignTripForm({ onDispatched, onError }) {
   function openStopMap(id) {
     const stop = stops.find((s) => s.id === id);
     const center = stop?.lat != null ? [stop.lat, stop.lng] : null;
-    setMapPicker({ field: "stop", stopId: id, center });
+    const initialPin = stop?.lat != null ? { lat: stop.lat, lng: stop.lng } : null;
+    setMapPicker({ field: "stop", stopId: id, center, initialPin, initialAddress: stop?.name });
   }
 
   // ── Map confirm ──────────────────────────────────────────────────────────────
@@ -480,6 +486,8 @@ export default function AssignTripForm({ onDispatched, onError }) {
         isOpen={mapPicker !== null}
         title={getModalTitle()}
         initialCenter={mapPicker?.center}
+        initialPin={mapPicker?.initialPin}
+        initialAddress={mapPicker?.initialAddress}
         onClose={() => setMapPicker(null)}
         onConfirm={handleMapConfirm}
       />

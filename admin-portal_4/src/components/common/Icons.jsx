@@ -105,19 +105,19 @@ export function AlertTriangleIcon(props) {
   );
 }
 
-export function ClockIcon(props) {
-  return (
-    <Svg {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3.5 2" />
-    </Svg>
-  );
-}
-
 export function BarChartIcon(props) {
   return (
     <Svg {...props}>
       <path d="M4 20V10M12 20V4M20 20v-7" />
+    </Svg>
+  );
+}
+
+export function ShieldIcon(props) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3 4 6v6c0 5 3.5 8.5 8 9 4.5-.5 8-4 8-9V6Z" />
+      <path d="m9 12 2 2 4-4" />
     </Svg>
   );
 }

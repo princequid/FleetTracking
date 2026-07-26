@@ -17,14 +17,14 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: notification
+        default_schema: notif
         format_sql: true
     show-sql: false
 
   flyway:
     enabled: true
-    schemas: notification
-    default-schema: notification
+    schemas: notif
+    default-schema: notif
     baseline-on-migrate: true
 
   rabbitmq:
@@ -33,12 +33,37 @@ spring:
     username: fleettrack
     password: fleettrack
 
+  # Gmail SMTP — GMAIL_USERNAME/GMAIL_APP_PASSWORD are set as environment variables,
+  # never committed here. Same Google account as auth-service.
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${GMAIL_USERNAME:}
+    password: ${GMAIL_APP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
   instance:
     prefer-ip-address: true
+
+internal:
+  service:
+    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+
+fleetsync:
+  email:
+    from-address: ${GMAIL_USERNAME:}
+    from-name: FleetSync
+  # Admin portal base URL — used for "View incident" / "View full dashboard" links.
+  admin-portal-url: ${ADMIN_PORTAL_URL:http://localhost:5173}
 
 logging:
   level:

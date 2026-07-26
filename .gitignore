@@ -7,7 +7,17 @@ target/
 .env.*
 !.env.example
 firebase-service-account.json
-google-services.json
+# google-services.json is intentionally NOT gitignored — unlike the Admin SDK
+# service-account key above, it's a client config (API key restricted by package
+# name/SHA, not a bearer credential; Google's own docs say it's safe to commit).
+# EAS Build packages the project based on what git tracks, so gitignoring it would
+# risk it being silently left out of a build.
+
+# TLS certificates / private keys (generated locally, never committed)
+infrastructure_1/tls/certs/
+*.pem
+*.key
+*.crt
 
 # TLS certificates / private keys (generated locally, never committed)
 infrastructure_1/tls/certs/

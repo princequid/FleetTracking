@@ -1,16 +1,18 @@
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../../../theme/ThemeContext';
 
 export default function RerouteScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={styles.header}>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Feather name="chevron-left" size={20} color="#fff" />
         </TouchableOpacity>
@@ -20,7 +22,7 @@ export default function RerouteScreen() {
         <Feather name="map" size={44} color={C.border} />
         <Text style={styles.emptyTitle}>Coming soon</Text>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

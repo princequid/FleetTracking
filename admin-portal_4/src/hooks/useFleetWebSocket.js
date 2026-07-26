@@ -2,14 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Client } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
 import { useAuthStore } from "../store/authStore";
+import { WS_BASE_URL } from "../constants/config";
 
-const WS_URL = "http://localhost:8080/ws";
+const WS_URL = WS_BASE_URL;
 
 export function useFleetWebSocket() {
   const accessToken = useAuthStore((state) => state.accessToken);
   const clientRef = useRef(null);
   const callbacksRef = useRef({});
   const stompSubsRef = useRef({});
+  // Generic topic subscriptions (e.g. "/topic/admin/notifications") keyed by
+  // the raw topic string, kept separate from the tripId-keyed location subs above.
+  const topicCallbacksRef = useRef({});
+  const topicSubsRef = useRef({});
   const [isConnected, setIsConnected] = useState(false);
 
   const resubscribeAll = useCallback(() => {
@@ -26,6 +31,17 @@ export function useFleetWebSocket() {
       });
       stompSubsRef.current[tripId] = sub;
     });
+    Object.entries(topicCallbacksRef.current).forEach(([topic, callback]) => {
+      if (topicSubsRef.current[topic]) return;
+      const sub = client.subscribe(topic, (message) => {
+        try {
+          callback(JSON.parse(message.body));
+        } catch {
+          // ignore malformed payload
+        }
+      });
+      topicSubsRef.current[topic] = sub;
+    });
   }, []);
 
   useEffect(() => {
@@ -34,9 +50,10 @@ export function useFleetWebSocket() {
       connectHeaders: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
       reconnectDelay: 5000,
       onConnect: () => {
-        console.log("Fleet WebSocket connected");
+        if (import.meta.env.DEV) console.log("Fleet WebSocket connected");
         setIsConnected(true);
         stompSubsRef.current = {};
+        topicSubsRef.current = {};
         resubscribeAll();
       },
       onDisconnect: () => setIsConnected(false),
@@ -76,9 +93,35 @@ export function useFleetWebSocket() {
     }
   }, []);
 
+  // Generic topic subscription for consumers that aren't keyed by tripId
+  // (e.g. NotificationBell's "/topic/admin/notifications" feed).
+  const subscribeTopic = useCallback((topic, callback) => {
+    topicCallbacksRef.current[topic] = callback;
+    const client = clientRef.current;
+    if (client && client.connected && !topicSubsRef.current[topic]) {
+      const sub = client.subscribe(topic, (message) => {
+        try {
+          callback(JSON.parse(message.body));
+        } catch {
+          // ignore malformed payload
+        }
+      });
+      topicSubsRef.current[topic] = sub;
+    }
+  }, []);
+
+  const unsubscribeTopic = useCallback((topic) => {
+    delete topicCallbacksRef.current[topic];
+    const sub = topicSubsRef.current[topic];
+    if (sub) {
+      sub.unsubscribe();
+      delete topicSubsRef.current[topic];
+    }
+  }, []);
+
   const disconnect = useCallback(() => {
     clientRef.current?.deactivate();
   }, []);
 
-  return { subscribe, unsubscribe, isConnected, disconnect };
+  return { subscribe, unsubscribe, subscribeTopic, unsubscribeTopic, isConnected, disconnect };
 }

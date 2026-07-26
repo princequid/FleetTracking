@@ -1,0 +1,44 @@
+# Production overlay for FleetTrack Pro.
+# Use ALONGSIDE the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What it changes vs. local dev:
+#   - Swaps the dev nginx/self-signed reverse proxy for Caddy (automatic Let's Encrypt HTTPS).
+#   - All secrets, domains and the MinIO external endpoint come from the server's .env.
+#
+# Only Caddy (80/443) faces the world. Every internal service the base file publishes to
+# the host binds to ${HOST_BIND} — set HOST_BIND=127.0.0.1 in the server .env so Postgres/
+# RabbitMQ/Redis/MinIO/Eureka/gateway/OSRM are reachable only on loopback, never the public
+# internet (Docker's port DNAT bypasses host iptables, so loopback binding — not just the
+# firewall — is what actually protects the unauthenticated Redis/Eureka). Caddy and the
+# services still reach each other over the internal Docker network by name.
+
+services:
+  # Disable the dev-only nginx reverse proxy (self-signed). Caddy replaces it in prod.
+  reverse-proxy:
+    profiles: ["dev-only"]
+
+  # Public TLS entrypoint — terminates HTTPS, proxies to the gateway and MinIO.
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - api-gateway
+      - minio
+      - osrm
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      STORAGE_DOMAIN: ${STORAGE_DOMAIN}
+      OSRM_DOMAIN: ${OSRM_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

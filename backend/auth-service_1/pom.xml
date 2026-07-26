@@ -88,6 +88,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Email (starter kept for parity/future SMTP fallback — outbound mail in this
+             service goes through Resend's HTTP API via RestTemplate, not JavaMailSender) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- RabbitMQ -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
