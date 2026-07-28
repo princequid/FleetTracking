@@ -25,11 +25,30 @@ const DOC_TITLES = {
   "/reports": "Reports & Analytics",
 };
 
+const COLLAPSE_KEY = "ft-admin-sidebar-collapsed";
+
 export default function Layout() {
   const location = useLocation();
   // Off-canvas sidebar state — only meaningful below the mobile breakpoint (CSS
   // keeps the sidebar permanently visible above it regardless of this flag).
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Desktop rail collapse. Read synchronously on first render so the shell never
+  // paints expanded and then snaps closed.
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(COLLAPSE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0");
+    } catch {
+      // private mode / storage disabled — collapse just won't persist
+    }
+  }, [collapsed]);
 
   useEffect(() => {
     const base = "/" + location.pathname.split("/")[1];
@@ -51,8 +70,13 @@ export default function Layout() {
 
   return (
     <ToastProvider>
-      <div className="app-shell">
-        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="app-shell" data-sidebar={collapsed ? "collapsed" : "expanded"}>
+        <Sidebar
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((c) => !c)}
+        />
         {/* Backdrop: mobile-only (off-canvas sidebar), click to dismiss */}
         {sidebarOpen && (
           <div
