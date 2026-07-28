@@ -1,27 +1,39 @@
 import React from "react";
+import KpiCard from "./KpiCard";
 
+/**
+ * Legacy stat tile. Kept as a thin adapter over KpiCard so the two don't drift
+ * into two different-looking cards — the props below are the original public
+ * API, so existing call sites need no change.
+ *
+ * Prefer KpiCard directly for anything new; it also supports sparklines and
+ * structured trend chips.
+ */
 export default function StatCard({
   title,
   value,
   subtitle,
-  icon: Icon,
-  color = "#06B6D4",
+  icon,
+  color = "var(--color-primary)",
   trend,
   style,
   className = "",
 }) {
+  // The old API expressed trend as a bare direction string with the copy living
+  // in `subtitle`. Promote that to a chip only for a direction that reads as
+  // movement — and then drop `sub`, or the same text renders twice.
+  const asChip = Boolean(trend && trend !== "neutral" && subtitle);
+
   return (
-    <div className={`stat-card ${className}`.trim()} style={style}>
-      <div className="stat-card-icon" style={{ background: `${color}29`, color }}>
-        {Icon && <Icon size={22} />}
-      </div>
-      <div className="stat-card-body">
-        <div className="stat-card-value">{value}</div>
-        <div className="stat-card-title">{title}</div>
-        {subtitle && (
-          <div className={`stat-card-subtitle stat-card-trend-${trend || "neutral"}`}>{subtitle}</div>
-        )}
-      </div>
-    </div>
+    <KpiCard
+      className={className}
+      label={title}
+      value={value}
+      sub={asChip ? undefined : subtitle}
+      icon={icon}
+      accent={color}
+      trend={asChip ? { direction: trend, value: subtitle } : undefined}
+      style={style}
+    />
   );
 }

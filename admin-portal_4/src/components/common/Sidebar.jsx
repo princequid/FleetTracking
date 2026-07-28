@@ -13,6 +13,8 @@ import {
   BarChartIcon,
   ShieldIcon,
   LogOutIcon,
+  PanelCollapseIcon,
+  PanelExpandIcon,
 } from "./Icons";
 
 const navSections = [
@@ -42,7 +44,7 @@ function getInitials(email) {
   return email.split("@")[0].slice(0, 2).toUpperCase();
 }
 
-export default function Sidebar({ isOpen, onClose }) {
+export default function Sidebar({ isOpen, onClose, collapsed = false, onToggleCollapse }) {
   const role = useAuthStore((state) => state.role) || "";
   const email = useAuthStore((state) => state.email);
   const clearAuth = useAuthStore((state) => state.clearAuth);
@@ -74,10 +76,25 @@ export default function Sidebar({ isOpen, onClose }) {
     .join(" ");
 
   return (
-    <aside className={sidebarClass}>
+    <aside className={sidebarClass} aria-label="Main navigation">
       <div className="sidebar-header">
-        <img src="/images/logo.png" alt="FleetSync" className="sidebar-logo" />
-        <span className="sidebar-brand">FleetSync</span>
+        <img src="/images/logo.png" alt="" className="sidebar-logo" />
+        <div className="sidebar-brand-text">
+          <span className="sidebar-brand">FleetSync</span>
+          <span className="sidebar-brand-sub">Fleet Operations</span>
+        </div>
+        {onToggleCollapse && (
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={onToggleCollapse}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <PanelExpandIcon size={17} /> : <PanelCollapseIcon size={17} />}
+          </button>
+        )}
       </div>
       <div className="sidebar-rule" />
 
@@ -94,6 +111,10 @@ export default function Sidebar({ isOpen, onClose }) {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    // Collapsed rail hides the label, so surface it as a native
+                    // tooltip — it escapes the nav's clipped overflow, which a
+                    // CSS pseudo-element could not.
+                    title={collapsed ? item.label : undefined}
                     // Ignore clicks on the route we're already viewing — no navigation,
                     // no history entry, no page re-render/scroll reset.
                     onClick={(e) => {
@@ -112,7 +133,7 @@ export default function Sidebar({ isOpen, onClose }) {
                     }
                   >
                     <Icon size={18} className="sidebar-link-icon" />
-                    <span>{item.label}</span>
+                    <span className="sidebar-link-label">{item.label}</span>
                   </NavLink>
                 );
               })}
@@ -123,7 +144,9 @@ export default function Sidebar({ isOpen, onClose }) {
 
       <div className="sidebar-footer">
         <div className="sidebar-user">
-          <div className="sidebar-avatar">{getInitials(email)}</div>
+          <div className="sidebar-avatar" aria-hidden="true">
+            {getInitials(email)}
+          </div>
           <div className="sidebar-user-meta">
             <div className="sidebar-user-email" title={email || ""}>
               {email || "unknown@fleettrack.com"}

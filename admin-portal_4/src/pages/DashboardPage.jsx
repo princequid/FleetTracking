@@ -5,6 +5,7 @@ import {
   Area,
   XAxis,
   YAxis,
+  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   PieChart,
@@ -12,32 +13,53 @@ import {
   Cell,
 } from "recharts";
 import { useAuthStore } from "../store/authStore";
-import StatCard from "../components/common/StatCard";
+import KpiCard from "../components/common/KpiCard";
 import TripStatusBadge from "../components/trips/TripStatusBadge";
 import {
   TruckIcon,
   CheckCircleIcon,
   AlertTriangleIcon,
-  BarChartIcon,
+  GaugeIcon,
+  CarIcon,
+  UsersIcon,
+  ActivityIcon,
+  ChevronRightIcon,
 } from "../components/common/Icons";
+import useCssVars from "../hooks/useCssVars";
 import { getTrips } from "../services/tripService";
 import { getVehicles } from "../services/vehicleService";
 import { getIncidents } from "../services/incidentService";
+import { getDrivers } from "../services/driverService";
 
-const PIE_COLORS = {
-  AVAILABLE: "#059669",
-  IN_USE: "#0D9488",
-  MAINTENANCE: "#3B82F6",
-  DECOMMISSIONED: "#6B7280",
+const ACTIVE_STATUSES = ["ASSIGNED", "STARTED", "EN_ROUTE", "ARRIVED"];
+const CLOSED_STATUSES = ["DELIVERED", "CANCELLED"];
+
+/* Tokens the charts need as concrete values — see useCssVars for why. */
+const CHART_TOKENS = [
+  "--success-500",
+  "--warning-500",
+  "--danger-500",
+  "--color-primary",
+  "--teal-500",
+  "--color-text-3",
+  "--color-border",
+  "--color-border-strong",
+];
+
+const VEHICLE_STATUS_TOKEN = {
+  AVAILABLE: "success-500",
+  IN_USE: "color-primary",
+  MAINTENANCE: "warning-500",
+  DECOMMISSIONED: "color-text-3",
 };
 
 const AVATAR_PALETTE = [
-  "#1B3A6B",
-  "#0D9488",
-  "#7C3AED",
-  "#B45309",
-  "#047857",
-  "#1D4ED8",
+  "var(--brand-600)",
+  "var(--teal-500)",
+  "#7c3aed",
+  "var(--gold-600)",
+  "var(--success-700)",
+  "var(--info-700)",
 ];
 
 function avatarColor(id) {
@@ -48,6 +70,7 @@ function timeAgo(iso) {
   if (!iso) return "—";
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
@@ -61,60 +84,107 @@ function greeting() {
   return "Good evening";
 }
 
-// Deterministic 7-day delivery mock (seeded on calendar day so it's stable per day)
-function buildDeliveryData() {
-  const out = [];
-  const now = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const seed = d.getDate() + d.getMonth() * 31;
-    out.push({ date: label, onTime: 5 + (seed % 7), late: 1 + (seed % 3) });
-  }
-  return out;
+function startOfDay(d) {
+  const copy = new Date(d);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
 }
 
-function AreaTooltip({ active, payload, label }) {
+/**
+ * Buckets real trips into one entry per day for the last `days` days.
+ * Replaces the previous seeded placeholder series — every point here comes from
+ * the trips payload, so an empty fleet correctly renders a flat zero line.
+ */
+function buildTrendFromTrips(trips, days = 7) {
+  const buckets = [];
+  const today = startOfDay(new Date());
+
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - i);
+    buckets.push({
+      key: day.getTime(),
+      date: day.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      delivered: 0,
+      cancelled: 0,
+    });
+  }
+
+  const index = new Map(buckets.map((b) => [b.key, b]));
+
+  trips.forEach((trip) => {
+    if (!trip.createdAt) return;
+    const bucket = index.get(startOfDay(new Date(trip.createdAt)).getTime());
+    if (!bucket) return;
+    if (trip.status === "DELIVERED") bucket.delivered++;
+    else if (trip.status === "CANCELLED") bucket.cancelled++;
+  });
+
+  return buckets;
+}
+
+/** Percentage change of the last `days` vs the `days` immediately before. */
+function periodTrend(trips, predicate, days = 7) {
+  const today = startOfDay(new Date());
+  const currentStart = new Date(today);
+  currentStart.setDate(currentStart.getDate() - (days - 1));
+  const priorStart = new Date(currentStart);
+  priorStart.setDate(priorStart.getDate() - days);
+
+  let current = 0;
+  let prior = 0;
+
+  trips.forEach((trip) => {
+    if (!trip.createdAt || !predicate(trip)) return;
+    const at = new Date(trip.createdAt);
+    if (at >= currentStart) current++;
+    else if (at >= priorStart) prior++;
+  });
+
+  if (prior === 0) {
+    // No baseline to compare against — show movement, not a fake percentage.
+    if (current === 0) return { direction: "flat", value: "No change" };
+    return { direction: "up", value: `+${current} new` };
+  }
+
+  const delta = Math.round(((current - prior) / prior) * 100);
+  if (delta === 0) return { direction: "flat", value: "0%" };
+  return { direction: delta > 0 ? "up" : "down", value: `${delta > 0 ? "+" : ""}${delta}%` };
+}
+
+function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid var(--color-border)",
-        borderRadius: 8,
-        padding: "10px 14px",
-        boxShadow: "var(--shadow-md)",
-      }}
-    >
-      <div style={{ fontWeight: 600, fontSize: 12, color: "var(--color-text-3)", marginBottom: 6 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 13, color: "#0D9488", marginBottom: 2 }}>
-        On-time: {payload[0]?.value}
-      </div>
-      <div style={{ fontSize: 13, color: "#D97706" }}>Late: {payload[1]?.value}</div>
+    <div className="chart-tooltip">
+      <div className="chart-tooltip-label">{label}</div>
+      {payload.map((entry) => (
+        <div key={entry.dataKey} className="chart-tooltip-row">
+          <span className="chart-tooltip-dot" style={{ background: entry.stroke || entry.fill }} />
+          <span className="chart-tooltip-name">{entry.name}</span>
+          <span className="chart-tooltip-value">{entry.value}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
 function PieTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
+  const entry = payload[0];
   return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid var(--color-border)",
-        borderRadius: 8,
-        padding: "8px 12px",
-        boxShadow: "var(--shadow-md)",
-      }}
-    >
-      <div style={{ fontSize: 13, fontWeight: 600 }}>
-        {payload[0].name}: {payload[0].value}
+    <div className="chart-tooltip">
+      <div className="chart-tooltip-row">
+        <span className="chart-tooltip-dot" style={{ background: entry.payload.fill }} />
+        <span className="chart-tooltip-name">{entry.name}</span>
+        <span className="chart-tooltip-value">{entry.value}</span>
       </div>
     </div>
   );
+}
+
+function titleCase(value) {
+  if (!value) return "";
+  return value.charAt(0) + value.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
 export default function DashboardPage() {
@@ -124,9 +194,10 @@ export default function DashboardPage() {
   const [trips, setTrips] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [incidents, setIncidents] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const deliveryData = useMemo(() => buildDeliveryData(), []);
+  const c = useCssVars(CHART_TOKENS);
 
   useEffect(() => {
     // `alive` prevents state updates from a request that resolves after the
@@ -134,12 +205,13 @@ export default function DashboardPage() {
     let alive = true;
 
     const load = () =>
-      Promise.allSettled([getTrips(), getVehicles(), getIncidents()]).then(
-        ([tR, vR, iR]) => {
+      Promise.allSettled([getTrips(), getVehicles(), getIncidents(), getDrivers()]).then(
+        ([tR, vR, iR, dR]) => {
           if (!alive) return;
           if (tR.status === "fulfilled" && Array.isArray(tR.value)) setTrips(tR.value);
           if (vR.status === "fulfilled" && Array.isArray(vR.value)) setVehicles(vR.value);
           if (iR.status === "fulfilled" && Array.isArray(iR.value)) setIncidents(iR.value);
+          if (dR.status === "fulfilled" && Array.isArray(dR.value)) setDrivers(dR.value);
         }
       );
 
@@ -154,22 +226,44 @@ export default function DashboardPage() {
     };
   }, []);
 
-  const activeTrips = trips.filter((t) =>
-    ["ASSIGNED", "STARTED", "EN_ROUTE", "ARRIVED"].includes(t.status)
-  ).length;
-  const deliveriesToday = trips.filter((t) => t.status === "DELIVERED").length;
+  const trendData = useMemo(() => buildTrendFromTrips(trips), [trips]);
+
+  const activeTrips = trips.filter((t) => ACTIVE_STATUSES.includes(t.status)).length;
+  const delivered = trips.filter((t) => t.status === "DELIVERED").length;
+  const closedTrips = trips.filter((t) => CLOSED_STATUSES.includes(t.status)).length;
+  const onTimeRate = closedTrips > 0 ? Math.round((delivered / closedTrips) * 100) : 0;
   const openIncidents = incidents.filter((i) => i.status === "OPEN").length;
-  const closedTrips = trips.filter((t) => ["DELIVERED", "CANCELLED"].includes(t.status)).length;
-  const onTimeRate =
-    closedTrips > 0 ? `${Math.round((deliveriesToday / closedTrips) * 100)}%` : "—";
+
+  const availableVehicles = vehicles.filter((v) => v.status === "AVAILABLE").length;
+  const inMaintenance = vehicles.filter((v) => v.status === "MAINTENANCE").length;
+  const activeDrivers = drivers.filter((d) => d.active !== false).length;
+
+  const deliveryTrend = useMemo(
+    () => periodTrend(trips, (t) => t.status === "DELIVERED"),
+    [trips]
+  );
+  const activeTrend = useMemo(
+    () => periodTrend(trips, (t) => ACTIVE_STATUSES.includes(t.status)),
+    [trips]
+  );
+
+  const deliverySpark = useMemo(() => trendData.map((d) => d.delivered), [trendData]);
+  const activeSpark = useMemo(
+    () => trendData.map((d) => d.delivered + d.cancelled),
+    [trendData]
+  );
 
   const vehicleBreakdown = useMemo(() => {
     const counts = {};
     vehicles.forEach((v) => {
       counts[v.status] = (counts[v.status] || 0) + 1;
     });
-    return Object.entries(counts).map(([name, value]) => ({ name, value }));
-  }, [vehicles]);
+    return Object.entries(counts).map(([name, value]) => ({
+      name,
+      value,
+      fill: c[VEHICLE_STATUS_TOKEN[name]] || c["color-text-3"],
+    }));
+  }, [vehicles, c]);
 
   const leaderboard = useMemo(() => {
     const counts = {};
@@ -182,7 +276,13 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [trips]);
 
-  const recentTrips = useMemo(() => trips.slice(0, 5), [trips]);
+  const recentTrips = useMemo(
+    () =>
+      [...trips]
+        .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        .slice(0, 6),
+    [trips]
+  );
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -191,125 +291,170 @@ export default function DashboardPage() {
     day: "numeric",
   });
 
+  const dash = "—";
+
   return (
     <div className="page-enter">
-      {/* Page header */}
+      {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="dashboard-page-header">
         <div>
           <h1 className="dashboard-greeting">
             {greeting()},{" "}
-            <span style={{ color: "var(--color-teal)" }}>
-              {role ? role.charAt(0) + role.slice(1).toLowerCase().replace("_", " ") : "Admin"}
+            <span className="dashboard-greeting-role">
+              {role ? titleCase(role) : "Admin"}
             </span>
           </h1>
           <p className="dashboard-date">{today}</p>
         </div>
+        <div className="dashboard-live-chip" title="Data refreshes every 30 seconds">
+          <span className="dashboard-live-dot" />
+          Live · refreshes every 30s
+        </div>
       </div>
 
-      {/* 4 stat cards */}
+      {/* ── KPI row ─────────────────────────────────────────────────────── */}
       <div className="stats-row stats-row-4">
-        <StatCard
+        <KpiCard
           className="stagger-child"
-          title="Active Trips"
-          value={loading ? "—" : activeTrips}
-          subtitle="Currently en route"
+          label="Active Trips"
+          value={loading ? dash : activeTrips}
+          sub="Currently en route"
           icon={TruckIcon}
-          color="var(--color-navy)"
+          accent={c["color-primary"]}
+          trend={loading ? undefined : activeTrend}
+          spark={activeSpark}
+          onClick={() => navigate("/trips")}
         />
-        <StatCard
+        <KpiCard
           className="stagger-child"
-          title="Deliveries"
-          value={loading ? "—" : deliveriesToday}
-          subtitle="Total completed"
+          label="Deliveries"
+          value={loading ? dash : delivered}
+          sub="Completed all-time"
           icon={CheckCircleIcon}
-          color="var(--color-success)"
+          accent={c["success-500"]}
+          trend={loading ? undefined : deliveryTrend}
+          spark={deliverySpark}
+          onClick={() => navigate("/trips")}
         />
-        <StatCard
+        <KpiCard
           className="stagger-child"
-          title="On-Time Rate"
-          value={loading ? "—" : onTimeRate}
-          subtitle="Fleet performance"
-          icon={BarChartIcon}
-          color="var(--color-teal)"
+          label="On-Time Rate"
+          value={loading ? dash : `${onTimeRate}%`}
+          sub={`${closedTrips} closed trips`}
+          icon={GaugeIcon}
+          accent={c["teal-500"]}
         />
-        <StatCard
+        <KpiCard
           className="stagger-child"
-          title="Open Incidents"
-          value={loading ? "—" : openIncidents}
-          subtitle={openIncidents > 5 ? "Needs attention" : "Fleet running well"}
+          label="Open Incidents"
+          value={loading ? dash : openIncidents}
+          sub={openIncidents > 5 ? "Needs attention" : "Fleet running well"}
           icon={AlertTriangleIcon}
-          color={openIncidents > 5 ? "var(--color-danger)" : "var(--color-warning)"}
+          accent={openIncidents > 5 ? c["danger-500"] : c["warning-500"]}
+          onClick={() => navigate("/incidents")}
         />
       </div>
 
-      {/* Charts row — 60/40 */}
+      {/* ── Secondary KPI row ───────────────────────────────────────────── */}
+      <div className="stats-row stats-row-3">
+        <KpiCard
+          className="stagger-child"
+          label="Vehicles Available"
+          value={loading ? dash : availableVehicles}
+          sub={`of ${vehicles.length} in fleet`}
+          icon={CarIcon}
+          accent={c["success-500"]}
+          onClick={() => navigate("/vehicles")}
+        />
+        <KpiCard
+          className="stagger-child"
+          label="In Maintenance"
+          value={loading ? dash : inMaintenance}
+          sub={inMaintenance > 0 ? "Unavailable for dispatch" : "Nothing in the shop"}
+          icon={ActivityIcon}
+          accent={c["warning-500"]}
+          onClick={() => navigate("/vehicles")}
+        />
+        <KpiCard
+          className="stagger-child"
+          label="Active Drivers"
+          value={loading ? dash : activeDrivers}
+          sub={`of ${drivers.length} registered`}
+          icon={UsersIcon}
+          accent={c["color-primary"]}
+          onClick={() => navigate("/drivers")}
+        />
+      </div>
+
+      {/* ── Charts row ──────────────────────────────────────────────────── */}
       <div className="dashboard-charts-row">
-        {/* Delivery Performance */}
         <div className="chart-card">
           <div className="chart-card-header">
             <div>
               <h3 className="chart-card-title">Delivery Performance</h3>
-              <span className="chart-card-subtitle">Last 7 days</span>
+              <span className="chart-card-subtitle">Last 7 days · from trip records</span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart
-              data={deliveryData}
-              margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
-            >
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={trendData} margin={{ top: 8, right: 8, left: -22, bottom: 0 }}>
               <defs>
-                <linearGradient id="gradOnTime" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0D9488" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#0D9488" stopOpacity={0} />
+                <linearGradient id="gradDelivered" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={c["success-500"]} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={c["success-500"]} stopOpacity={0} />
                 </linearGradient>
-                <linearGradient id="gradLate" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#D97706" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#D97706" stopOpacity={0} />
+                <linearGradient id="gradCancelled" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={c["warning-500"]} stopOpacity={0.22} />
+                  <stop offset="100%" stopColor={c["warning-500"]} stopOpacity={0} />
                 </linearGradient>
               </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={c["color-border"]} />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 12, fill: "#6B7280" }}
+                tick={{ fontSize: 12, fill: c["color-text-3"] }}
                 axisLine={false}
                 tickLine={false}
+                dy={6}
               />
               <YAxis
-                tick={{ fontSize: 12, fill: "#6B7280" }}
+                tick={{ fontSize: 12, fill: c["color-text-3"] }}
                 axisLine={false}
                 tickLine={false}
+                allowDecimals={false}
+                width={48}
               />
-              <Tooltip content={<AreaTooltip />} />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: c["color-border-strong"] }} />
               <Area
                 type="monotone"
-                dataKey="onTime"
-                stroke="#0D9488"
-                strokeWidth={2}
-                fill="url(#gradOnTime)"
+                name="Delivered"
+                dataKey="delivered"
+                stroke={c["success-500"]}
+                strokeWidth={2.5}
+                fill="url(#gradDelivered)"
                 isAnimationActive
               />
               <Area
                 type="monotone"
-                dataKey="late"
-                stroke="#D97706"
-                strokeWidth={2}
-                fill="url(#gradLate)"
+                name="Cancelled"
+                dataKey="cancelled"
+                stroke={c["warning-500"]}
+                strokeWidth={2.5}
+                fill="url(#gradCancelled)"
                 isAnimationActive
               />
             </AreaChart>
           </ResponsiveContainer>
           <div className="chart-legend">
             <span className="chart-legend-item">
-              <span className="chart-legend-dot" style={{ background: "#0D9488" }} />
-              On-time
+              <span className="chart-legend-dot" style={{ background: c["success-500"] }} />
+              Delivered
             </span>
             <span className="chart-legend-item">
-              <span className="chart-legend-dot" style={{ background: "#D97706" }} />
-              Late
+              <span className="chart-legend-dot" style={{ background: c["warning-500"] }} />
+              Cancelled
             </span>
           </div>
         </div>
 
-        {/* Fleet Status Donut */}
         <div className="chart-card">
           <div className="chart-card-header">
             <div>
@@ -319,106 +464,97 @@ export default function DashboardPage() {
           </div>
           {vehicleBreakdown.length > 0 ? (
             <>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie
-                    data={vehicleBreakdown}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={48}
-                    outerRadius={70}
-                    dataKey="value"
-                    isAnimationActive
-                  >
-                    {vehicleBreakdown.map((entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={PIE_COLORS[entry.name] || "#6B7280"}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<PieTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="donut-wrap">
+                <ResponsiveContainer width="100%" height={190}>
+                  <PieChart>
+                    <Pie
+                      data={vehicleBreakdown}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={58}
+                      outerRadius={84}
+                      paddingAngle={2}
+                      cornerRadius={4}
+                      dataKey="value"
+                      stroke="none"
+                      isAnimationActive
+                    >
+                      {vehicleBreakdown.map((entry) => (
+                        <Cell key={entry.name} fill={entry.fill} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<PieTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="donut-center">
+                  <span className="donut-center-value">{vehicles.length}</span>
+                  <span className="donut-center-label">Vehicles</span>
+                </div>
+              </div>
               <div className="pie-legend">
                 {vehicleBreakdown.map((entry) => (
                   <div key={entry.name} className="pie-legend-item">
-                    <span
-                      className="pie-legend-dot"
-                      style={{ background: PIE_COLORS[entry.name] || "#6B7280" }}
-                    />
-                    <span className="pie-legend-label">
-                      {entry.name.charAt(0) + entry.name.slice(1).toLowerCase().replace("_", " ")}
-                    </span>
+                    <span className="pie-legend-dot" style={{ background: entry.fill }} />
+                    <span className="pie-legend-label">{titleCase(entry.name)}</span>
                     <span className="pie-legend-count">{entry.value}</span>
                   </div>
                 ))}
               </div>
             </>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: 180,
-                color: "var(--color-text-3)",
-                fontSize: 14,
-              }}
-            >
-              {loading ? "Loading…" : "No vehicle data"}
-            </div>
+            <div className="chart-empty">{loading ? "Loading…" : "No vehicle data"}</div>
           )}
         </div>
       </div>
 
-      {/* Bottom row — 50/50 */}
+      {/* ── Bottom row ──────────────────────────────────────────────────── */}
       <div className="dashboard-bottom-row">
-        {/* Driver Leaderboard */}
         <div className="chart-card">
           <div className="chart-card-header">
             <div>
               <h3 className="chart-card-title">Driver Leaderboard</h3>
-              <span className="chart-card-subtitle">By trip count</span>
+              <span className="chart-card-subtitle">By total trips assigned</span>
             </div>
+            <button
+              className="chart-card-link"
+              type="button"
+              onClick={() => navigate("/drivers")}
+              aria-label="View all drivers"
+            >
+              View all
+              <ChevronRightIcon size={14} />
+            </button>
           </div>
           {leaderboard.length > 0 ? (
             <div className="leaderboard-list">
               {leaderboard.map((item, idx) => (
-                <div key={item.driverId} className="leaderboard-item">
+                <div
+                  key={item.driverId}
+                  className="leaderboard-item"
+                  onClick={() => navigate(`/drivers/${item.driverId}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") navigate(`/drivers/${item.driverId}`);
+                  }}
+                >
                   <div className={`leaderboard-rank${idx < 3 ? ` rank-${idx + 1}` : ""}`}>
                     {idx + 1}
                   </div>
                   <div
                     className="driver-avatar"
-                    style={{
-                      background: avatarColor(item.driverId),
-                      width: 32,
-                      height: 32,
-                      fontSize: 12,
-                    }}
+                    style={{ background: avatarColor(item.driverId), width: 34, height: 34, fontSize: 12 }}
                   >
                     #{item.driverId}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "var(--color-text-1)",
-                        marginBottom: 4,
-                      }}
-                    >
-                      Driver #{item.driverId}
-                    </div>
+                  <div className="leaderboard-body">
+                    <div className="leaderboard-name">Driver #{item.driverId}</div>
                     <div className="performance-bar-wrapper">
                       <div className="performance-bar-track">
                         <div
                           className="performance-bar-fill"
                           style={{
-                            width: `${Math.round(
-                              (item.count / (leaderboard[0]?.count || 1)) * 100
-                            )}%`,
+                            width: `${Math.round((item.count / (leaderboard[0]?.count || 1)) * 100)}%`,
                           }}
                         />
                       </div>
@@ -429,28 +565,25 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <div
-              style={{
-                padding: "2rem",
-                textAlign: "center",
-                color: "var(--color-text-3)",
-                fontSize: 14,
-              }}
-            >
-              {loading ? "Loading…" : "No trip data yet"}
-            </div>
+            <div className="chart-empty">{loading ? "Loading…" : "No trip data yet"}</div>
           )}
         </div>
 
-        {/* Recent Activity */}
         <div className="chart-card">
           <div className="chart-card-header">
             <div>
-              <h3 className="chart-card-title">Recent Activity</h3>
-              <span className="chart-card-subtitle" style={{ fontSize: 11 }}>
-                Refreshes every 30s
-              </span>
+              <h3 className="chart-card-title">Live Activity</h3>
+              <span className="chart-card-subtitle">Most recent trip updates</span>
             </div>
+            <button
+              className="chart-card-link"
+              type="button"
+              onClick={() => navigate("/trips")}
+              aria-label="View all trips"
+            >
+              View all
+              <ChevronRightIcon size={14} />
+            </button>
           </div>
           {recentTrips.length > 0 ? (
             <div className="recent-activity-list">
@@ -459,6 +592,11 @@ export default function DashboardPage() {
                   key={trip.id}
                   className="recent-activity-item"
                   onClick={() => navigate(`/trips/${trip.id}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") navigate(`/trips/${trip.id}`);
+                  }}
                 >
                   <div className="recent-activity-body">
                     <div className="recent-activity-top">
@@ -469,20 +607,12 @@ export default function DashboardPage() {
                       {trip.destination || `Trip #${trip.id}`}
                     </div>
                   </div>
+                  <ChevronRightIcon size={16} className="recent-activity-chevron" />
                 </div>
               ))}
             </div>
           ) : (
-            <div
-              style={{
-                padding: "2rem",
-                textAlign: "center",
-                color: "var(--color-text-3)",
-                fontSize: 14,
-              }}
-            >
-              {loading ? "Loading…" : "No recent trips"}
-            </div>
+            <div className="chart-empty">{loading ? "Loading…" : "No recent trips"}</div>
           )}
         </div>
       </div>
