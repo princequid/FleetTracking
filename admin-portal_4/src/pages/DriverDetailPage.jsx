@@ -5,8 +5,13 @@ import { getTrips } from "../services/tripService";
 import { getVehicles } from "../services/vehicleService";
 import DriverStatsCard from "../components/drivers/DriverStatsCard";
 import TripStatusBadge from "../components/trips/TripStatusBadge";
-import { ArrowLeftIcon } from "../components/common/Icons";
+import { ArrowLeftIcon, EmptyTruckIllustration } from "../components/common/Icons";
+import DataTable from "../components/common/DataTable";
+import { TRIP_STATUS_ORDER } from "../constants/tripStatus";
+import { formatDate, formatFull } from "../utils/formatDate";
 import { getInitials, getAvatarColor } from "../constants/colors";
+import LoadingState from "../components/common/LoadingState";
+import ErrorState from "../components/common/ErrorState";
 
 export default function DriverDetailPage() {
   const { id } = useParams();
@@ -17,6 +22,56 @@ export default function DriverDetailPage() {
   const [vehiclesById, setVehiclesById] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sort, setSort] = useState({ key: "createdAt", dir: "desc" });
+
+  const tripColumns = [
+    {
+      key: "id",
+      header: "Trip",
+      width: 90,
+      numeric: true,
+      sortable: true,
+      render: (trip) => <span className="cell-id">#{trip.id}</span>,
+    },
+    {
+      key: "vehicle",
+      header: "Vehicle",
+      width: 140,
+      hideBelow: "md",
+      render: (trip) => (
+        <span className="cell-mono">
+          {vehiclesById[trip.vehicleId]?.plateNumber || `#${trip.vehicleId}`}
+        </span>
+      ),
+    },
+    {
+      key: "destination",
+      header: "Destination",
+      render: (trip) => trip.destination || <span className="cell-muted">—</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      width: 130,
+      sortable: true,
+      sortValue: (trip) => TRIP_STATUS_ORDER.indexOf(trip.status),
+      render: (trip) => <TripStatusBadge status={trip.status} />,
+    },
+    {
+      key: "createdAt",
+      header: "Date",
+      width: 120,
+      align: "end",
+      sortable: true,
+      sortValue: (trip) => (trip.createdAt ? new Date(trip.createdAt).getTime() : 0),
+      render: (trip) =>
+        trip.createdAt ? (
+          <span title={formatFull(trip.createdAt)}>{formatDate(trip.createdAt)}</span>
+        ) : (
+          <span className="cell-muted">—</span>
+        ),
+    },
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +101,7 @@ export default function DriverDetailPage() {
   if (loading) {
     return (
       <section className="page-shell">
-        <p className="loading-text">Loading driver details…</p>
+        <LoadingState message="Loading driver details…" />
       </section>
     );
   }
@@ -54,7 +109,15 @@ export default function DriverDetailPage() {
   if (error || !driver) {
     return (
       <section className="page-shell">
-        <p className="error-message">{error || "Driver not found."}</p>
+        <ErrorState
+          title={error ? "Can't load this driver" : "Driver not found"}
+          message={
+            error
+              ? "The record is unavailable — this is a connection problem, not a deleted driver."
+              : "This driver no longer exists, or you don't have access to it."
+          }
+          onRetry={error ? () => window.location.reload() : undefined}
+        />
       </section>
     );
   }
@@ -98,37 +161,27 @@ export default function DriverDetailPage() {
 
       <DriverStatsCard stats={stats} />
 
-      <div className="trip-detail-card">
-        <h2 className="trip-timeline-title">Trip History</h2>
-        {trips.length === 0 ? (
-          <p className="dispatch-empty-text">No trips yet.</p>
-        ) : (
-          <table className="trips-data-table">
-            <thead>
-              <tr>
-                <th>Trip ID</th>
-                <th>Vehicle</th>
-                <th>Destination</th>
-                <th>Status</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trips.map((trip) => (
-                <tr key={trip.id} onClick={() => navigate(`/trips/${trip.id}`)}>
-                  <td>#{trip.id}</td>
-                  <td>{vehiclesById[trip.vehicleId]?.plateNumber || `Vehicle #${trip.vehicleId}`}</td>
-                  <td>{trip.destination || "—"}</td>
-                  <td>
-                    <TripStatusBadge status={trip.status} />
-                  </td>
-                  <td>{trip.createdAt ? new Date(trip.createdAt).toLocaleDateString() : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <section className="trip-detail-section">
+        <h2 className="section-title">Trip history</h2>
+        <DataTable
+          label="Trip history"
+          caption={`Trips assigned to ${driver.fullName}`}
+          columns={tripColumns}
+          rows={trips}
+          rowKey={(trip) => trip.id}
+          density="compact"
+          sort={sort}
+          onSortChange={setSort}
+          onRowActivate={(trip) => navigate(`/trips/${trip.id}`)}
+          rowLabel={(trip) => `View trip #${trip.id}`}
+          empty={{
+            illustration: EmptyTruckIllustration,
+            title: "No trips yet",
+            subtitle: `${driver.fullName} hasn't been assigned a trip.`,
+            action: { label: "Dispatch a trip", onClick: () => navigate("/dispatch") },
+          }}
+        />
+      </section>
     </div>
   );
 }

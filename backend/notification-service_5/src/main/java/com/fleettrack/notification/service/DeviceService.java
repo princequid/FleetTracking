@@ -33,8 +33,18 @@ public class DeviceService {
         log.debug("Registered device token for recipient {}", recipientId);
     }
 
+    /**
+     * Removes a token only if it belongs to the given recipient.
+     *
+     * Deliberately silent when the token is absent or owned by someone else: a
+     * 404-vs-204 distinction here would let a caller probe whether an arbitrary
+     * token exists. The caller's own tokens are removed; nothing else changes.
+     */
     @Transactional
-    public void unregister(String token) {
-        if (token != null && !token.isBlank()) repository.deleteByToken(token);
+    public void unregisterForUser(Long recipientId, String token) {
+        if (recipientId == null || token == null || token.isBlank()) return;
+        repository.findByToken(token)
+                .filter(existing -> recipientId.equals(existing.getRecipientId()))
+                .ifPresent(repository::delete);
     }
 }

@@ -40,6 +40,9 @@ function ContactRow({ icon, title, sub, onPress, C, styles }) {
     <Pressable
       style={styles.contactRow}
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
+      accessibilityRole="button"
+      // Title and subtitle read as one control rather than two fragments.
+      accessibilityLabel={`${title}. ${sub}`}
     >
       <View style={styles.contactIcon}>
         <Feather name={icon} size={18} color={C.navyPrimary} />
@@ -62,7 +65,16 @@ function FaqItem({ item, open, onToggle, C, styles }) {
 
   return (
     <View style={styles.faqCard}>
-      <Pressable style={styles.faqHeader} onPress={onToggle}>
+      <Pressable
+        style={styles.faqHeader}
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityLabel={item.q}
+        // The chevron rotation is the only cue that this expands; `expanded`
+        // is what conveys it non-visually.
+        accessibilityState={{ expanded: open }}
+        accessibilityHint={open ? 'Collapses the answer' : 'Expands the answer'}
+      >
         <Text style={styles.faqQuestion}>{item.q}</Text>
         <Animated.View style={chevronStyle}>
           <Feather name="chevron-right" size={16} color={C.text3} />
@@ -103,7 +115,13 @@ export default function HelpSupportScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
+        <Pressable
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
           <Feather name="chevron-left" size={20} color="#fff" />
         </Pressable>
         <Text style={styles.headerTitle}>Help & Support</Text>

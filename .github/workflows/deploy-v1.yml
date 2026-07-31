@@ -1,0 +1,120 @@
+name: Deploy
+
+# Manual trigger only, behind a protected environment.
+#
+# Deployment is currently a human running `docker compose up -d --build` over SSH
+# (see DEPLOYMENT.md). This workflow makes that repeatable and auditable without
+# making it automatic — an accidental push must never reach production, and the
+# `environment: production` gate lets you require a reviewer.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST     VM hostname or IP
+#   DEPLOY_USER     SSH user
+#   DEPLOY_SSH_KEY  private key with access to that user
+#   DEPLOY_PATH     absolute path to the checkout on the VM
+#
+# Until those exist this fails fast at the preflight step, by design.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy"
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never run two deploys at once against the same box.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Preflight - required secrets present
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          missing=0
+          for v in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH; do
+            if [ -z "${!v}" ]; then
+              echo "::error::secret $v is not set"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      # Back up the database BEFORE migrating. Flyway is forward-only with no undo
+      # scripts, so a failed deploy is otherwise unrecoverable: rolling the image
+      # back does not roll the schema back, and `ddl-auto: validate` then refuses
+      # to start the previous version against the new schema.
+      - name: Back up database
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -euo pipefail; cd '$DEPLOY_PATH/infrastructure_1'; \
+             mkdir -p backups; \
+             stamp=\$(date -u +%Y%m%dT%H%M%SZ); \
+             docker compose exec -T postgres pg_dumpall -U fleettrack | gzip > \"backups/predeploy-\$stamp.sql.gz\"; \
+             ls -1t backups/predeploy-*.sql.gz | tail -n +11 | xargs -r rm --"
+
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          TARGET_REF: ${{ inputs.ref }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -euo pipefail; cd '$DEPLOY_PATH'; \
+             git fetch --all --prune; \
+             git checkout --detach '$TARGET_REF'; \
+             cd infrastructure_1; \
+             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build"
+
+      - name: Health check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -euo pipefail; cd '$DEPLOY_PATH/infrastructure_1'; \
+             for i in \$(seq 1 30); do \
+               if [ -z \"\$(docker compose ps --services --filter status=exited)\" ]; then \
+                 echo 'all services running'; docker compose ps; exit 0; \
+               fi; \
+               sleep 10; \
+             done; \
+             echo '::error::services did not settle within 5 minutes'; \
+             docker compose ps; exit 1"
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

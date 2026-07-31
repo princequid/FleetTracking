@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,16 +30,21 @@ public class DriverController {
     private static final List<String> READ_ROLES  = List.of("ADMIN", "DISPATCHER", "SUPER_ADMIN");
     private static final List<String> WRITE_ROLES = List.of("ADMIN", "SUPER_ADMIN");
 
+    // NOTE on the explicit sort (both list endpoints): without it, findAll(pageable) has no
+    // ORDER BY and PostgreSQL may return rows in any order, so which 50 you get is not stable
+    // between identical requests. See TripController.getTrips for the full reasoning.
     @GetMapping
     public ResponseEntity<List<DriverProfileResponse>> getAllDrivers(
-            @PageableDefault(size = 50) Pageable pageable, HttpServletRequest request) {
+            @PageableDefault(size = 50, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            HttpServletRequest request) {
         requireRole(request, READ_ROLES);
         return ResponseEntity.ok(driverService.getAllDrivers(pageable));
     }
 
     @GetMapping("/available")
     public ResponseEntity<List<DriverProfileResponse>> getActiveDrivers(
-            @PageableDefault(size = 50) Pageable pageable, HttpServletRequest request) {
+            @PageableDefault(size = 50, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            HttpServletRequest request) {
         requireRole(request, READ_ROLES);
         return ResponseEntity.ok(driverService.getActiveDrivers(pageable));
     }

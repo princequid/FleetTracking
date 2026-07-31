@@ -109,7 +109,13 @@ export default function LoginScreen() {
         <View style={[styles.bottomSection, { paddingBottom: Math.max(40, insets.bottom + 16) }]}>
           <Animated.View style={{ transform: [{ translateX: formShake }] }}>
             {!!error && (
-              <Animated.View style={[styles.errorBanner, { opacity: errorOpacity }]}>
+              <Animated.View
+                style={[styles.errorBanner, { opacity: errorOpacity }]}
+                // A failed sign-in shakes the form and shows red text. Neither
+                // reaches a screen-reader user, so announce it.
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+              >
                 <Feather name="alert-circle" size={14} color={C.red} style={{ marginRight: 6 }} />
                 <Text style={styles.errorText} numberOfLines={1}>{error}</Text>
               </Animated.View>
@@ -124,10 +130,17 @@ export default function LoginScreen() {
                   onChangeText={setEmail}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  // autoComplete lets the OS offer the saved address — a driver
+                  // signing in on a cold morning shouldn't type it out.
+                  autoComplete="email"
+                  textContentType="emailAddress"
                   placeholder="you@example.com"
                   placeholderTextColor={C.text3}
                   onFocus={() => setEmailFocused(true)}
                   onBlur={() => setEmailFocused(false)}
+                  // The visible "Email address" label is a sibling Text, which a
+                  // screen reader has no way to associate with this field.
+                  accessibilityLabel="Email address"
                 />
               </View>
             </View>
@@ -140,19 +153,36 @@ export default function LoginScreen() {
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPw}
+                  autoComplete="current-password"
+                  textContentType="password"
                   placeholder="••••••••"
                   placeholderTextColor={C.text3}
                   onFocus={() => setPasswordFocused(true)}
                   onBlur={() => setPasswordFocused(false)}
                   onSubmitEditing={handleLogin}
+                  accessibilityLabel="Password"
                 />
-                <TouchableOpacity onPress={() => setShowPw((s) => !s)} style={styles.eyeBtn}>
+                <TouchableOpacity
+                  onPress={() => setShowPw((s) => !s)}
+                  style={styles.eyeBtn}
+                  // Icon-only. The label has to flip with the state, or it
+                  // announces the wrong action half the time.
+                  accessibilityRole="button"
+                  accessibilityLabel={showPw ? 'Hide password' : 'Show password'}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
                   <Feather name={showPw ? 'eye-off' : 'eye'} size={18} color={C.text3} />
                 </TouchableOpacity>
               </View>
             </View>
 
-            <TouchableOpacity style={styles.forgotRow} onPress={() => router.push('/(auth)/forgot-password')}>
+            <TouchableOpacity
+              style={styles.forgotRow}
+              onPress={() => router.push('/(auth)/forgot-password')}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password?"
+              accessibilityHint="Sends a reset link to your email"
+            >
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
@@ -162,6 +192,11 @@ export default function LoginScreen() {
                 onPress={handleLogin}
                 disabled={loading}
                 activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel="Sign in"
+                // While the request is in flight the button shows a spinner and
+                // nothing else; `busy` is what conveys that non-visually.
+                accessibilityState={{ disabled: loading, busy: loading }}
               >
                 {loading ? (
                   <LoadingSpinner color="#fff" />

@@ -9,6 +9,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -40,16 +41,21 @@ public class VehicleController {
         return ResponseEntity.status(HttpStatus.CREATED).body(vehicleService.createVehicle(req));
     }
 
+    // NOTE on the explicit sort (both list endpoints): without it, findAll(pageable) has no
+    // ORDER BY and PostgreSQL may return rows in any order, so which 50 you get is not stable
+    // between identical requests. See TripController.getTrips for the full reasoning.
     @GetMapping
     public ResponseEntity<List<VehicleResponse>> getAllVehicles(
-            @PageableDefault(size = 50) Pageable pageable, HttpServletRequest r) {
+            @PageableDefault(size = 50, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            HttpServletRequest r) {
         requireRole(r, LIST_ROLES);
         return ResponseEntity.ok(vehicleService.getAllVehicles(pageable));
     }
 
     @GetMapping("/available")
     public ResponseEntity<List<VehicleResponse>> getAvailableVehicles(
-            @PageableDefault(size = 50) Pageable pageable, HttpServletRequest r) {
+            @PageableDefault(size = 50, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            HttpServletRequest r) {
         requireRole(r, AVAILABLE_ROLES);
         return ResponseEntity.ok(vehicleService.getAvailableVehicles(pageable));
     }

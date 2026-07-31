@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import api from '../services/api_1';
 import { useAlertsStore } from '../store/alertsStore';
+import { TRIP_PAGE_SIZE } from '../constants/config';
 
 const ACTIVE_STATUSES = ['ASSIGNED', 'STARTED', 'EN_ROUTE', 'ARRIVED'];
 
@@ -15,7 +16,7 @@ export function useAlertsPoller() {
 
     const fetchActive = async () => {
       try {
-        const res = await api.get('/trips');
+        const res = await api.get('/trips', { params: { size: TRIP_PAGE_SIZE } });
         const raw = res.data;
         const all = Array.isArray(raw) ? raw
           : Array.isArray(raw?.content) ? raw.content

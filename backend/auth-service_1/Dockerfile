@@ -3,15 +3,15 @@ FROM maven:3.9-eclipse-temurin-17 AS shared-events-build
 WORKDIR /shared-events
 COPY shared-events_5/pom.xml .
 COPY shared-events_5/src ./src
-RUN mvn clean install -DskipTests -q
+RUN mvn clean install -DskipTests -q -Dmaven.wagon.http.retryHandler.count=5 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.rto=60000
 
 # Stage 2: Build auth-service (inherits shared-events from stage 1's .m2)
 FROM shared-events-build AS build
 WORKDIR /app
 COPY auth-service_1/pom.xml .
-RUN mvn dependency:go-offline
+RUN mvn dependency:go-offline -Dmaven.wagon.http.retryHandler.count=5 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.rto=60000
 COPY auth-service_1/src ./src
-RUN mvn package -DskipTests -q
+RUN mvn package -DskipTests -q -Dmaven.wagon.http.retryHandler.count=5 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.rto=60000
 
 # Stage 3: Runtime
 FROM eclipse-temurin:17-jre-alpine

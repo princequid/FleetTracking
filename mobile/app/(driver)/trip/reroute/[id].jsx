@@ -13,7 +13,12 @@ export default function RerouteScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
           <Feather name="chevron-left" size={20} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.title}>Reroute</Text>

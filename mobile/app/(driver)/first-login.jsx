@@ -83,10 +83,21 @@ export default function FirstLoginScreen() {
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry={!showPw}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
                     placeholder="At least 8 characters"
                     placeholderTextColor={C.text3}
+                    accessibilityLabel="New password"
+                    accessibilityHint="Must be at least 8 characters"
                   />
-                  <Pressable onPress={() => setShowPw((s) => !s)} style={styles.eyeBtn}>
+                  <Pressable
+                    onPress={() => setShowPw((s) => !s)}
+                    style={styles.eyeBtn}
+                    accessibilityRole="button"
+                    // One toggle drives both fields on this screen.
+                    accessibilityLabel={showPw ? 'Hide passwords' : 'Show passwords'}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
                     <Feather name={showPw ? 'eye-off' : 'eye'} size={18} color={C.text3} />
                   </Pressable>
                 </View>
@@ -99,26 +110,57 @@ export default function FirstLoginScreen() {
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     secureTextEntry={!showPw}
+                    autoComplete="new-password"
+                    textContentType="newPassword"
                     placeholder="Re-enter your password"
                     placeholderTextColor={C.text3}
                     onSubmitEditing={handleSave}
+                    accessibilityLabel="Confirm password"
                   />
                 </View>
               </View>
 
-              <Pressable style={[styles.primaryBtn, loading && { opacity: 0.8 }]} onPress={handleSave} disabled={loading}>
+              <Pressable
+                style={[styles.primaryBtn, loading && { opacity: 0.8 }]}
+                onPress={handleSave}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Save new password"
+                accessibilityState={{ disabled: loading, busy: loading }}
+              >
                 {loading ? <LoadingSpinner color="#fff" /> : <Text style={styles.primaryBtnText}>Save new password</Text>}
               </Pressable>
-              <Pressable style={styles.textBtn} onPress={() => setChanging(false)} disabled={loading}>
+              <Pressable
+                style={styles.textBtn}
+                onPress={() => setChanging(false)}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                accessibilityState={{ disabled: loading }}
+              >
                 <Text style={styles.textBtnText}>Back</Text>
               </Pressable>
             </>
           ) : (
             <>
-              <Pressable style={[styles.primaryBtn, loading && { opacity: 0.8 }]} onPress={() => setChanging(true)} disabled={loading}>
+              <Pressable
+                style={[styles.primaryBtn, loading && { opacity: 0.8 }]}
+                onPress={() => setChanging(true)}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Change my password"
+                accessibilityState={{ disabled: loading }}
+              >
                 <Text style={styles.primaryBtnText}>Change my password</Text>
               </Pressable>
-              <Pressable style={styles.secondaryBtn} onPress={() => acknowledge(null)} disabled={loading}>
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => acknowledge(null)}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Keep my current password"
+                accessibilityState={{ disabled: loading, busy: loading }}
+              >
                 {loading ? <LoadingSpinner color={C.navyPrimary} /> : <Text style={styles.secondaryBtnText}>Keep my current password</Text>}
               </Pressable>
             </>

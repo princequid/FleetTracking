@@ -56,7 +56,17 @@ function TabButton({ tab, isActive, showDot, onPress }) {
   };
 
   return (
-    <Pressable style={ss.tabBtn} onPress={handlePress}>
+    <Pressable
+      style={ss.tabBtn}
+      onPress={handlePress}
+      // The whole primary navigation announced as four unlabelled buttons.
+      // `tab` + selected state is what tells a screen-reader user where they
+      // are; the dot is folded into the name because a red dot they can't see
+      // is otherwise the only signal that an alert is waiting.
+      accessibilityRole="tab"
+      accessibilityState={{ selected: isActive }}
+      accessibilityLabel={showDot ? `${tab.label}, new alerts` : tab.label}
+    >
       <Animated.View style={[ss.tabActiveBg, bgStyle]} />
       <Animated.View style={[ss.tabContent, itemStyle]}>
         <Feather

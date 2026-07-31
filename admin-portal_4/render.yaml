@@ -1,0 +1,68 @@
+# Render Blueprint for the FleetSync admin portal (static site).
+#
+# WHY THIS FILE EXISTS — the security headers below, not the build config.
+#
+# The API gateway already sets CSP/HSTS/X-Frame-Options on its own responses
+# (SecurityHeadersFilter), but those headers only govern API responses. They do nothing for
+# the portal's own HTML, which Render serves. Until this is applied, the portal ships with
+# no CSP at all.
+#
+# That matters here specifically because the session lives in localStorage
+# (`fleettrack-auth`, written by zustand persist), which is readable by any script that
+# executes on the page. CSP is the control that stops an injected script from running in
+# the first place. See docs/AUDIT_REPORT_2026-07-31.md (S-1, S-2).
+#
+# ── HOW TO APPLY ──────────────────────────────────────────────────────────────────────
+# This file only takes effect if the service is managed as a Render Blueprint
+# (Dashboard → Blueprints → New Blueprint Instance, pointing at this repo).
+#
+# If the portal is currently a dashboard-created static site (the common case), either
+# adopt the Blueprint, or copy the four headers below into:
+#   Dashboard → <service> → Settings → Headers → Add Header
+# The values are identical either way.
+#
+# ── CSP NOTES ─────────────────────────────────────────────────────────────────────────
+# - connect-src must list every origin the app calls directly: the API gateway, the
+#   self-hosted OSRM, and Nominatim for geocoding. Adding a new backend origin without
+#   adding it here will surface as a blocked request in the console.
+# - 'unsafe-inline' is present for style-src ONLY. Leaflet and Recharts both set inline
+#   styles on elements they create at runtime; without it the map and charts render
+#   unstyled. It is NOT present for script-src, which is where it would actually matter.
+# - frame-ancestors 'none' is the modern replacement for X-Frame-Options; both are sent
+#   because older browsers only honour the latter.
+
+services:
+  - type: web
+    runtime: static
+    name: fleetsync-admin
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    # SPA routing — every path must serve index.html so React Router can handle it.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: >-
+          default-src 'self';
+          script-src 'self';
+          style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+          font-src 'self' https://fonts.gstatic.com;
+          img-src 'self' data: blob: https://*.tile.openstreetmap.org;
+          connect-src 'self' https://fleettrack.duckdns.org wss://fleettrack.duckdns.org
+          https://fleettrack-routing.duckdns.org https://nominatim.openstreetmap.org;
+          frame-ancestors 'none';
+          base-uri 'none';
+          object-src 'none';
+          form-action 'self'
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin

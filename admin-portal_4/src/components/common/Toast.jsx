@@ -71,10 +71,23 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={showToast}>
       {children}
-      <div className="toast-container">
-        {toasts.map((t) => (
-          <ToastItem key={t.id} {...t} onDismiss={dismiss} />
-        ))}
+      {/* Toasts are the only feedback channel for save results and every
+          dispatch-form validation message, so they must be announced. Errors use
+          role="alert" (assertive) because they interrupt a task; everything else
+          is polite so it doesn't cut across the user's current context. */}
+      <div className="toast-container" role="status" aria-live="polite" aria-atomic="false">
+        {toasts
+          .filter((t) => t.type !== "error")
+          .map((t) => (
+            <ToastItem key={t.id} {...t} onDismiss={dismiss} />
+          ))}
+      </div>
+      <div className="toast-container toast-container-alerts" role="alert" aria-live="assertive">
+        {toasts
+          .filter((t) => t.type === "error")
+          .map((t) => (
+            <ToastItem key={t.id} {...t} onDismiss={dismiss} />
+          ))}
       </div>
     </ToastContext.Provider>
   );

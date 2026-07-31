@@ -104,7 +104,14 @@ export default function ForgotPasswordPage() {
                 </div>
 
                 <button className="login-button" type="submit" disabled={loading}>
-                  {loading ? <span className="login-spinner" /> : "Send reset link"}
+                  {loading ? (
+                    <span className="login-button-loading">
+                      <span className="login-spinner" />
+                      Sending link…
+                    </span>
+                  ) : (
+                    "Send reset link"
+                  )}
                 </button>
 
                 {error && <div className="login-error">{error}</div>}

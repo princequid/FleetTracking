@@ -64,10 +64,32 @@ public class LoginRateLimitFilter implements GlobalFilter, Ordered {
         return chain.filter(exchange);
     }
 
+    /**
+     * Resolves the client IP for rate-limit bucketing.
+     *
+     * Takes the RIGHT-most X-Forwarded-For entry, not the left-most. XFF is
+     * append-only: each proxy adds the address it received the request from, so
+     * the last entry is the one written by our own trusted proxy (Caddy/nginx)
+     * and is the only value a client cannot forge. The left-most entry is fully
+     * attacker-controlled — sending a random value per request created a fresh
+     * bucket every time and made the limit unlimited.
+     *
+     * Note this trusts exactly one proxy hop. If another reverse proxy is placed
+     * in front, increase TRUSTED_PROXY_HOPS to match, or the value taken will be
+     * one the client supplied.
+     */
+    private static final int TRUSTED_PROXY_HOPS = 1;
+
     private String clientIp(ServerWebExchange exchange) {
         String forwarded = exchange.getRequest().getHeaders().getFirst("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+            String[] hops = forwarded.split(",");
+            int index = hops.length - TRUSTED_PROXY_HOPS;
+            if (index < 0) index = 0;
+            String candidate = hops[index].trim();
+            if (!candidate.isBlank()) {
+                return candidate;
+            }
         }
         InetSocketAddress remote = exchange.getRequest().getRemoteAddress();
         return remote != null ? remote.getAddress().getHostAddress() : "unknown";

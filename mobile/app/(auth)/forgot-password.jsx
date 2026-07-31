@@ -68,7 +68,12 @@ export default function ForgotPasswordScreen() {
         <Text style={styles.doneSub}>
           If {email.trim()} is registered, we've sent a link to reset your password.
         </Text>
-        <TouchableOpacity style={styles.doneBackBtn} onPress={() => router.replace('/(auth)/login_1')}>
+        <TouchableOpacity
+          style={styles.doneBackBtn}
+          onPress={() => router.replace('/(auth)/login_1')}
+          accessibilityRole="button"
+          accessibilityLabel="Back to sign in"
+        >
           <Text style={styles.doneBackText}>Back to sign in</Text>
         </TouchableOpacity>
       </View>
@@ -84,7 +89,13 @@ export default function ForgotPasswordScreen() {
         bounces={false}
       >
         <View style={[styles.topSection, { paddingTop: Math.max(60, insets.top + 20) }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} hitSlop={8}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
             <Feather name="chevron-left" size={20} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.heroLine}>Forgot your{'\n'}<Text style={styles.heroAccent}>password?</Text></Text>
@@ -94,7 +105,11 @@ export default function ForgotPasswordScreen() {
         <View style={[styles.bottomSection, { paddingBottom: Math.max(40, insets.bottom + 16) }]}>
           <Animated.View style={{ transform: [{ translateX: formShake }] }}>
             {!!error && (
-              <Animated.View style={[styles.errorBanner, { opacity: errorOpacity }]}>
+              <Animated.View
+                style={[styles.errorBanner, { opacity: errorOpacity }]}
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+              >
                 <Feather name="alert-circle" size={14} color={C.red} style={{ marginRight: 6 }} />
                 <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
               </Animated.View>
@@ -109,9 +124,12 @@ export default function ForgotPasswordScreen() {
                   onChangeText={setEmail}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  autoComplete="email"
+                  textContentType="emailAddress"
                   placeholder="you@example.com"
                   placeholderTextColor={C.text3}
                   onSubmitEditing={handleSubmit}
+                  accessibilityLabel="Email address"
                 />
               </View>
             </View>
@@ -121,6 +139,9 @@ export default function ForgotPasswordScreen() {
               onPress={handleSubmit}
               disabled={loading}
               activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="Send reset link"
+              accessibilityState={{ disabled: loading, busy: loading }}
             >
               {loading ? <LoadingSpinner color="#fff" /> : <Text style={styles.submitText}>Send reset link</Text>}
             </TouchableOpacity>

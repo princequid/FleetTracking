@@ -1,11 +1,13 @@
 import React from "react";
-import { getStatusStyle } from "../../constants/tripStatus";
+import Badge from "../common/Badge";
+import { getStatusVariant, getStatusLabel } from "../../constants/tripStatus";
 
 export default function TripStatusBadge({ status }) {
-  const style = getStatusStyle(status);
+  // Renders through the shared Badge so contrast comes from theme-aware tokens
+  // rather than inline hex, and shows a human label instead of the raw enum.
   return (
-    <span className="status-badge" style={{ background: style.background, color: style.color }}>
-      {status}
-    </span>
+    <Badge variant={getStatusVariant(status)} dot>
+      {getStatusLabel(status)}
+    </Badge>
   );
 }

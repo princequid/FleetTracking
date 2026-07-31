@@ -9,6 +9,7 @@ import { Feather } from '@expo/vector-icons';
 import api from '../../../../services/api_1';
 import { mediaService } from '../../../../services/mediaService_3';
 import { useTheme } from '../../../../theme/ThemeContext';
+import { TRIP_PAGE_SIZE } from '../../../../constants/config';
 
 // Delivery-photo types shown on the trip, in capture order (incident/profile excluded).
 const PHOTO_ORDER = { PRE_DISPATCH: 1, STOP_POD: 2, POD: 3 };
@@ -99,10 +100,32 @@ function StepCard({ step, index, activeIndex, styles, C }) {
   }, [isActive]);
 
   const bg = isDone ? C.greenLight : isActive ? C.accentSoft : C.bg;
-  const opacity = !isDone && !isActive ? 0.4 : 1;
+  const locked = !isDone && !isActive;
+
+  /**
+   * Upcoming steps used to be dimmed with `opacity: 0.4`, which put the label at
+   * 2.14:1 in dark mode and 1.70:1 in light — both far under the 4.5:1 AA floor
+   * for 14px text, and visibly unreadable on a phone in daylight.
+   *
+   * The de-emphasis now comes from colour choice instead: C.text3 at full
+   * opacity measures 6.20:1 dark / 4.83:1 light, still clearly quieter than the
+   * green "done" and navy "current" rows but actually legible. Opacity is the
+   * wrong tool for hierarchy when it drags contrast below the floor.
+   */
+  const numberColor = locked ? C.text2 : '#fff';
 
   return (
-    <Animated.View style={[styles.stepCard, { backgroundColor: bg, opacity, transform: [{ scale: breathe }] }]}>
+    <Animated.View
+      style={[styles.stepCard, { backgroundColor: bg, transform: [{ scale: breathe }] }]}
+      accessible
+      accessibilityRole="text"
+      // One announcement per step, including its state — a screen reader user
+      // can't see the green tick or the muted badge.
+      accessibilityLabel={
+        `Step ${index + 1}: ${step.label}. ` +
+        (isDone ? 'Completed.' : isActive ? 'Current step.' : 'Not yet available.')
+      }
+    >
       <View style={[
         styles.stepBadge,
         isDone   ? styles.stepBadgeDone   :
@@ -110,7 +133,9 @@ function StepCard({ step, index, activeIndex, styles, C }) {
       ]}>
         {isDone
           ? <Feather name="check" size={14} color="#fff" />
-          : <Text style={styles.stepNum}>{index + 1}</Text>
+          // White on the locked badge (C.border) was near-invisible in light
+          // mode; text2 reads on both the light and dark border fills.
+          : <Text style={[styles.stepNum, { color: numberColor }]}>{index + 1}</Text>
         }
       </View>
       <View style={{ flex: 1 }}>
@@ -120,7 +145,7 @@ function StepCard({ step, index, activeIndex, styles, C }) {
         {isDone   && <Text style={styles.stepDoneText}>Completed</Text>}
         {isActive && <Text style={styles.stepActiveText}>Current step</Text>}
       </View>
-      <Feather name={step.icon} size={18} color={isDone ? C.green : isActive ? C.navyPrimary : C.border} />
+      <Feather name={step.icon} size={18} color={isDone ? C.green : isActive ? C.navyPrimary : C.text3} />
     </Animated.View>
   );
 }
@@ -184,7 +209,7 @@ export default function TripDetailScreen() {
 
   useEffect(() => {
     // /trips is scoped to the signed-in driver server-side, so this only sees their trips.
-    api.get('/trips')
+    api.get('/trips', { params: { size: TRIP_PAGE_SIZE } })
       .then((r) => {
         const raw = r.data;
         const all = Array.isArray(raw) ? raw
@@ -222,7 +247,12 @@ export default function TripDetailScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.navyDark }}>
       <View style={[styles.header, { paddingTop: Math.max(12, insets.top + 12) }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
           <Feather name="chevron-left" size={20} color="#fff" />
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
@@ -280,7 +310,14 @@ export default function TripDetailScreen() {
           <View style={[styles.mapPin, { bottom: 20, right: 20 }]}>
             <Feather name="map-pin" size={16} color={C.red} />
           </View>
-          <TouchableOpacity style={styles.expandBtn}>
+          {/* Icon-only, so without a label it announces as nothing at all. */}
+          <TouchableOpacity
+            style={styles.expandBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Expand map"
+            accessibilityHint="Opens the full-screen navigation map"
+            onPress={() => router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: tripId } })}
+          >
             <Feather name="maximize-2" size={14} color={C.text3} />
           </TouchableOpacity>
         </View>
@@ -347,6 +384,9 @@ export default function TripDetailScreen() {
                   style={styles.photoItem}
                   activeOpacity={0.85}
                   onPress={() => setLightboxPhoto(photo)}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={photo.caption || photo.type || 'Delivery photo'}
+                  accessibilityHint="Opens the photo full screen"
                 >
                   <Image source={{ uri: photo.photoUrl }} style={styles.photoThumb} />
                   <Text style={styles.photoCaption} numberOfLines={1}>
@@ -374,6 +414,9 @@ export default function TripDetailScreen() {
             <TouchableOpacity
               style={styles.actionBtn}
               onPress={() => router.push({ pathname: '/(driver)/trip/[id]/map', params: { id: tripId, focus: 'driver' } })}
+              accessibilityRole="button"
+              accessibilityLabel={navButtonLabel}
+              accessibilityHint="Opens turn-by-turn navigation"
             >
               <Feather name="navigation" size={16} color="#fff" style={{ marginRight: 8 }} />
               <Text style={styles.actionBtnText}>{navButtonLabel}</Text>
@@ -384,7 +427,13 @@ export default function TripDetailScreen() {
         <View style={styles.dangerCard}>
           <Text style={styles.dangerTitle}>Having a problem?</Text>
           <Text style={styles.dangerSub}>Report any issues or incidents during this trip</Text>
-          <TouchableOpacity style={styles.reportBtn} onPress={() => router.push(`/(driver)/incident/report/${tripId}`)}>
+          <TouchableOpacity
+            style={styles.reportBtn}
+            onPress={() => router.push(`/(driver)/incident/report/${tripId}`)}
+            accessibilityRole="button"
+            accessibilityLabel="Report incident"
+            accessibilityHint="Opens the incident report form for this trip"
+          >
             <Text style={styles.reportBtnText}>Report incident</Text>
           </TouchableOpacity>
         </View>
@@ -401,6 +450,9 @@ export default function TripDetailScreen() {
           style={styles.lightboxOverlay}
           activeOpacity={1}
           onPress={() => setLightboxPhoto(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Close photo"
+          accessibilityHint="Returns to the trip details"
         >
           {lightboxPhoto && (
             <Image

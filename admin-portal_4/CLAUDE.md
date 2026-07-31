@@ -43,6 +43,27 @@ The sidebar is an always-dark surface and has dedicated tokens (`--sidebar-bg`,
 `--sidebar-text`, `--sidebar-text-active`, …) rather than inheriting page surfaces, which
 invert between themes.
 
+### Text on a fill vs. text on a surface
+
+Two traps, both of which shipped as real dark-mode contrast bugs before being fixed:
+
+**`--color-white` is a surface token, not a colour.** It is the card face, and dark mode
+remaps it to `#151f33`. Using it as a *text* colour on a navy or teal fill produced
+near-black-on-navy at 1.46:1 in dark mode. For a label sitting on a fill that does **not**
+invert — navy buttons, teal dots, avatar shades, the login panel — use **`--color-on-brand`**.
+It is deliberately absent from the dark block, and must stay that way.
+
+**`--color-navy` is a fill, and is not remapped in dark.** As text on a card it also
+measured 1.46:1. For brand-coloured *text or icons* use **`--color-primary`**, which lifts to
+`brand-400` in dark (5.3:1 on the card face, 6.6:1 on white in light).
+
+Same split for teal: `--color-teal` is tuned to sit under white as a fill, and only reaches
+3.74:1 as small text on white. Teal text/icons use **`--color-teal-text`** (`teal-700` light,
+`teal-400` dark).
+
+The rule of thumb: **ask whether the thing behind your text inverts between themes.** If it
+doesn't, the text colour must not either.
+
 ## Typography
 
 Two faces, loaded in `index.html`:
@@ -72,6 +93,12 @@ float in a blur. `--shadow-xs` → `--shadow-xl`, plus `--shadow-focus` for focu
 | `Sparkline` — dependency-free stretched SVG | a Recharts `ResponsiveContainer` per tile |
 | `Icons.jsx` — the single icon system | importing `lucide-react` directly in a component |
 | `.btn` + variant | ad-hoc button styling |
+| `TableCard` — the surface every data table sits on | `<div className="trips-table-card">` |
+
+`TableCard` exists for one reason: below 768px that card becomes an `overflow-x: auto` scroll
+container, and a scroll container that can't take focus can't be scrolled by keyboard, so the
+off-screen columns are unreachable (WCAG 2.1.1). It owns the `tabIndex`/`role="region"`/
+`aria-label` triple in one place instead of six pages. Always pass a `label`.
 
 Buttons: `primary` (the only gradient — one per view), `secondary`, `outline`, `ghost`,
 `success`, `warning`, `danger`. Sizes `xs`/`sm`/`md`/`lg`, plus `.btn-icon` and `.btn-block`.
@@ -111,6 +138,72 @@ before adding `!important` — append to this layer instead.
 - Trend and status must not rely on colour alone; pair with a glyph or label.
 - Icons are `aria-hidden` by default. Pass `title` only when the glyph is the sole carrier
   of meaning (an icon-only control with no visible label).
+
+## Styling stack — a settled decision
+
+This portal styles with **plain CSS and the token system above**, in one `src/index.css`.
+That is a decision, not an accident, and it has been re-evaluated:
+
+**Do not install Tailwind CSS, and do not install shadcn/ui.** Tailwind would stand up a
+second, parallel styling system beside ~6.5k lines of already-tokenised CSS — two sources of
+truth for the same colours, spacing and radii, and a dark mode that only one of them knows
+about. shadcn/ui hard-requires Tailwind plus a `@/` alias, and its Button/Card/Dialog/Badge
+would duplicate `Button.jsx`, `Modal.jsx`, `Badge.jsx`, `EmptyState.jsx` and `Skeleton.jsx`
+that already exist here and already consume the tokens.
+
+**Magic UI, Aceternity UI and 21st.dev are reference sources, not dependencies.** None of
+them ship as an npm package — they're copy-paste registries, and all three assume Tailwind +
+Framer Motion. Use them for *ideas* (an interaction pattern, a card composition, a text
+effect), then rebuild the idea against our tokens and `--transition-*` scale. Porting their
+markup verbatim drags in Tailwind by the back door.
+
+If a component genuinely needs animation beyond CSS transitions, raise it before adding a
+motion library — `KpiCard`'s count-up shows the bar for doing it dependency-free.
+
+## UI/UX audit tooling
+
+Playwright + axe-core are installed here for design work: layout verification across
+breakpoints, screenshot capture, and WCAG 2.1 AA auditing.
+
+| Command | What it does |
+|---|---|
+| `npm run test:ui` | Everything, on all three viewports |
+| `npm run ui:smoke` | Routes mount, theme toggle remaps tokens, fonts load |
+| `npm run ui:responsive` | Horizontal-overflow + tap-target checks per breakpoint |
+| `npm run ui:a11y` | axe WCAG 2.1 AA, light **and** dark |
+| `npm run ui:shots` | Full-page screenshots → `screenshots/<viewport>/` |
+| `npm run ui:report` | Opens the last HTML report |
+
+Viewport projects are `desktop` (1440×900), `tablet` (768×1024) and `mobile` (Pixel 7), so a
+failure names the breakpoint that broke. Scope a run with `--project=mobile`.
+
+The Spring Boot API is **not** running during these specs. That's deliberate: with fetches
+failing, the pages render their loading/empty/error states, which is exactly the surface most
+likely to be neglected. It also means **these specs cannot assert on data** — don't write one
+that does. `tests/helpers/auth.js` seeds the persisted zustand session directly to get past
+`PrivateRoute`; it bypasses login on purpose and is not a login-flow test.
+
+The a11y gate fails on **serious + critical** only. Moderate and minor findings are still
+written to an `axe-report.txt` attachment on every run, passing or not — read them before
+declaring a page done.
+
+## The redesign loop
+
+For any "improve/redesign page X" request, in order:
+
+1. **Inspect** — read the page and the components it already uses. Reuse beats rebuild.
+2. **Audit** — visual hierarchy, layout/spacing, typography scale, contrast, component
+   consistency, and the full state matrix: loading, empty, error, success, disabled, hover,
+   focus, confirmation.
+3. **Plan** — state what's wrong, what changes, what gets reused vs. created. Get agreement
+   before building beyond the prompt (see the working agreement below).
+4. **Implement** — tokens only, no new ad-hoc values, functionality untouched.
+5. **Verify** — `npm run ui:smoke && npm run ui:responsive`, then `npm run ui:a11y`.
+6. **Look at it** — `npm run ui:shots` and actually inspect the PNGs, both themes.
+7. **Report** — what changed, why, files touched, tests run, what's still open.
+
+Steps 5 and 6 are not optional garnish. A redesign that hasn't been screenshotted at 390px
+has not been checked.
 
 ## Working agreement
 

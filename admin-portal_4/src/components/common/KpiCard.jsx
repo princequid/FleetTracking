@@ -10,6 +10,10 @@ function useAnimatedNumber(value, duration = 650) {
   const numeric = typeof value === "number" && Number.isFinite(value);
   const [display, setDisplay] = useState(numeric ? 0 : value);
   const frameRef = useRef();
+  // Animate from the previous value, not from zero. The dashboard re-polls every
+  // 30s; starting at 0 each time made every tile count up from zero again on a
+  // refresh that moved a number by one.
+  const prevRef = useRef(numeric ? 0 : null);
 
   useEffect(() => {
     if (!numeric) {
@@ -21,11 +25,12 @@ function useAnimatedNumber(value, duration = 650) {
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
       setDisplay(value);
+      prevRef.current = value;
       return undefined;
     }
 
     const start = performance.now();
-    const from = 0;
+    const from = typeof prevRef.current === "number" ? prevRef.current : 0;
 
     const tick = (now) => {
       const t = Math.min((now - start) / duration, 1);
@@ -33,6 +38,7 @@ function useAnimatedNumber(value, duration = 650) {
       const eased = 1 - Math.pow(1 - t, 3);
       setDisplay(Math.round(from + (value - from) * eased));
       if (t < 1) frameRef.current = requestAnimationFrame(tick);
+      else prevRef.current = value;
     };
 
     frameRef.current = requestAnimationFrame(tick);

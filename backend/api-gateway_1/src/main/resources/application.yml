@@ -1,7 +1,10 @@
 server:
+  shutdown: graceful
   port: 8080
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: api-gateway
   cloud:
@@ -18,12 +21,12 @@ eureka:
     prefer-ip-address: true
 
 jwt:
-  secret: ${JWT_SECRET:dev-only-change-this-to-a-long-random-string-before-prod}
+  secret: ${JWT_SECRET}
 
 # Shared secret the gateway stamps on every downstream request; services require it.
 internal:
   service:
-    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+    secret: ${INTERNAL_SERVICE_SECRET}
 
 logging:
   level:

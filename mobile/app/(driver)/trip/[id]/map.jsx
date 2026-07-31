@@ -20,6 +20,7 @@ import { useTheme, useThemeMode } from '../../../../theme/ThemeContext';
 import VehicleMarker3D from '../../../../components/map/VehicleMarker3D';
 import Pin3D from '../../../../components/map/Pin3D';
 import { DARK_MAP_STYLE } from '../../../../constants/mapStyle';
+import { TRIP_PAGE_SIZE } from '../../../../constants/config';
 import api from '../../../../services/api_1';
 import { useNavStore } from '../../../../store/navStore_2';
 import { useTripStore } from '../../../../store/tripStore_2';
@@ -51,7 +52,25 @@ const PHASE = { APPROACH: 'APPROACH', AT_START: 'AT_START', TRIP: 'TRIP', ARRIVE
 // In-memory cache of a trip's resolved route/nav state, keyed by tripId. Survives
 // navigating away and back within the app session, so re-opening the map is instant
 // (no re-fetch/geocode/route). Cleared when the trip is marked arrived.
+//
+// Bounded to the few most recent trips: each entry holds the FULL decoded OSRM polyline
+// (fullCoords/completedCoords can be thousands of {latitude, longitude} objects on a long
+// route) plus the turn-by-turn step list. Entries were only ever removed on trip
+// completion, so a driver who opened several trips without completing them — or who
+// re-opened the same trip after a reroute — accumulated every route for the whole app
+// session with nothing ever releasing them. Map preserves insertion order, so deleting
+// the first key evicts the least-recently-inserted entry.
+const ROUTE_CACHE_MAX = 3;
 const routeCache = new Map();
+
+function cacheRoute(tripId, snapshot) {
+  // Re-inserting moves the key to the end, so a refreshed trip counts as most-recent.
+  routeCache.delete(tripId);
+  routeCache.set(tripId, snapshot);
+  while (routeCache.size > ROUTE_CACHE_MAX) {
+    routeCache.delete(routeCache.keys().next().value);
+  }
+}
 // Street-level navigation zoom. Both providers render vector detail well past this,
 // so 18 is a comfortable navigation zoom rather than a hard ceiling. Shared by
 // auto-zoom, follow and recenter so the camera never snaps between zoom levels.
@@ -69,30 +88,46 @@ const MAX_ZOOM = 20;
 const SCREEN_H = Dimensions.get('window').height;
 
 // ─── Step instruction builder ─────────────────────────────────────────────────
+/**
+ * Turns an OSRM step into a spoken/printed instruction.
+ *
+ * OSRM frequently returns an empty `name` — unnamed service roads, campus
+ * paths, minor junctions. This used to substitute the literal string
+ * "the road", which produced "Turn right onto the road" and, because the same
+ * fallback also fed the street-name label, printed "the road" twice on screen
+ * at once.
+ *
+ * Now a missing name simply drops the "onto …" clause. "Turn right" is both
+ * shorter and more honest than naming a road we can't name.
+ */
 function buildInstruction(step) {
-  const name = step.name || 'the road';
+  const name = step.name || null;
   const type = step.maneuver?.type  || '';
   const mod  = step.maneuver?.modifier || '';
 
-  if (type === 'depart')  return `Head onto ${name}`;
+  // " onto Main Street" / " on Main Street", or nothing at all.
+  const onto = name ? ` onto ${name}` : '';
+  const on   = name ? ` on ${name}`   : '';
+
+  if (type === 'depart')  return name ? `Head onto ${name}` : 'Start driving';
   if (type === 'arrive')  return 'You have arrived at your destination';
   if (type === 'roundabout' || type === 'rotary')
-    return `At the roundabout, exit onto ${name}`;
-  if (type === 'merge')   return `Merge onto ${name}`;
+    return name ? `At the roundabout, exit onto ${name}` : 'At the roundabout, take your exit';
+  if (type === 'merge')   return `Merge${onto}`;
   if (type === 'fork')
     return mod.includes('right')
-      ? `Keep right at the fork onto ${name}`
-      : `Keep left at the fork onto ${name}`;
+      ? `Keep right at the fork${onto}`
+      : `Keep left at the fork${onto}`;
   if (type === 'turn' || type === 'new name') {
-    if (mod === 'left')         return `Turn left onto ${name}`;
-    if (mod === 'right')        return `Turn right onto ${name}`;
-    if (mod === 'slight left')  return `Keep slightly left onto ${name}`;
-    if (mod === 'slight right') return `Keep slightly right onto ${name}`;
-    if (mod === 'sharp left')   return `Turn sharply left onto ${name}`;
-    if (mod === 'sharp right')  return `Turn sharply right onto ${name}`;
-    if (mod === 'straight')     return `Continue straight on ${name}`;
+    if (mod === 'left')         return `Turn left${onto}`;
+    if (mod === 'right')        return `Turn right${onto}`;
+    if (mod === 'slight left')  return `Keep slightly left${onto}`;
+    if (mod === 'slight right') return `Keep slightly right${onto}`;
+    if (mod === 'sharp left')   return `Turn sharply left${onto}`;
+    if (mod === 'sharp right')  return `Turn sharply right${onto}`;
+    if (mod === 'straight')     return `Continue straight${on}`;
   }
-  return `Continue on ${name}`;
+  return name ? `Continue on ${name}` : 'Continue';
 }
 
 function getManeuverIcon(type, modifier) {
@@ -222,7 +257,10 @@ function parseOsrmSteps(steps) {
     duration:         step.duration,
     maneuverType:     step.maneuver?.type     || 'turn',
     maneuverModifier: step.maneuver?.modifier || 'straight',
-    streetName:       step.name || 'the road',
+    // null, not 'the road' — the banner already guards on this being falsy and
+    // simply omits the label. The old fallback printed "the road" beside an
+    // instruction that also said "the road".
+    streetName:       step.name || null,
     startLocation: {
       latitude:  step.geometry.coordinates[0][1],
       longitude: step.geometry.coordinates[0][0],
@@ -1422,7 +1460,7 @@ export default function LiveMapScreen() {
 
     return () => {
       // Snapshot the current nav state so re-opening the map is instant (no reload)
-      routeCache.set(tripId, {
+      cacheRoute(tripId, {
         trip:            nav.current.trip,
         fullCoords:      nav.current.fullCoords,
         stopCoords:      nav.current.stopCoords,
@@ -1531,7 +1569,7 @@ export default function LiveMapScreen() {
     // start isn't blocked when offline (the details screen guards this too, and start is
     // best-effort — backend status reconciles).
     try {
-      const res = await api.get('/trips');
+      const res = await api.get('/trips', { params: { size: TRIP_PAGE_SIZE } });
       const raw = res.data;
       const all = Array.isArray(raw) ? raw
         : Array.isArray(raw?.content) ? raw.content
@@ -1702,6 +1740,13 @@ export default function LiveMapScreen() {
   // Each step is skipped automatically once its condition is already satisfied (e.g.
   // a driver who opens the map already standing at the pickup goes straight to the
   // pre-dispatch step — "Move to pickup" never shows).
+  // `formatDistance` returns the placeholder '––' before GPS/OSRM produce a
+  // real figure, and interpolating that straight into a label gave buttons that
+  // read "Move to pickup — ––" and "–– to destination". A distance we don't have
+  // yet should be absent from the label, not spelled out as dashes.
+  const hasDistance = Number.isFinite(distanceToDest) && distanceToDest > 0;
+  const distanceSuffix = hasDistance ? ` — ${formatDistance(distanceToDest)}` : '';
+
   const primaryBtn = (() => {
     if (phase === PHASE.ARRIVED) {
       return podUploaded
@@ -1711,7 +1756,12 @@ export default function LiveMapScreen() {
     if (phase === PHASE.TRIP) {
       return isWithin200m
         ? { label: 'Mark arrived', icon: 'map-pin', active: true,  loading: isMarkingArrived, onPress: handleMarkArrived, bg: C.green }
-        : { label: `${formatDistance(distanceToDest)} to destination`, icon: 'navigation', active: false, onPress: null };
+        : {
+            label: hasDistance ? `${formatDistance(distanceToDest)} to destination` : 'Driving to destination',
+            icon: 'navigation',
+            active: false,
+            onPress: null,
+          };
     }
     if (phase === PHASE.AT_START) {
       return preDispatchUploaded
@@ -1721,7 +1771,7 @@ export default function LiveMapScreen() {
     // APPROACH
     return nearStart
       ? { label: 'Capture pre-dispatch photo', icon: 'camera', active: true, onPress: handleCapturePreDispatch, bg: C.navyPrimary }
-      : { label: `Move to pickup — ${formatDistance(distanceToDest)}`, icon: 'navigation', active: true, onPress: handleReCenter, bg: C.navyPrimary };
+      : { label: `Move to pickup${distanceSuffix}`, icon: 'navigation', active: true, onPress: handleReCenter, bg: C.navyPrimary };
   })();
 
   // Optional per-stop POD: while driving (TRIP phase), if the driver is within the
@@ -1753,10 +1803,21 @@ export default function LiveMapScreen() {
         <Text style={styles.permSub}>
           Enable location in Settings to use turn-by-turn navigation.
         </Text>
-        <Pressable style={styles.permPrimaryBtn} onPress={() => Linking.openSettings()}>
+        <Pressable
+          style={styles.permPrimaryBtn}
+          onPress={() => Linking.openSettings()}
+          accessibilityRole="button"
+          accessibilityLabel="Enable location"
+          accessibilityHint="Opens system settings to grant location access"
+        >
           <Text style={styles.permPrimaryBtnText}>Enable location</Text>
         </Pressable>
-        <Pressable style={styles.permGhostBtn} onPress={() => router.back()}>
+        <Pressable
+          style={styles.permGhostBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Text style={styles.permGhostBtnText}>Go back</Text>
         </Pressable>
       </View>
@@ -1949,6 +2010,9 @@ export default function LiveMapScreen() {
                 onPress={handleBack}
                 onPressIn={() => { backBtnScale.value = withTiming(0.94, { duration: 80 }); }}
                 onPressOut={() => { backBtnScale.value = withSpring(1, { damping: 12 }); }}
+                accessibilityRole="button"
+                accessibilityLabel="Exit navigation"
+                accessibilityHint="Returns to trip details"
               >
                 <Feather name="arrow-left" size={20} color={C.navyPrimary} />
               </Pressable>
@@ -1973,6 +2037,9 @@ export default function LiveMapScreen() {
                 <Pressable
                   onPress={() => setVoice(v => !v)}
                   style={[styles.voiceBtn, { backgroundColor: voiceEnabled ? C.tealPale : '#F3F4F6' }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={voiceEnabled ? 'Mute voice guidance' : 'Unmute voice guidance'}
+                  accessibilityState={{ selected: voiceEnabled }}
                 >
                   <Feather
                     name={voiceEnabled ? 'volume-2' : 'volume-x'}
@@ -2020,24 +2087,50 @@ export default function LiveMapScreen() {
 
       {/* ── Map control column (right side) ── */}
       <View style={[styles.controlCol, { top: insets.top + 130 }]}>
+        {/* Every one of these map controls is an icon-only circle. Without a
+            label they are, to a screen reader, five identical unnamed buttons
+            floating over a map. The toggles also expose `selected` so their
+            on/off state isn't carried by teal tint alone. */}
         <Pressable
           style={[styles.controlBtn, isFollowingVehicle && styles.controlBtnActive]}
           onPress={handleReCenter}
+          accessibilityRole="button"
+          accessibilityLabel="Re-centre on my location"
+          accessibilityState={{ selected: isFollowingVehicle }}
         >
           <Feather name="crosshair" size={18} color={isFollowingVehicle ? C.teal : C.navyPrimary} />
         </Pressable>
-        <Pressable style={styles.controlBtn} onPress={handleZoomIn}>
+        <Pressable
+          style={styles.controlBtn}
+          onPress={handleZoomIn}
+          accessibilityRole="button"
+          accessibilityLabel="Zoom in"
+        >
           <Feather name="plus" size={18} color={C.navyPrimary} />
         </Pressable>
-        <Pressable style={styles.controlBtn} onPress={handleZoomOut}>
+        <Pressable
+          style={styles.controlBtn}
+          onPress={handleZoomOut}
+          accessibilityRole="button"
+          accessibilityLabel="Zoom out"
+        >
           <Feather name="minus" size={18} color={C.navyPrimary} />
         </Pressable>
-        <Pressable style={styles.controlBtn} onPress={handleOverview}>
+        <Pressable
+          style={styles.controlBtn}
+          onPress={handleOverview}
+          accessibilityRole="button"
+          accessibilityLabel="Show whole route"
+          accessibilityHint="Zooms out to fit the full route on screen"
+        >
           <Feather name="maximize" size={18} color={C.navyPrimary} />
         </Pressable>
         <Pressable
           style={[styles.controlBtn, tiltEnabled && styles.controlBtnActive]}
           onPress={handleTiltToggle}
+          accessibilityRole="button"
+          accessibilityLabel={tiltEnabled ? 'Switch to flat view' : 'Switch to 3D view'}
+          accessibilityState={{ selected: tiltEnabled }}
         >
           <Feather name="layers" size={18} color={tiltEnabled ? C.teal : C.navyPrimary} />
         </Pressable>
@@ -2066,7 +2159,15 @@ export default function LiveMapScreen() {
       {/* ── Bottom trip panel ── */}
       <Animated.View style={[styles.bottomPanel, panelStyle]}>
 
-        <Pressable style={styles.dragHandle} onPress={togglePanel}>
+        {/* A bare grab-pill. Announcing it as "expand/collapse" is the only way
+            the panel is operable without seeing the handle. */}
+        <Pressable
+          style={styles.dragHandle}
+          onPress={togglePanel}
+          accessibilityRole="button"
+          accessibilityLabel={panelExpanded ? 'Collapse trip panel' : 'Expand trip panel'}
+          accessibilityState={{ expanded: panelExpanded }}
+        >
           <View style={styles.dragPill} />
         </Pressable>
 
@@ -2120,6 +2221,8 @@ export default function LiveMapScreen() {
           {nearStop && (
             <Pressable
               style={styles.stopPodBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Deliver proof of delivery for this stop"
               onPress={() => router.push({
                 pathname: '/(driver)/delivery/pod/[id]',
                 params: {
@@ -2143,6 +2246,14 @@ export default function LiveMapScreen() {
             <Pressable
               onPress={primaryBtn.active ? primaryBtn.onPress : null}
               disabled={!primaryBtn.active || primaryBtn.loading}
+              accessibilityRole="button"
+              // The label changes with the trip phase, so it has to come from
+              // the same source as the visible text rather than be hardcoded.
+              accessibilityLabel={primaryBtn.label}
+              accessibilityState={{
+                disabled: !primaryBtn.active || !!primaryBtn.loading,
+                busy: !!primaryBtn.loading,
+              }}
               style={[
                 styles.arriveBtn,
                 {
@@ -2173,6 +2284,9 @@ export default function LiveMapScreen() {
           <Pressable
             style={styles.incidentBtn}
             onPress={() => router.push(`/(driver)/incident/report/${tripId}`)}
+            accessibilityRole="button"
+            accessibilityLabel="Report incident"
+            accessibilityHint="Opens the incident report form for this trip"
           >
             <Feather name="alert-triangle" size={14} color={C.red} />
             <Text style={styles.incidentBtnText}>Report incident</Text>

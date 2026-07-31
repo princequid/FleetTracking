@@ -1,14 +1,17 @@
 server:
+  shutdown: graceful
   port: 8085
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: gps-service
 
   datasource:
     url: jdbc:postgresql://localhost:5433/fleettrack
-    username: fleettrack
-    password: fleettrack
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     hikari:
       maximum-pool-size: 10
 
@@ -30,13 +33,16 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: fleettrack
-    password: fleettrack
-
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   data:
     redis:
       host: localhost
       port: 6379
+      # Redis now requires auth (see infrastructure_1/docker-compose.yml). Blank
+      # default so a local redis-server without a password still works in dev;
+      # compose injects SPRING_DATA_REDIS_PASSWORD in every deployed environment.
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
 
 eureka:
   client:
@@ -47,7 +53,7 @@ eureka:
 
 internal:
   service:
-    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+    secret: ${INTERNAL_SERVICE_SECRET}
 
 logging:
   level:

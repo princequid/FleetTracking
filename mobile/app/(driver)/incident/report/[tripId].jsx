@@ -98,7 +98,12 @@ export default function IncidentReportScreen() {
         </Animated.View>
         <Text style={styles.successTitle}>Report Submitted</Text>
         <Text style={styles.successSub}>Fleet management has been notified and will respond shortly.</Text>
-        <TouchableOpacity style={styles.doneBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.doneBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Done"
+        >
           <Text style={styles.doneBtnText}>Done</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -109,7 +114,12 @@ export default function IncidentReportScreen() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => router.back()}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
             <Feather name="chevron-left" size={20} color="#fff" />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
@@ -132,6 +142,12 @@ export default function IncidentReportScreen() {
                   key={t.key}
                   style={[styles.typeCard, selected && { borderColor: t.color, backgroundColor: t.bg }]}
                   onPress={() => { setType(t.key); Haptics.selectionAsync(); }}
+                  // Selection is signalled only by a border and fill colour.
+                  // `radio` + selected is what carries it non-visually, and
+                  // marks the group as mutually exclusive.
+                  accessibilityRole="radio"
+                  accessibilityLabel={t.label}
+                  accessibilityState={{ selected, checked: selected }}
                 >
                   <View style={[styles.typeIcon, { backgroundColor: t.bg }]}>
                     <Feather name={t.icon} size={18} color={t.color} />
@@ -156,6 +172,9 @@ export default function IncidentReportScreen() {
                   key={u.key}
                   style={[styles.urgencyBtn, selected && { backgroundColor: u.color, borderColor: u.color }]}
                   onPress={() => { setUrgency(u.key); Haptics.selectionAsync(); }}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${u.label} urgency`}
+                  accessibilityState={{ selected, checked: selected }}
                 >
                   <Text style={[styles.urgencyText, selected ? { color: '#fff' } : { color: C.text2 }]}>
                     {u.label}
@@ -176,6 +195,8 @@ export default function IncidentReportScreen() {
               multiline
               numberOfLines={5}
               textAlignVertical="top"
+              accessibilityLabel="Description"
+              accessibilityHint="Describe what happened during the trip"
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
             />
@@ -186,6 +207,9 @@ export default function IncidentReportScreen() {
             style={[styles.submitBtn, loading && { opacity: 0.7 }]}
             onPress={submit}
             disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Submit report"
+            accessibilityState={{ disabled: loading, busy: loading }}
           >
             <Feather name="send" size={16} color="#fff" />
             <Text style={styles.submitText}>{loading ? 'Submitting…' : 'Submit report'}</Text>

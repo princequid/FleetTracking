@@ -26,8 +26,75 @@
         } catch (e) {}
       })();
     </script>
+    <!--
+      Boot loader lives inline (not in index.css) and hardcodes its brand colors on
+      purpose: it must render correctly the instant HTML parses, before the app
+      bundle's stylesheet is guaranteed to have loaded. It always renders on the
+      brand navy, independent of light/dark theme — same treatment as the login
+      page's left panel, which never inverts either.
+    -->
+    <style>
+      #boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background: linear-gradient(160deg, #1b3a6b 0%, #0f2347 55%, #091729 100%);
+        transition: opacity 420ms cubic-bezier(0.22, 1, 0.36, 1), visibility 420ms;
+      }
+      #boot-loader.boot-loader-hide {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #boot-loader-mark {
+        width: 68px;
+        height: 68px;
+        object-fit: contain;
+        border-radius: 14px;
+        background: #ffffff;
+        padding: 8px;
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.35);
+        animation: boot-pulse 1.8s ease-in-out infinite;
+      }
+      #boot-loader-word {
+        color: #ffffff;
+        font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 22px;
+        letter-spacing: 0.01em;
+      }
+      #boot-loader-ring {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.12), #e5b84c);
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+        mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+        animation: boot-spin 800ms linear infinite;
+      }
+      @keyframes boot-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      @keyframes boot-spin {
+        to { transform: rotate(360deg); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-loader-mark, #boot-loader-ring { animation: none; }
+      }
+    </style>
   </head>
   <body>
+    <div id="boot-loader" role="status" aria-live="polite" aria-label="Loading FleetSync">
+      <img id="boot-loader-mark" src="/images/logo.png" alt="" />
+      <div id="boot-loader-word">FleetSync</div>
+      <div id="boot-loader-ring"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

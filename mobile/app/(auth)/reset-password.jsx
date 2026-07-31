@@ -91,7 +91,11 @@ export default function ResetPasswordScreen() {
         <View style={[styles.bottomSection, { paddingBottom: Math.max(40, insets.bottom + 16) }]}>
           <Animated.View style={{ transform: [{ translateX: formShake }] }}>
             {!!error && (
-              <Animated.View style={[styles.errorBanner, { opacity: errorOpacity }]}>
+              <Animated.View
+                style={[styles.errorBanner, { opacity: errorOpacity }]}
+                accessibilityLiveRegion="assertive"
+                accessibilityRole="alert"
+              >
                 <Feather name="alert-circle" size={14} color={C.red} style={{ marginRight: 6 }} />
                 <Text style={styles.errorText} numberOfLines={2}>{error}</Text>
               </Animated.View>
@@ -105,10 +109,24 @@ export default function ResetPasswordScreen() {
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry={!showPw}
+                  autoComplete="new-password"
+                  textContentType="newPassword"
                   placeholder="At least 8 characters"
                   placeholderTextColor={C.text3}
+                  accessibilityLabel="New password"
+                  // Announces the rule up front instead of only after a failed
+                  // submit shakes the form.
+                  accessibilityHint="Must be at least 8 characters"
                 />
-                <TouchableOpacity onPress={() => setShowPw((s) => !s)} style={styles.eyeBtn}>
+                <TouchableOpacity
+                  onPress={() => setShowPw((s) => !s)}
+                  style={styles.eyeBtn}
+                  accessibilityRole="button"
+                  // One toggle controls both fields, so say so — otherwise it
+                  // reads as applying only to the field it sits inside.
+                  accessibilityLabel={showPw ? 'Hide passwords' : 'Show passwords'}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
                   <Feather name={showPw ? 'eye-off' : 'eye'} size={18} color={C.text3} />
                 </TouchableOpacity>
               </View>
@@ -122,9 +140,12 @@ export default function ResetPasswordScreen() {
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry={!showPw}
+                  autoComplete="new-password"
+                  textContentType="newPassword"
                   placeholder="Re-enter your password"
                   placeholderTextColor={C.text3}
                   onSubmitEditing={handleSubmit}
+                  accessibilityLabel="Confirm password"
                 />
               </View>
             </View>
@@ -134,6 +155,9 @@ export default function ResetPasswordScreen() {
               onPress={handleSubmit}
               disabled={loading}
               activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="Set password"
+              accessibilityState={{ disabled: loading, busy: loading }}
             >
               {loading ? <LoadingSpinner color="#fff" /> : <Text style={styles.submitText}>Set password</Text>}
             </TouchableOpacity>

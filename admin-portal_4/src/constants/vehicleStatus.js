@@ -1,12 +1,32 @@
 export const VEHICLE_FILTER_TABS = ["All", "Available", "In Use", "Maintenance", "Decommissioned"];
 
-export const VEHICLE_STATUS_STYLES = {
-  AVAILABLE: { background: "#D1FAE5", color: "#10B981" },
-  IN_USE: { background: "#FEF3C7", color: "#F59E0B" },
-  MAINTENANCE: { background: "#DBEAFE", color: "#2563EB" },
-  DECOMMISSIONED: { background: "#F3F4F6", color: "#6B7280" },
+/**
+ * Vehicle status → Badge variant. See the note in tripStatus.js — the previous
+ * inline hex pairs failed AA contrast (DECOMMISSIONED was 4.39:1) and, being
+ * inline styles, could not be remapped for dark mode.
+ */
+export const VEHICLE_STATUS_VARIANT = {
+  AVAILABLE: "success",
+  IN_USE: "warning",
+  MAINTENANCE: "info",
+  DECOMMISSIONED: "default",
 };
 
-export function getVehicleStatusStyle(status) {
-  return VEHICLE_STATUS_STYLES[status] || { background: "#F3F4F6", color: "#374151" };
+export const VEHICLE_STATUS_LABELS = {
+  AVAILABLE: "Available",
+  IN_USE: "In use",
+  MAINTENANCE: "Maintenance",
+  DECOMMISSIONED: "Decommissioned",
+};
+
+export function getVehicleStatusVariant(status) {
+  return VEHICLE_STATUS_VARIANT[status] || "default";
+}
+
+export function getVehicleStatusLabel(status) {
+  if (!status) return "Unknown";
+  return (
+    VEHICLE_STATUS_LABELS[status] ||
+    status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ")
+  );
 }

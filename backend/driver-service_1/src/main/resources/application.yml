@@ -1,14 +1,17 @@
 server:
+  shutdown: graceful
   port: 8082
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: driver-service
 
   datasource:
     url: jdbc:postgresql://localhost:5433/fleettrack
-    username: fleettrack
-    password: fleettrack
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     hikari:
       maximum-pool-size: 5
 
@@ -36,7 +39,7 @@ eureka:
 
 internal:
   service:
-    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+    secret: ${INTERNAL_SERVICE_SECRET}
 
 logging:
   level:

@@ -239,7 +239,12 @@ export default function PODScreen() {
         <Feather name="camera-off" size={44} color={C.text3} />
         <Text style={styles.permTitle}>Camera access needed</Text>
         <Text style={styles.permSub}>Proof of delivery photos require camera access</Text>
-        <TouchableOpacity style={styles.grantBtn} onPress={requestPermission}>
+        <TouchableOpacity
+          style={styles.grantBtn}
+          onPress={requestPermission}
+          accessibilityRole="button"
+          accessibilityLabel="Grant camera permission"
+        >
           <Text style={styles.grantBtnText}>Grant permission</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -262,7 +267,13 @@ export default function PODScreen() {
 
       {/* Top overlay */}
       <View style={[styles.topOverlay, { paddingTop: Math.max(48, insets.top + 12) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          accessibilityHint="Leaves proof of delivery without saving"
+        >
           <Feather name="x" size={20} color="#fff" />
         </TouchableOpacity>
         <View style={styles.stepInfo}>
@@ -302,11 +313,21 @@ export default function PODScreen() {
             <TouchableOpacity
               style={styles.sideBtn}
               onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
+              accessibilityRole="button"
+              accessibilityLabel="Switch camera"
             >
               <Feather name="refresh-cw" size={20} color="#fff" />
             </TouchableOpacity>
             <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-              <TouchableOpacity style={styles.shutter} onPress={capture}>
+              {/* The shutter is a bare circle with no text anywhere near it —
+                  without a label it's the single most important control in the
+                  delivery flow announcing as nothing. */}
+              <TouchableOpacity
+                style={styles.shutter}
+                onPress={capture}
+                accessibilityRole="button"
+                accessibilityLabel="Take photo"
+              >
                 <View style={[styles.shutterInner, { backgroundColor: C.green }]} />
               </TouchableOpacity>
             </Animated.View>
@@ -314,13 +335,23 @@ export default function PODScreen() {
           </View>
         ) : (
           <View style={styles.confirmRow}>
-            <TouchableOpacity style={styles.retakeBtn} onPress={retake} disabled={loading}>
+            <TouchableOpacity
+              style={styles.retakeBtn}
+              onPress={retake}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Retake photo"
+              accessibilityState={{ disabled: loading }}
+            >
               <Text style={styles.retakeBtnText}>Retake</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.useBtn, loading && { opacity: 0.7 }]}
               onPress={confirmUpload}
               disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Confirm proof of delivery"
+              accessibilityState={{ disabled: loading, busy: loading }}
             >
               <Text style={styles.useBtnText}>{loading ? 'Uploading…' : 'Confirm POD'}</Text>
               {!loading && <Feather name="check" size={16} color="#fff" style={{ marginLeft: 6 }} />}

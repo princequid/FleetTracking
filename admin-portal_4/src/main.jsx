@@ -25,6 +25,10 @@ const IncidentsPage = lazy(() => import("./pages/IncidentsPage"));
 const LiveMapPage = lazy(() => import("./pages/LiveMapPage"));
 const StaffPage = lazy(() => import("./pages/StaffPage"));
 
+// Roles permitted on the routes the sidebar hides from DISPATCHER.
+const STAFF_ROLES = ["ADMIN", "SUPER_ADMIN"];
+const ADMIN_ROLES = ["ADMIN", "SUPER_ADMIN"];
+
 const root = createRoot(document.getElementById("root"));
 
 root.render(
@@ -50,13 +54,51 @@ root.render(
         <Route path="drivers" element={<DriversPage />} />
         <Route path="drivers/:id" element={<DriverDetailPage />} />
         <Route path="vehicles" element={<VehiclesPage />} />
-        <Route path="incidents" element={<IncidentsPage />} />
-        <Route path="reports" element={<ReportsPage />} />
+        {/* These three are hidden from DISPATCHER in the sidebar; guard the
+            routes too, or the pages are reachable by typing the URL. Mirrors
+            Sidebar.jsx `hideFor` — keep the two in sync. */}
+        <Route
+          path="incidents"
+          element={
+            <PrivateRoute allow={STAFF_ROLES}>
+              <IncidentsPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="reports"
+          element={
+            <PrivateRoute allow={STAFF_ROLES}>
+              <ReportsPage />
+            </PrivateRoute>
+          }
+        />
         <Route path="map" element={<LiveMapPage />} />
-        <Route path="staff" element={<StaffPage />} />
+        <Route
+          path="staff"
+          element={
+            <PrivateRoute allow={ADMIN_ROLES}>
+              <StaffPage />
+            </PrivateRoute>
+          }
+        />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Route>
       </Routes>
     </BrowserRouter>
   </ThemeProvider>
 );
+
+// Let the boot loader's fade-out happen only after the real app has actually
+// painted (double rAF), not right after render() returns — render() commits
+// synchronously but the browser hasn't necessarily drawn the frame yet, and
+// removing the loader a frame early would show a blank flash underneath it.
+const bootLoader = document.getElementById("boot-loader");
+if (bootLoader) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      bootLoader.classList.add("boot-loader-hide");
+      setTimeout(() => bootLoader.remove(), 450);
+    });
+  });
+}

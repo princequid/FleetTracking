@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/common/Sidebar";
 import Navbar from "../components/common/Navbar";
 import RouteFallback from "../components/common/RouteFallback";
+import ErrorBoundary from "../components/common/ErrorBoundary";
 import { ToastProvider } from "../components/common/Toast";
 
 // Warm the chunks for the pages users reach most often, once the browser is idle
@@ -71,6 +72,10 @@ export default function Layout() {
   return (
     <ToastProvider>
       <div className="app-shell" data-sidebar={collapsed ? "collapsed" : "expanded"}>
+        {/* First focusable element on the page — keyboard users can jump the nav. */}
+        <a className="skip-link" href="#main-content">
+          Skip to main content
+        </a>
         <Sidebar
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
@@ -87,12 +92,15 @@ export default function Layout() {
         )}
         <div className="app-main">
           <Navbar onMenuClick={() => setSidebarOpen(true)} />
-          <main className="page-content">
-            <Suspense fallback={<RouteFallback />}>
-              <div key={location.pathname} className="page-enter">
-                <Outlet />
-              </div>
-            </Suspense>
+          <main className="page-content" id="main-content" tabIndex={-1}>
+            {/* Keyed on pathname so navigating away clears a stuck error. */}
+            <ErrorBoundary key={location.pathname}>
+              <Suspense fallback={<RouteFallback />}>
+                <div className="page-enter">
+                  <Outlet />
+                </div>
+              </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       </div>

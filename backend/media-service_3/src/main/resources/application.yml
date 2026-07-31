@@ -1,14 +1,17 @@
 server:
+  shutdown: graceful
   port: 8086
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: media-service
 
   datasource:
     url: jdbc:postgresql://localhost:5433/fleettrack
-    username: fleettrack
-    password: fleettrack
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     hikari:
       maximum-pool-size: 5
 
@@ -36,7 +39,7 @@ eureka:
 
 internal:
   service:
-    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+    secret: ${INTERNAL_SERVICE_SECRET}
 
 logging:
   level:
@@ -51,6 +54,6 @@ minio:
   # Env-overridable (docker-compose passes MINIO_ACCESS_KEY / MINIO_SECRET_KEY). The
   # defaults match local dev; a real deployment MUST set these to the actual MinIO creds
   # — otherwise media would keep using the dev password even after MinIO's is changed.
-  accessKey: ${MINIO_ACCESS_KEY:fleettrack}
-  secretKey: ${MINIO_SECRET_KEY:fleettrack123}
+  accessKey: ${MINIO_ACCESS_KEY}
+  secretKey: ${MINIO_SECRET_KEY}
   bucket: ${MINIO_BUCKET:fleettrack-media}

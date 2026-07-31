@@ -1,17 +1,63 @@
 export const FILTER_TABS = ["All", "Assigned", "Started", "En Route", "Rerouted", "Arrived", "Delivered", "Cancelled"];
 
-export const STATUS_STYLES = {
-  ASSIGNED: { background: "#DBEAFE", color: "#2563EB" },
-  STARTED: { background: "#FEF3C7", color: "#F59E0B" },
-  EN_ROUTE: { background: "#EDE9FE", color: "#8B5CF6" },
-  REROUTED: { background: "#FCE7F3", color: "#EC4899" },
-  ARRIVED: { background: "#DCFCE7", color: "#22C55E" },
-  DELIVERED: { background: "#D1FAE5", color: "#10B981" },
-  CANCELLED: { background: "#FEE2E2", color: "#EF4444" },
+/**
+ * Status → Badge variant.
+ *
+ * These deliberately map onto the shared badge variants rather than carrying
+ * their own hex pairs. The previous inline-style approach hardcoded light
+ * pastels (e.g. #F59E0B on #FEF3C7 = 1.93:1) which no stylesheet could override,
+ * so badges failed WCAG AA in light mode and stayed pale chips on a near-black
+ * card in dark mode. Variants resolve through tokens that are remapped per theme.
+ *
+ * ARRIVED and DELIVERED intentionally share `success` — both are good terminal-ish
+ * states, and the label distinguishes them, so meaning never rests on colour alone.
+ */
+export const STATUS_VARIANT = {
+  ASSIGNED: "info",
+  STARTED: "warning",
+  EN_ROUTE: "accent",
+  REROUTED: "alt",
+  ARRIVED: "success",
+  DELIVERED: "success",
+  CANCELLED: "danger",
 };
 
-export function getStatusStyle(status) {
-  return STATUS_STYLES[status] || { background: "#F3F4F6", color: "#374151" };
+/** Human labels — the UI previously rendered raw enums like "EN_ROUTE". */
+export const STATUS_LABELS = {
+  ASSIGNED: "Assigned",
+  STARTED: "Started",
+  EN_ROUTE: "En route",
+  REROUTED: "Rerouted",
+  ARRIVED: "Arrived",
+  DELIVERED: "Delivered",
+  CANCELLED: "Cancelled",
+};
+
+/**
+ * Lifecycle order, for sorting a status column.
+ *
+ * Sorting these strings alphabetically gives "Arrived, Assigned, Cancelled,
+ * Delivered, En route…" — an ordering of spellings that tells an operator
+ * nothing. Sorting by position in the delivery lifecycle groups the trips that
+ * still need attention at one end and the settled ones at the other.
+ */
+export const TRIP_STATUS_ORDER = [
+  "ASSIGNED",
+  "STARTED",
+  "EN_ROUTE",
+  "REROUTED",
+  "ARRIVED",
+  "DELIVERED",
+  "CANCELLED",
+];
+
+export function getStatusVariant(status) {
+  return STATUS_VARIANT[status] || "default";
+}
+
+export function getStatusLabel(status) {
+  if (!status) return "Unknown";
+  return STATUS_LABELS[status] || status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
 // Statuses that can no longer be cancelled — a trip is cancellable unless it's

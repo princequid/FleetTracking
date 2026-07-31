@@ -1,7 +1,10 @@
 server:
+  shutdown: graceful
   port: 8081
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   application:
     name: auth-service
 
@@ -11,8 +14,8 @@ spring:
   # ─────────────────────────────────────────────────────────────
   datasource:
     url: jdbc:postgresql://localhost:5433/fleettrack
-    username: fleettrack
-    password: fleettrack
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
     hikari:
       maximum-pool-size: 5
 
@@ -28,9 +31,8 @@ spring:
   rabbitmq:
     host: localhost
     port: 5672
-    username: fleettrack
-    password: fleettrack
-
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   flyway:
     enabled: true
     schemas: fleettrack_auth
@@ -61,7 +63,7 @@ eureka:
 
 internal:
   service:
-    secret: ${INTERNAL_SERVICE_SECRET:fleettrack-internal-dev-secret}
+    secret: ${INTERNAL_SERVICE_SECRET}
 
 fleetsync:
   email:
@@ -88,7 +90,7 @@ app:
 
 # JWT configuration
 jwt:
-  secret: ${JWT_SECRET:dev-only-change-this-to-a-long-random-string-before-prod}
+  secret: ${JWT_SECRET}
   # Short-lived access tokens (both clients silently refresh on 401 with rotation,
   # so this is invisible to users but shrinks the window for a stolen access token).
   access-token-expiry-minutes: ${JWT_ACCESS_TOKEN_EXPIRY_MINUTES:15}

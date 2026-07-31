@@ -9,7 +9,93 @@
 
 import { C } from './colors';
 
-export const lightTheme = C;
+/**
+ * Elevation.
+ *
+ * Lives here rather than in tokens.js because it is one of the few non-colour
+ * systems that genuinely differs between themes: a drop shadow is nearly
+ * invisible against a #0B1120 page, so dark mode conveys lift with a lighter
+ * surface and a visible border instead of a shadow it can't see.
+ *
+ * Each level supplies BOTH the iOS shadow properties and Android's `elevation`,
+ * because RN honours different ones per platform and setting only one gives a
+ * card that floats on one OS and sits flat on the other. The audit found 50
+ * `shadowOpacity` and 48 `elevation` declarations with no shared scale.
+ *
+ * Elevation rides on the theme object, so it arrives through the existing hook
+ * with no new import:
+ *
+ *     const C = useTheme();
+ *     <View style={[styles.card, C.elevation.md]} />
+ *
+ * In `makeStyles(C)` screens it works the same: `...C.elevation.md`.
+ */
+const lightElevation = {
+  none: {},
+  sm: {
+    shadowColor: '#0F2347',
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  md: {
+    shadowColor: '#0F2347',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  lg: {
+    shadowColor: '#0F2347',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  /** Sheets and the floating tab bar — the only things that should read as "above". */
+  xl: {
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 32,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
+  },
+};
+
+const darkElevation = {
+  none: {},
+  sm: { borderWidth: 1, borderColor: '#273449', elevation: 0 },
+  md: {
+    borderWidth: 1,
+    borderColor: '#273449',
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  lg: {
+    borderWidth: 1,
+    borderColor: '#33425E',
+    shadowColor: '#000000',
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  xl: {
+    borderWidth: 1,
+    borderColor: '#33425E',
+    shadowColor: '#000000',
+    shadowOpacity: 0.6,
+    shadowRadius: 32,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
+  },
+};
+
+export const lightTheme = { ...C, elevation: lightElevation };
 
 export const darkTheme = {
   // navyDark stays deep for headers/hero bars. navyPrimary/navyMid brighten into a
@@ -43,6 +129,8 @@ export const darkTheme = {
   surface:     '#182236',
   border:      '#273449',
   accentSoft:  'rgba(62,111,209,0.18)', // icon-chip tint that carries the brand blue
+
+  elevation: darkElevation,
 };
 
 export default { lightTheme, darkTheme };
