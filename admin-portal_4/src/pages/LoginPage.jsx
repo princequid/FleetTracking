@@ -156,7 +156,14 @@ export default function LoginPage() {
             </div>
 
             <button className="login-button" type="submit" disabled={loading}>
-              {loading ? <span className="login-spinner" /> : "Sign in"}
+              {loading ? (
+                <span className="login-button-loading">
+                  <span className="login-spinner" />
+                  Signing in…
+                </span>
+              ) : (
+                "Sign in"
+              )}
             </button>
 
             {error && <div className="login-error">{error}</div>}

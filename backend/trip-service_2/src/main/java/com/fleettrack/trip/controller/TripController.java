@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -47,7 +48,14 @@ public class TripController {
     @GetMapping
     public ResponseEntity<List<TripResponse>> getTrips(
             @RequestParam(required = false) String status,
-            @PageableDefault(size = 50) Pageable pageable,
+            // An explicit sort is REQUIRED for correctness, not just for presentation:
+            // findAll(pageable) with no ORDER BY lets PostgreSQL return rows in any order
+            // (which changes after UPDATEs and VACUUM), so "the first 50" varied between
+            // identical requests and, once a client actually pages, rows would appear on
+            // two pages while others were never returned at all. createdAt DESC is also
+            // what every caller already wants — DashboardPage and the notification feed
+            // both re-sort newest-first client-side after fetching.
+            @PageableDefault(size = 50, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             HttpServletRequest httpRequest) {
         requireRole(httpRequest, ALL_ROLES);
 
@@ -73,12 +81,24 @@ public class TripController {
     }
 
     // Internal — called by driver-service to back the driver app's "Performance" card
-    // (completed-trip count + on-time %). Never exposed as a driver-facing endpoint of
-    // its own; driver-service's own /drivers/{id}/stats is the public-facing route.
+    // (completed-trip count + on-time %). driver-service's own /drivers/{id}/stats is
+    // the public-facing route.
+    //
+    // The comment used to claim this was "never exposed as a driver-facing endpoint",
+    // but the gateway routes /trips/** publicly, and ALL_ROLES includes DRIVER with no
+    // ownership check — so any driver could enumerate /trips/drivers/{n}/stats and read
+    // every colleague's performance figures. Drivers may now only read their own;
+    // dispatch roles and internal callers are unrestricted.
     @GetMapping("/drivers/{driverId}/stats")
     public ResponseEntity<DriverTripStatsResponse> getDriverTripStats(
             @PathVariable Long driverId, HttpServletRequest httpRequest) {
         requireRoleOrInternal(httpRequest, ALL_ROLES);
+
+        Long requesterDriverId = resolveOwnDriverId(httpRequest);
+        if (requesterDriverId != null && !requesterDriverId.equals(driverId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+        }
+
         return ResponseEntity.ok(tripService.getDriverTripStats(driverId));
     }
 

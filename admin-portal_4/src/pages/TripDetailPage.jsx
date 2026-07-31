@@ -12,6 +12,8 @@ import TripRouteMap from "../components/map/TripRouteMap";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import { ArrowLeftIcon } from "../components/common/Icons";
+import LoadingState from "../components/common/LoadingState";
+import ErrorState from "../components/common/ErrorState";
 
 // Delivery-photo types shown on the trip, in capture order. Incident/profile photos
 // are intentionally excluded here — this section is about the delivery proof trail.
@@ -219,7 +221,7 @@ export default function TripDetailPage() {
   if (loading) {
     return (
       <section className="page-shell">
-        <p className="loading-text">Loading trip details…</p>
+        <LoadingState message="Loading trip details…" />
       </section>
     );
   }
@@ -227,7 +229,15 @@ export default function TripDetailPage() {
   if (error || !trip) {
     return (
       <section className="page-shell">
-        <p className="error-message">{error || "Trip not found."}</p>
+        <ErrorState
+          title={error ? "Can't load this trip" : "Trip not found"}
+          message={
+            error
+              ? "The record is unavailable — this is a connection problem, not a deleted trip."
+              : "This trip no longer exists, or you don't have access to it."
+          }
+          onRetry={error ? () => window.location.reload() : undefined}
+        />
       </section>
     );
   }

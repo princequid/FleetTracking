@@ -10,6 +10,16 @@ import { getVehicles } from "../services/vehicleService";
 import { useFleetWebSocket } from "../hooks/useFleetWebSocket";
 import { createDriverCarIcon, createRoutePinIcon, driverColor } from "../components/map/driverCarIcon";
 import { parseRouteLatLngs } from "../utils/routeGeometry";
+import LoadingState from "../components/common/LoadingState";
+import ErrorState from "../components/common/ErrorState";
+import EmptyState from "../components/common/EmptyState";
+import { useTheme } from "../context/ThemeContext";
+import {
+  PlusIcon,
+  MinusIcon,
+  CrosshairIcon,
+  EmptyVehiclesIllustration,
+} from "../components/common/Icons";
 
 const ACCRA_CENTER = [5.6037, -0.187];
 const STALE_THRESHOLD_MS = 5 * 60 * 1000;
@@ -30,6 +40,8 @@ function isStalePosition(position) {
 export default function LiveMapPage() {
   const navigate = useNavigate();
   const { subscribe, unsubscribe, isConnected } = useFleetWebSocket();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   const [positions, setPositions] = useState([]);
   const [tripMetaById, setTripMetaById] = useState({});
@@ -62,20 +74,25 @@ export default function LiveMapPage() {
     setTripMetaById(meta);
   }, []);
 
-  useEffect(() => {
+  // Hoisted so the panel's retry button and the mount effect share one path.
+  const loadPositions = useCallback(() => {
     setLoading(true);
     setError("");
-    Promise.all([getActivePositions(), refreshMeta()])
+    return Promise.all([getActivePositions(), refreshMeta()])
       .then(([positionData]) => setPositions(positionData))
       .catch(() => setError("Unable to load active vehicle positions."))
       .finally(() => setLoading(false));
+  }, [refreshMeta]);
+
+  useEffect(() => {
+    loadPositions();
     // Re-poll trips (route geometry + stops) so the admin sees reroutes live, without
     // needing a manual refresh. Positions themselves update over the websocket.
     const metaInterval = setInterval(() => {
       refreshMeta().catch(() => {});
     }, 20000);
     return () => clearInterval(metaInterval);
-  }, [refreshMeta]);
+  }, [loadPositions, refreshMeta]);
 
   const tripIdsKey = useMemo(
     () =>
@@ -149,8 +166,11 @@ export default function LiveMapPage() {
           zoomControl={false}
           className="fleet-map-container"
         >
+          {/* Keyed on the theme so React remounts the layer rather than
+              trying to diff a changed tile URL, which Leaflet does not pick up. */}
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            key={isDark ? "dark" : "light"}
+            url={`https://{s}.basemaps.cartocdn.com/${isDark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`}
             attribution="&copy; CartoDB"
           />
           <MapController onReady={handleMapReady} />
@@ -230,14 +250,37 @@ export default function LiveMapPage() {
         </MapContainer>
 
         <div className="fleet-map-controls">
-          <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="Zoom in">
-            +
-          </button>
-          <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="Zoom out">
-            −
-          </button>
-          <button type="button" className="fleet-center-btn" onClick={handleCenterFleet}>
-            Center on fleet
+          <div className="fleet-zoom-group">
+            <button
+              type="button"
+              className="fleet-map-btn"
+              onClick={() => mapRef.current?.zoomIn()}
+              aria-label="Zoom in"
+            >
+              <PlusIcon size={17} />
+            </button>
+            <button
+              type="button"
+              className="fleet-map-btn"
+              onClick={() => mapRef.current?.zoomOut()}
+              aria-label="Zoom out"
+            >
+              <MinusIcon size={17} />
+            </button>
+          </div>
+          <button
+            type="button"
+            className="fleet-map-btn fleet-center-btn"
+            onClick={handleCenterFleet}
+            disabled={positions.length === 0}
+            title={
+              positions.length === 0
+                ? "No active vehicles to centre on"
+                : "Fit all active vehicles in view"
+            }
+          >
+            <CrosshairIcon size={16} />
+            <span>Centre on fleet</span>
           </button>
         </div>
       </div>
@@ -248,13 +291,22 @@ export default function LiveMapPage() {
           <span className="fleet-sidebar-count">{positions.length}</span>
         </div>
 
-        {error && <div className="error-message">{error}</div>}
-
         <div className="fleet-vehicle-list">
           {loading ? (
-            <p className="loading-text">Loading active vehicles…</p>
+            <LoadingState message="Loading active vehicles…" />
+          ) : error ? (
+            <ErrorState
+              title="Can't load vehicle positions"
+              message="The live feed is unavailable — an empty map here does not mean the fleet is idle."
+              onRetry={loadPositions}
+            />
           ) : positions.length === 0 ? (
-            <p className="dispatch-empty-text">No vehicles currently active.</p>
+            <EmptyState
+              compact
+              illustration={EmptyVehiclesIllustration}
+              title="No vehicles on the road"
+              subtitle="Vehicles appear here once a driver starts a trip."
+            />
           ) : (
             positions.map((position) => {
               const meta = tripMetaById[position.tripId];

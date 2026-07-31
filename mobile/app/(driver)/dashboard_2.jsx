@@ -17,7 +17,10 @@ import { useTripStore } from '../../store/tripStore_2';
 import { useDriverStore } from '../../store/driverStore_1';
 import api from '../../services/api_1';
 import { useTheme } from '../../theme/ThemeContext';
-import { DISPATCH_PHONE } from '../../constants/config';
+import { DISPATCH_PHONE, TRIP_PAGE_SIZE } from '../../constants/config';
+import PressableScale from '../../components/common/PressableScale';
+import EmptyState from '../../components/common/EmptyState';
+import { NoTripsIllustration } from '../../components/common/Illustrations';
 
 /* Trim a location name to its first 3 words (+ …) so long addresses stay
    readable on the card instead of being shrunk to a tiny font. */
@@ -102,51 +105,42 @@ function StatusBadge({ status, ss, C }) {
   );
 }
 
-/* ─── PressableScale ─────────────────────────────────────────────── */
-
-function PressableScale({ children, onPress, style, ...props }) {
-  const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return (
-    <Animated.View style={animStyle}>
-      <Pressable
-        onPressIn={() => { scale.value = withSpring(0.97, { damping: 15, stiffness: 300 }); }}
-        onPressOut={() => { scale.value = withSpring(1,    { damping: 15, stiffness: 300 }); }}
-        onPress={onPress}
-        style={style}
-        {...props}
-      >
-        {children}
-      </Pressable>
-    </Animated.View>
-  );
-}
+/* PressableScale used to be defined here — a good component that no other screen
+   could reach, which is why 41 Pressables and 42 TouchableOpacities elsewhere
+   never got press feedback. It now lives in components/common/PressableScale and
+   adds haptics, reduced-motion support and an accessible name. */
 
 /* ─── QuickActionTile ────────────────────────────────────────────── */
 
-function QuickActionTile({ icon, label, bg, borderColor, iconColor, onPress, ss }) {
-  const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-  const handlePress = () => {
-    scale.value = withSequence(
-      withSpring(0.9,  { damping: 10, stiffness: 300 }),
-      withSpring(1.05, { damping: 10, stiffness: 300 }),
-      withSpring(1,    { damping: 12, stiffness: 200 })
-    );
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress?.();
-  };
-
+/**
+ * A quick action.
+ *
+ * Two changes from the original:
+ *
+ * 1. The tile no longer takes a `bg`. All four used to be filled with a
+ *    different saturated tint — blue, red, green, amber — which read as a
+ *    rainbow strip where every action shouted equally loudly. The surface is now
+ *    uniform and the ICON carries the meaning, so "Report issue" still reads as
+ *    destructive without four competing blocks fighting for attention.
+ *
+ * 2. Press feedback and haptics come from the shared PressableScale instead of a
+ *    local three-stage spring, so a quick action feels like every other control
+ *    in the app rather than uniquely bouncy.
+ */
+function QuickActionTile({ icon, label, iconColor, onPress, hint, ss }) {
   return (
-    <Animated.View style={[{ flex: 1, alignItems: 'center', gap: 8 }, animStyle]}>
-      <Pressable onPress={handlePress} style={{ alignItems: 'center', gap: 8 }}>
-        <View style={[ss.qaTile, { backgroundColor: bg, borderColor }]}>
-          <Feather name={icon} size={22} color={iconColor} />
-        </View>
-        <Text style={ss.qaLabel}>{label}</Text>
-      </Pressable>
-    </Animated.View>
+    <PressableScale
+      onPress={onPress}
+      label={label}
+      hint={hint}
+      activeScale={0.94}
+      style={{ flex: 1, alignItems: 'center', gap: 8 }}
+    >
+      <View style={ss.qaTile}>
+        <Feather name={icon} size={22} color={iconColor} />
+      </View>
+      <Text style={ss.qaLabel} numberOfLines={2}>{label}</Text>
+    </PressableScale>
   );
 }
 
@@ -167,6 +161,11 @@ function TripRow({ trip, isLast, onPress, ss, C }) {
       onPress={onPress}
       style={[ss.tripRow, !isLast && ss.tripRowBorder]}
       android_ripple={{ color: 'rgba(27,58,107,0.04)' }}
+      accessibilityRole="button"
+      // Reads as one row rather than three separate fragments, and spells out
+      // the route instead of announcing the "→" glyph mid-sentence.
+      accessibilityLabel={`Trip ${trip.id}, from ${trip.origin || 'unknown'} to ${trip.destination || 'unknown'}`}
+      accessibilityHint="Opens trip details"
     >
       <View style={[ss.tripRowIconWrap, { backgroundColor: cfg.bg }]}>
         <Feather name={cfg.icon} size={18} color={cfg.color} />
@@ -293,7 +292,7 @@ export default function HomeScreen() {
     try {
       const [profileRes, tripsRes] = await Promise.allSettled([
         fetchDriverProfile(userId, { force }),
-        api.get('/trips'),
+        api.get('/trips', { params: { size: TRIP_PAGE_SIZE } }),
       ]);
 
       if (profileRes.status === 'fulfilled' && profileRes.value) {
@@ -357,6 +356,43 @@ export default function HomeScreen() {
     ? driverName.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()
     : 'D';
 
+  /**
+   * The "TODAY'S TRIPS" list, actually restricted to today.
+   *
+   * `/trips` returns the driver's whole history and the section rendered all of
+   * it, so a heading that promised today was listing trips from days or weeks
+   * back — trips #1 and #2 from 20 July were showing on 30 July.
+   *
+   * Derived here rather than filtering at `setTrips` on purpose: the active-trip
+   * lookup in `loadData` must still search the FULL list, because a trip
+   * assigned yesterday and still running is very much today's problem.
+   *
+   * The timestamp follows the same precedence the row itself displays
+   * (completed → cancelled → started → created), so a trip appears under the
+   * date the driver actually saw it happen. Boundaries are local midnight, not
+   * UTC — "today" means the driver's day.
+   */
+  const todaysTrips = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    return trips.filter((t) => {
+      const raw = t.completedAt || t.cancelledAt || t.startedAt || t.createdAt;
+      if (!raw) return false;
+      const when = new Date(raw);
+      if (Number.isNaN(when.getTime())) return false;
+      return when >= start && when < end;
+    });
+  }, [trips]);
+
+  // The greeting shows the first name only. The full name shared a row with two
+  // icon buttons, so anything longer than about 14 characters was cut — "Simon
+  // Prince Quarm" rendered as "Simon Prince Qu…". A first name is also simply
+  // the warmer greeting, and the full name is still on the Profile screen.
+  const firstName = driverName?.trim().split(/\s+/)[0] || 'Driver';
+
   /* ─── render ─────────────────────────────────────────────────── */
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -399,9 +435,16 @@ export default function HomeScreen() {
         <Animated.View style={headerStyle}>
           <View style={[ss.header, { paddingTop: Math.max(56, insets.top + 16) }]}>
             <View style={ss.headerTop}>
-              <View style={{ flex: 1, marginRight: 12 }}>
+              {/* Announced as one phrase with the FULL name, so nothing is lost
+                  to a screen reader even though the eye sees the short form. */}
+              <View
+                style={{ flex: 1, marginRight: 12 }}
+                accessible
+                accessibilityRole="header"
+                accessibilityLabel={`${getGreeting()}, ${driverName}`}
+              >
                 <Text style={ss.greeting} numberOfLines={1}>{getGreeting()}</Text>
-                <Text style={ss.driverName} numberOfLines={1} ellipsizeMode="tail">{driverName}</Text>
+                <Text style={ss.driverName} numberOfLines={1} ellipsizeMode="tail">{firstName}</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 10, flexShrink: 0 }}>
                 <PressableScale
@@ -533,26 +576,30 @@ export default function HomeScreen() {
           <View style={ss.qaRow}>
             <QuickActionTile
               icon="camera" label="Take photo" ss={ss}
-              bg={C.accentSoft} borderColor={C.accentSoft} iconColor={C.navyPrimary}
+              iconColor={C.navyPrimary}
+              hint="Opens the pre-dispatch photo step for your active trip"
               onPress={() => activeTrip
                 ? router.push(`/(driver)/delivery/pre-dispatch/${activeTrip.id}`)
                 : showToastMsg('No active trip', 'warn')}
             />
             <QuickActionTile
               icon="alert-triangle" label="Report issue" ss={ss}
-              bg={C.redLight} borderColor={C.redLight} iconColor={C.red}
+              iconColor={C.red}
+              hint="Reports an incident on your active trip"
               onPress={() => activeTrip
                 ? router.push(`/(driver)/incident/report/${activeTrip.id}`)
                 : showToastMsg('No active trip', 'warn')}
             />
             <QuickActionTile
               icon="check-circle" label="Mark arrived" ss={ss}
-              bg={C.greenLight} borderColor={C.greenLight} iconColor={C.green}
+              iconColor={C.green}
+              hint="Marks you as arrived at the destination"
               onPress={handleMarkArrived}
             />
             <QuickActionTile
               icon="phone" label="Call dispatch" ss={ss}
-              bg={C.amberLight} borderColor={C.amberLight} iconColor={C.amber}
+              iconColor={C.amber}
+              hint="Calls the dispatch office"
               onPress={() => Linking.openURL(`tel:${DISPATCH_PHONE}`)}
             />
           </View>
@@ -563,21 +610,35 @@ export default function HomeScreen() {
           <Text style={[ss.sectionLabel, { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 }]}>
             TODAY'S TRIPS
           </Text>
-          {trips.length === 0 ? (
-            <View style={ss.emptyBox}>
-              <Feather name="inbox" size={32} color={C.text3} />
-              <Text style={ss.emptyTitle}>No trips today</Text>
-              <Text style={ss.emptySub}>Completed trips will appear here</Text>
-            </View>
+          {todaysTrips.length === 0 ? (
+            <EmptyState
+              compact
+              // Smaller here than in a full-screen empty state — this sits
+              // inside a section, not on its own page.
+              illustration={<NoTripsIllustration size={84} />}
+              title="No trips today"
+              // Nudges toward history rather than implying the driver has never
+              // done anything — they may well have trips, just not today's.
+              message={
+                trips.length > 0
+                  ? "Nothing completed today yet. Earlier trips are in your history."
+                  : 'Trips you complete today will show up here.'
+              }
+              action={{
+                label: 'View history',
+                icon: 'clock',
+                onPress: () => router.push('/(driver)/trip/history_2'),
+              }}
+            />
           ) : (
             <View style={ss.tripsCard}>
-              {trips.slice(0, 8).map((trip, i) => (
+              {todaysTrips.slice(0, 8).map((trip, i) => (
                 <TripRow
                   key={trip.id}
                   trip={trip}
                   ss={ss}
                   C={C}
-                  isLast={i === Math.min(trips.length, 8) - 1}
+                  isLast={i === Math.min(todaysTrips.length, 8) - 1}
                   onPress={() => router.push(`/(driver)/trip/${trip.id}`)}
                 />
               ))}
@@ -594,7 +655,13 @@ export default function HomeScreen() {
             <Animated.View
               style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }, backdropStyle]}
             />
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeEndShift} />
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={closeEndShift}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              accessibilityHint="Closes the end-shift prompt"
+            />
             <Animated.View style={[ss.sheet, sheetAnimStyle]}>
               <View style={ss.sheetHandle} />
               <Text style={ss.sheetTitle}>End shift?</Text>
@@ -891,13 +958,14 @@ const makeStyles = (C) => StyleSheet.create({
     height: 58,
     borderRadius: 16,
     borderWidth: 1,
+    // Uniform surface for all four tiles — the icon colour carries the meaning.
+    // Previously each tile was filled with its own saturated tint, which made
+    // the row read as a rainbow with no hierarchy between the actions.
+    backgroundColor: C.surface,
+    borderColor: C.border,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    ...C.elevation.sm,
   },
   qaLabel: {
     fontFamily: 'Inter-Medium',
@@ -947,24 +1015,8 @@ const makeStyles = (C) => StyleSheet.create({
     color: C.text3,
     marginTop: 2,
   },
-  emptyBox: {
-    paddingVertical: 32,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    fontFamily: 'Inter-SemiBold',
-    fontSize: 14,
-    color: C.text2,
-    marginTop: 10,
-  },
-  emptySub: {
-    fontFamily: 'Inter-Regular',
-    fontSize: 13,
-    color: C.text3,
-    marginTop: 4,
-    textAlign: 'center',
-  },
+  // emptyBox / emptyTitle / emptySub removed — EmptyState owns that layout now,
+  // and unlike the old block it offers the driver an action.
 
   /* toast */
   toast: {

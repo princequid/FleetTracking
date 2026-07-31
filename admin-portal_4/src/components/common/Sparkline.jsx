@@ -25,13 +25,19 @@ export default function Sparkline({
 
   const max = Math.max(...data);
   const min = Math.min(...data);
-  // A flat series would divide by zero — pin it to the vertical centre instead.
+  const flat = max === min;
   const span = max - min || 1;
   const stepX = data.length > 1 ? W / (data.length - 1) : 0;
 
   const points = data.map((value, i) => {
     const x = data.length === 1 ? W / 2 : i * stepX;
-    const y = PAD + (H - PAD * 2) * (1 - (value - min) / span);
+    // A flat series has to be special-cased, not just guarded against division
+    // by zero. With `span` forced to 1, `(value - min) / span` is 0 for every
+    // point, which put the line hard against the *bottom* edge — where, running
+    // the full width of a card that clips its rounded corners, it read as a
+    // solid coloured border rather than as data. Centre it instead: a flat line
+    // through the middle is legibly "no change".
+    const y = flat ? H / 2 : PAD + (H - PAD * 2) * (1 - (value - min) / span);
     return [x, y];
   });
 

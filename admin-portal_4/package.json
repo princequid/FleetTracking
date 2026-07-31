@@ -8,7 +8,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:ui": "playwright test",
+    "ui:smoke": "playwright test smoke.spec.js",
+    "ui:responsive": "playwright test responsive.spec.js",
+    "ui:a11y": "playwright test a11y.spec.js",
+    "ui:data": "playwright test data-surface.spec.js",
+    "ui:shots": "playwright test screenshots.spec.js",
+    "ui:report": "playwright show-report"
   },
   "dependencies": {
     "@stomp/stompjs": "^7.3.0",
@@ -24,7 +31,10 @@
     "zustand": "^4.4.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "axe-core": "4.12.1",
     "vite": "^5.4.1"
   }
 }

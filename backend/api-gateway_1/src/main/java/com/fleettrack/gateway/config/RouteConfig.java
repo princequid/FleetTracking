@@ -53,10 +53,12 @@ public class RouteConfig {
                         .path("/notifications/**")
                         .filters(f -> f.stripPrefix(1))
                         .uri("lb://notification-service"))
-                .route("analytics-service", r -> r
-                        .path("/analytics/**")
-                        .filters(f -> f.stripPrefix(1))
-                        .uri("lb://analytics-service"))
+                // NOTE: the /analytics/** route was removed. analytics-service_5 is a
+                // directory of empty stub classes with no pom.xml and no application
+                // class — it cannot be built or registered in Eureka. Routing to it
+                // produced a 503 from the load balancer plus a service-discovery error
+                // in the logs, which reads like an infrastructure fault during triage.
+                // Restore this route in the same commit that makes the service real.
 
                 // WebSocket — proxied to gps-service /ws
                 .route("gps-ws", r -> r

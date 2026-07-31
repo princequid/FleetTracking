@@ -112,21 +112,39 @@ public class AuthService {
             throw new RuntimeException("Invalid email or password");
         }
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            int attempts = user.getFailedAttempts() + 1;
-            user.setFailedAttempts(attempts);
-            if (attempts >= MAX_FAILED_ATTEMPTS) {
-                user.setLockedUntil(Instant.now().plus(LOCK_DURATION_MINUTES, ChronoUnit.MINUTES));
+        boolean locked = user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now());
+        boolean passwordOk = passwordEncoder.matches(request.getPassword(), user.getPasswordHash());
+
+        // The lock is enforced BEFORE the password result is acted on. Previously
+        // it was only checked after a successful match, so a locked account still
+        // accepted unlimited guesses — the lockout blocked the legitimate user
+        // while doing nothing to the attacker.
+        //
+        // Lock state is still not disclosed to a caller who cannot supply the
+        // password (the original reason for the late check): a wrong password
+        // against a locked account returns the same generic message as any other
+        // failure. Only a caller who proved they know the password is told the
+        // account is locked. Attempts are not incremented while locked, so an
+        // attacker cannot keep extending the lock window on someone else.
+        if (locked) {
+            if (passwordOk) {
+                throw new AccountLockedException("Account is locked until " + user.getLockedUntil());
             }
-            userRepository.save(user);
             throw new RuntimeException("Invalid email or password");
         }
 
-        // Only reveal lock status once the caller has proven they know the
-        // correct password — otherwise an attacker without valid credentials
-        // could probe account lock state.
-        if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now())) {
-            throw new AccountLockedException("Account is locked until " + user.getLockedUntil());
+        if (!passwordOk) {
+            // Atomic increment — a read-modify-write here is lost-update prone,
+            // which let parallel guessing exceed MAX_FAILED_ATTEMPTS without ever
+            // tripping the lock.
+            userRepository.incrementFailedAttempts(user.getId());
+            int attempts = user.getFailedAttempts() + 1;
+            if (attempts >= MAX_FAILED_ATTEMPTS) {
+                userRepository.lockUntil(
+                        user.getId(),
+                        Instant.now().plus(LOCK_DURATION_MINUTES, ChronoUnit.MINUTES));
+            }
+            throw new RuntimeException("Invalid email or password");
         }
 
         user.setFailedAttempts(0);
@@ -237,6 +255,10 @@ public class AuthService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Password must be at least 8 characters");
             }
             user.setPasswordHash(passwordEncoder.encode(newPassword));
+            // Changing the password must invalidate other sessions, for the same
+            // reason as the reset flow — otherwise a token stolen before the
+            // change keeps working for its full 7-day lifetime.
+            refreshTokenRepository.revokeAllByUserId(user.getId());
         }
         user.setMustChangePassword(false);
         userRepository.save(user);

@@ -1,16 +1,37 @@
-import React, { useMemo, useState } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Dot,
-} from "recharts";
+import React, { lazy, Suspense, useMemo, useState } from "react";
 import { getTrips } from "../services/tripService";
 import { getIncidents } from "../services/incidentService";
 import { useToast } from "../components/common/Toast";
+import ErrorState from "../components/common/ErrorState";
+import Button from "../components/common/Button";
+import PageHeader from "../components/common/PageHeader";
+import DataTable from "../components/common/DataTable";
+import EmptyState from "../components/common/EmptyState";
+import ChartSkeleton from "../components/common/ChartSkeleton";
+
+/* Same reasoning as the dashboard: Recharts is deferred so the controls and the
+   summary figures are usable before the chart code arrives. */
+const ReportTrendChart = lazy(() => import("../components/dashboard/ReportTrendChart"));
+import useCssVars from "../hooks/useCssVars";
+import {
+  ChevronDownIcon,
+  DownloadIcon,
+  BarChartIcon,
+  EmptyReportIllustration,
+} from "../components/common/Icons";
+
+/* Recharts writes colours as SVG presentation attributes, where var() is not
+   reliably honoured — so every colour handed to a chart has to be resolved to a
+   concrete value first. This page was the one that still hardcoded #0D9488,
+   #D97706, #6B7280 and fill="#fff", which meant its chart kept light-mode
+   colours (and white dot centres) on a near-black card. */
+const CHART_TOKENS = [
+  "--color-teal-text",
+  "--color-warning-text",
+  "--color-text-3",
+  "--color-border",
+  "--color-white",
+];
 
 function isoToday() {
   return new Date().toISOString().split("T")[0];
@@ -26,65 +47,18 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/* The -text tokens, not the fills. --color-success/warning/danger are tuned to
+   sit *under* white in a badge; as coloured numerals on a card face they drop
+   below AA, and green in particular is the worst offender. */
 function scoreColor(n) {
-  if (n >= 80) return "var(--color-success)";
-  if (n >= 60) return "var(--color-warning)";
-  return "var(--color-danger)";
+  if (n >= 80) return "var(--color-success-text)";
+  if (n >= 60) return "var(--color-warning-text)";
+  return "var(--color-danger-text)";
 }
-
-function SortIcon({ col, active, dir }) {
-  return (
-    <span
-      style={{
-        marginLeft: 4,
-        fontSize: 10,
-        opacity: active ? 1 : 0.35,
-        transition: "transform var(--transition-fast)",
-        display: "inline-block",
-        transform: active && dir === "asc" ? "rotate(180deg)" : "rotate(0deg)",
-      }}
-    >
-      ▼
-    </span>
-  );
-}
-
-function LineTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div
-      style={{
-        background: "#fff",
-        border: "1px solid var(--color-border)",
-        borderRadius: 8,
-        padding: "10px 14px",
-        boxShadow: "var(--shadow-md)",
-      }}
-    >
-      <div style={{ fontWeight: 600, fontSize: 12, color: "var(--color-text-3)", marginBottom: 6 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 13, color: "#0D9488", marginBottom: 2 }}>
-        On-time: {payload[0]?.value ?? 0}
-      </div>
-      <div style={{ fontSize: 13, color: "#D97706" }}>
-        Late / Cancelled: {payload[1]?.value ?? 0}
-      </div>
-    </div>
-  );
-}
-
-const COLS = [
-  { key: "rank",      label: "Rank",           sortKey: null },
-  { key: "driverId",  label: "Driver",         sortKey: "driverId" },
-  { key: "total",     label: "Total Trips",    sortKey: "total" },
-  { key: "delivered", label: "On-Time Trips",  sortKey: "delivered" },
-  { key: "incidents", label: "Incidents",      sortKey: "incidents" },
-  { key: "score",     label: "Score",          sortKey: "score" },
-];
 
 export default function ReportsPage() {
   const showToast = useToast();
+  const c = useCssVars(CHART_TOKENS);
 
   const [startDate, setStartDate] = useState(isoMinus(7));
   const [endDate,   setEndDate]   = useState(isoToday);
@@ -92,20 +66,36 @@ export default function ReportsPage() {
   const [incidents, setIncidents] = useState([]);
   const [loading,   setLoading]   = useState(false);
   const [generated, setGenerated] = useState(false);
-  const [sortKey,   setSortKey]   = useState("score");
-  const [sortDir,   setSortDir]   = useState("desc");
+  const [sort,      setSort]      = useState({ key: "score", dir: "desc" });
+  const [failed,    setFailed]    = useState(false);
 
   const handleGenerate = () => {
     if (!startDate || !endDate) return;
     setLoading(true);
+    setFailed(false);
     Promise.allSettled([getTrips(), getIncidents()])
       .then(([tR, iR]) => {
+        // Distinguish "the server is unreachable" from "your date range matched
+        // nothing". Previously both produced a "check the date range" toast,
+        // which blamed the user's filter for a backend outage.
+        if (tR.status === "rejected" && iR.status === "rejected") {
+          setFailed(true);
+          setGenerated(false);
+          showToast("error", "Report failed", "Couldn't reach the server. No data was loaded.");
+          return;
+        }
         const t = tR.status === "fulfilled" && Array.isArray(tR.value) ? tR.value : [];
         const i = iR.status === "fulfilled" && Array.isArray(iR.value) ? iR.value : [];
         setTrips(t);
         setIncidents(i);
         setGenerated(true);
-        if (t.length === 0) showToast("warning", "No data", "No trips found — check the date range.");
+        if (tR.status === "rejected") {
+          showToast("warning", "Partial data", "Trip data was unavailable — figures are incomplete.");
+        } else if (iR.status === "rejected") {
+          showToast("warning", "Partial data", "Incident data was unavailable — driver scores exclude incidents.");
+        } else if (t.length === 0) {
+          showToast("warning", "No data", "No trips found in this date range.");
+        }
       })
       .finally(() => setLoading(false));
   };
@@ -171,24 +161,51 @@ export default function ReportsPage() {
     }));
   }, [trips, incidents]);
 
-  const sorted = useMemo(() => {
-    if (!sortKey) return driverStats;
-    return [...driverStats].sort((a, b) => {
-      const av = a[sortKey] ?? 0;
-      const bv = b[sortKey] ?? 0;
-      return sortDir === "asc" ? av - bv : bv - av;
-    });
-  }, [driverStats, sortKey, sortDir]);
+  // Rank is a property of the report, not of the current sort: exporting a CSV
+  // whose "Rank" column renumbered itself every time someone clicked a header
+  // would produce two files that disagree about who came first.
+  const rankedDrivers = useMemo(
+    () => [...driverStats].sort((a, b) => b.score - a.score).map((d, i) => ({ ...d, rank: i + 1 })),
+    [driverStats],
+  );
 
-  const handleSort = (key) => {
-    if (!key) return;
-    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortKey(key); setSortDir("desc"); }
-  };
+  const driverColumns = [
+    { key: "rank", header: "Rank", width: 70, numeric: true, sortable: true },
+    {
+      key: "driverId",
+      header: "Driver",
+      sortable: true,
+      render: (d) => <span className="cell-id">Driver #{d.driverId}</span>,
+    },
+    { key: "total", header: "Total trips", width: 120, numeric: true, sortable: true },
+    { key: "delivered", header: "On-time trips", width: 140, numeric: true, sortable: true },
+    {
+      key: "incidents",
+      header: "Incidents",
+      width: 110,
+      numeric: true,
+      sortable: true,
+      render: (d) => (
+        <span style={{ color: d.incidents > 0 ? "var(--color-danger-text)" : undefined }}>
+          {d.incidents}
+        </span>
+      ),
+    },
+    {
+      key: "score",
+      header: "Score",
+      width: 100,
+      numeric: true,
+      sortable: true,
+      render: (d) => (
+        <span style={{ fontWeight: 700, color: scoreColor(d.score) }}>{d.score}</span>
+      ),
+    },
+  ];
 
   const exportCsv = () => {
     const headers = ["Rank", "Driver ID", "Total Trips", "On-Time Trips", "Incidents", "Score"];
-    const rows = sorted.map((d, i) => [
+    const rows = rankedDrivers.map((d, i) => [
       i + 1, d.driverId, d.total, d.delivered, d.incidents, d.score,
     ]);
     const csv = [headers, ...rows].map((r) => r.join(",")).join("\n");
@@ -203,29 +220,40 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="page-enter">
-      {/* Header */}
-      <div className="page-header-row">
-        <div>
-          <h1>Reports &amp; Analytics</h1>
-          <p style={{ color: "var(--color-text-3)", fontSize: 14, marginTop: 4 }}>
-            Generate delivery and driver performance reports
-          </p>
-        </div>
-        <button
-          className="btn-secondary"
-          onClick={exportCsv}
-          disabled={!generated || sorted.length === 0}
-        >
-          Export CSV
-        </button>
-      </div>
+    <div>
+      <PageHeader
+        title="Reports & Analytics"
+        subtitle="Generate delivery and driver performance reports"
+        actions={
+          <Button
+            variant="secondary"
+            onClick={exportCsv}
+            disabled={!generated || driverStats.length === 0}
+            title={
+              !generated || driverStats.length === 0
+                ? "Generate a report first"
+                : "Download this report as CSV"
+            }
+          >
+            <DownloadIcon size={16} />
+            <span>Export CSV</span>
+          </Button>
+        }
+      />
 
       {/* Date range controls */}
       <div className="report-controls">
         <div className="report-date-group">
-          <label className="report-date-label">From</label>
+          {/* htmlFor/id, not just proximity — without the association these read
+              as unlabelled date fields. The visually-hidden suffix gives a screen
+              reader the full "From report date" while the eye still sees "From";
+              an aria-label would replace the name outright and leave it no longer
+              containing the visible text (WCAG 2.5.3). */}
+          <label className="report-date-label" htmlFor="report-start-date">
+            From<span className="sr-only"> report date</span>
+          </label>
           <input
+            id="report-start-date"
             type="date"
             className="dispatch-input"
             value={startDate}
@@ -234,8 +262,11 @@ export default function ReportsPage() {
           />
         </div>
         <div className="report-date-group">
-          <label className="report-date-label">To</label>
+          <label className="report-date-label" htmlFor="report-end-date">
+            To<span className="sr-only"> report date</span>
+          </label>
           <input
+            id="report-end-date"
             type="date"
             className="dispatch-input"
             value={endDate}
@@ -244,14 +275,15 @@ export default function ReportsPage() {
             onChange={(e) => setEndDate(e.target.value)}
           />
         </div>
-        <button
-          className="btn-primary"
+        <Button
+          variant="primary"
           onClick={handleGenerate}
-          disabled={loading}
+          loading={loading}
           style={{ alignSelf: "flex-end" }}
         >
-          {loading ? <span className="login-spinner" /> : "Generate Report"}
-        </button>
+          <BarChartIcon size={16} />
+          <span>Generate Report</span>
+        </Button>
       </div>
 
       {generated && (
@@ -266,54 +298,9 @@ export default function ReportsPage() {
                 </span>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart
-                data={chartData}
-                margin={{ top: 5, right: 10, left: -20, bottom: 0 }}
-              >
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 12, fill: "#6B7280" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 12, fill: "#6B7280" }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip content={<LineTooltip />} />
-                <Line
-                  type="monotone"
-                  dataKey="onTime"
-                  stroke="#0D9488"
-                  strokeWidth={2.5}
-                  dot={<Dot r={4} fill="#fff" stroke="#0D9488" strokeWidth={2} />}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive
-                />
-                <Line
-                  type="monotone"
-                  dataKey="late"
-                  stroke="#D97706"
-                  strokeWidth={2.5}
-                  dot={<Dot r={4} fill="#fff" stroke="#D97706" strokeWidth={2} />}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive
-                />
-              </LineChart>
-            </ResponsiveContainer>
-            <div className="chart-legend">
-              <span className="chart-legend-item">
-                <span className="chart-legend-dot" style={{ background: "#0D9488" }} />
-                On-time (Delivered)
-              </span>
-              <span className="chart-legend-item">
-                <span className="chart-legend-dot" style={{ background: "#D97706" }} />
-                Late / Cancelled
-              </span>
-            </div>
+            <Suspense fallback={<ChartSkeleton height={220} label="Loading report chart" />}>
+              <ReportTrendChart data={chartData} colors={c} />
+            </Suspense>
           </div>
 
           {/* Summary stats */}
@@ -329,7 +316,7 @@ export default function ReportsPage() {
               <div className="report-stat-label">Avg On-Time Rate</div>
               <div
                 className="report-stat-value"
-                style={{ color: avgOnTime >= 80 ? "var(--color-success)" : avgOnTime >= 60 ? "var(--color-warning)" : "var(--color-danger)" }}
+                style={{ color: scoreColor(avgOnTime) }}
               >
                 {avgOnTime}%
               </div>
@@ -346,96 +333,40 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          {/* Driver Performance Table */}
-          <div className="trips-table-card">
-            <div
-              style={{
-                padding: "1.25rem 1.5rem 1rem",
-                borderBottom: "1px solid var(--color-border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <h3 style={{ fontSize: "var(--text-base)", fontWeight: 600, color: "var(--color-text-1)" }}>
-                Driver Performance
-              </h3>
-              <span style={{ fontSize: 13, color: "var(--color-text-3)" }}>
-                {sorted.length} driver{sorted.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <table className="trips-data-table">
-              <thead>
-                <tr>
-                  {COLS.map((c) => (
-                    <th
-                      key={c.key}
-                      onClick={() => handleSort(c.sortKey)}
-                      style={{ cursor: c.sortKey ? "pointer" : "default", userSelect: "none" }}
-                    >
-                      {c.label}
-                      {c.sortKey && (
-                        <SortIcon col={c.sortKey} active={sortKey === c.sortKey} dir={sortDir} />
-                      )}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>
-                      <div className="trips-empty-state">
-                        <p className="trips-empty-title">No driver data</p>
-                        <p className="trips-empty-subtitle">No trips have been assigned yet</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  sorted.map((d, idx) => (
-                    <tr key={d.driverId}>
-                      <td style={{ fontWeight: 700, color: "var(--color-text-3)", width: 48 }}>
-                        {idx + 1}
-                      </td>
-                      <td style={{ fontWeight: 600, color: "var(--color-navy)" }}>
-                        Driver #{d.driverId}
-                      </td>
-                      <td>{d.total}</td>
-                      <td>{d.delivered}</td>
-                      <td>
-                        <span style={{ color: d.incidents > 0 ? "var(--color-danger)" : "var(--color-text-3)" }}>
-                          {d.incidents}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 14,
-                            color: scoreColor(d.score),
-                          }}
-                        >
-                          {d.score}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            label="Driver performance"
+            caption="Per-driver trip volume, on-time deliveries, incidents and derived score"
+            columns={driverColumns}
+            rows={rankedDrivers}
+            rowKey={(d) => d.driverId}
+            density="compact"
+            sort={sort}
+            onSortChange={setSort}
+            empty={{
+              illustration: EmptyReportIllustration,
+              title: "No driver data in this report",
+              subtitle: "No trips have been assigned in the selected period.",
+            }}
+          />
         </>
       )}
 
-      {!generated && !loading && (
+      {failed && !loading && (
+        <ErrorState
+          title="Couldn't generate the report"
+          message="The server was unreachable, so no figures were loaded. This is not an empty result for your date range."
+          onRetry={handleGenerate}
+        />
+      )}
+
+      {!generated && !loading && !failed && (
         <div className="report-placeholder">
-          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.25 }}>📊</div>
-          <p style={{ fontWeight: 600, fontSize: 16, color: "var(--color-text-2)", marginBottom: 6 }}>
-            No report generated yet
-          </p>
-          <p style={{ fontSize: 14, color: "var(--color-text-3)" }}>
-            Select a date range above and click Generate Report
-          </p>
+          <EmptyState
+            illustration={EmptyReportIllustration}
+            title="No report generated yet"
+            subtitle="Pick a date range above, then generate the report."
+            action={{ label: "Generate report", onClick: handleGenerate, icon: BarChartIcon }}
+          />
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ import { getAvailableVehicles, getVehicles } from "../../services/vehicleService
 import { createTrip } from "../../services/tripService";
 import LocationAutocomplete from "./LocationAutocomplete";
 import MapPickerModal from "../map/MapPickerModal";
+import Select from "../common/Select";
 
 const MAX_STOPS  = 7;
 const DRAFT_KEY  = "fleet-dispatch-draft";
@@ -423,20 +424,20 @@ export default function AssignTripForm({ onDispatched, onError }) {
             ) : drivers.length === 0 ? (
               <p className="dispatch-empty-text">No drivers available</p>
             ) : (
-              <select
+              <Select
                 id="dispatch-driver"
-                className="dispatch-input"
+                placeholder="Select a driver"
                 value={driverId}
-                onChange={(e) => setDriverId(e.target.value)}
-                required
-              >
-                <option value="" disabled>Select a driver</option>
-                {drivers.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.fullName} — Lic. {d.licenceNo}
-                  </option>
-                ))}
-              </select>
+                onChange={setDriverId}
+                // Licence moves to the description line: it is how you tell two
+                // drivers with the same name apart, but it should not compete
+                // with the name for the row's first glance.
+                options={drivers.map((d) => ({
+                  value: String(d.id),
+                  label: d.fullName,
+                  description: d.licenceNo ? `Licence ${d.licenceNo}` : undefined,
+                }))}
+              />
             )}
           </div>
 
@@ -448,20 +449,19 @@ export default function AssignTripForm({ onDispatched, onError }) {
             ) : vehicles.length === 0 ? (
               <p className="dispatch-empty-text">No vehicles available</p>
             ) : (
-              <select
+              <Select
                 id="dispatch-vehicle"
-                className="dispatch-input"
+                placeholder="Select a vehicle"
                 value={vehicleId}
-                onChange={(e) => setVehicleId(e.target.value)}
-                required
-              >
-                <option value="" disabled>Select a vehicle</option>
-                {vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.plateNumber} — {v.model} ({String(v.capacity)} cap.)
-                  </option>
-                ))}
-              </select>
+                onChange={setVehicleId}
+                options={vehicles.map((v) => ({
+                  value: String(v.id),
+                  label: v.plateNumber,
+                  description: [v.model, v.capacity != null ? `${v.capacity} kg` : null]
+                    .filter(Boolean)
+                    .join(" · "),
+                }))}
+              />
             )}
           </div>
 

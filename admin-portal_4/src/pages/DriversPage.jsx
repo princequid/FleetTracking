@@ -1,177 +1,210 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { getDrivers, deactivateDriver } from "../services/driverService";
 import { getTrips } from "../services/tripService";
 import { useAuthStore } from "../store/authStore";
-import StatCard from "../components/common/StatCard";
+import KpiCard from "../components/common/KpiCard";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
+import PageHeader from "../components/common/PageHeader";
+import FilterBar from "../components/common/FilterBar";
+import SearchBar from "../components/common/SearchBar";
 import { useToast } from "../components/common/Toast";
 import DriverForm from "../components/drivers/DriverForm";
 import DriverTable from "../components/drivers/DriverTable";
-import { UsersIcon, CheckCircleIcon, TruckIcon, SearchIcon, PlusCircleIcon } from "../components/common/Icons";
+import useCssVars from "../hooks/useCssVars";
+import { UsersIcon, CheckCircleIcon, TruckIcon, PlusCircleIcon } from "../components/common/Icons";
+
+const PAGE_SIZE = 12;
+const KPI_TOKENS = ["--color-primary", "--success-500", "--warning-500"];
 
 export default function DriversPage() {
   const role = useAuthStore((state) => state.role);
   const showToast = useToast();
+  const c = useCssVars(KPI_TOKENS);
+
   const [drivers, setDrivers] = useState([]);
   const [onDutyCount, setOnDutyCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [sort, setSort] = useState(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [deactivateTarget, setDeactivateTarget] = useState(null);
+  const [deactivating, setDeactivating] = useState(false);
 
-  function loadDrivers() {
+  const loadDrivers = useCallback(() => {
     setLoading(true);
-    setError("");
+    setError(null);
     Promise.all([getDrivers(), getTrips()])
       .then(([driverData, trips]) => {
         setDrivers(driverData);
         const onDutyIds = new Set(
           trips
             .filter((trip) => trip.status === "STARTED" || trip.status === "EN_ROUTE")
-            .map((trip) => trip.driverId)
+            .map((trip) => trip.driverId),
         );
         setOnDutyCount(onDutyIds.size);
       })
-      .catch(() => setError("Unable to load drivers."))
+      .catch(() =>
+        setError({
+          title: "Can't load drivers",
+          message: "The driver list is unavailable — this is a connection problem, not an empty roster.",
+        }),
+      )
       .finally(() => setLoading(false));
-  }
-
-  useEffect(() => {
-    loadDrivers();
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
+    loadDrivers();
+  }, [loadDrivers]);
+
+  useEffect(() => {
+    setPage(1);
   }, [search]);
 
   const filteredDrivers = useMemo(() => {
-    const query = debouncedSearch.trim().toLowerCase();
+    const query = search.toLowerCase();
     if (!query) return drivers;
     return drivers.filter(
       (driver) =>
         driver.fullName?.toLowerCase().includes(query) ||
         driver.licenceNo?.toLowerCase().includes(query) ||
-        driver.phone?.toLowerCase().includes(query)
+        driver.phone?.toLowerCase().includes(query),
     );
-  }, [drivers, debouncedSearch]);
+  }, [drivers, search]);
 
   const totalDrivers = drivers.length;
   const activeDrivers = drivers.filter((driver) => driver.isActive).length;
+  const dash = "—";
 
   function handleAddComplete() {
     setAddModalOpen(false);
-    showToast("success", "Driver Added", "Driver registered successfully.");
+    showToast("success", "Driver added", "The driver can now be assigned to trips.");
     loadDrivers();
-  }
-
-  function handleFormError(message) {
-    showToast("error", "Error", message);
   }
 
   async function confirmDeactivate() {
     if (!deactivateTarget) return;
+    setDeactivating(true);
     try {
       await deactivateDriver(deactivateTarget.id);
-      showToast("success", "Driver Deactivated", `${deactivateTarget.fullName} has been deactivated.`);
+      showToast(
+        "success",
+        "Driver deactivated",
+        `${deactivateTarget.fullName} can no longer be assigned to trips.`,
+      );
       loadDrivers();
-    } catch {
-      showToast("error", "Error", "Failed to deactivate driver.");
-    } finally {
       setDeactivateTarget(null);
+    } catch {
+      showToast("error", "Deactivation failed", "The driver was not deactivated. Please try again.");
+    } finally {
+      setDeactivating(false);
     }
   }
 
   return (
     <div>
-      <div className="page-header-row">
-        <h1>Drivers</h1>
-        <Button variant="primary" onClick={() => setAddModalOpen(true)}>
-          <PlusCircleIcon size={16} />
-          <span>Add Driver</span>
-        </Button>
-      </div>
+      <PageHeader
+        title="Drivers"
+        subtitle="Registered drivers, their licences and current duty status"
+        actions={
+          <Button variant="primary" onClick={() => setAddModalOpen(true)}>
+            <PlusCircleIcon size={16} />
+            <span>Add driver</span>
+          </Button>
+        }
+      />
 
-      <div className="stats-row">
-        <StatCard
+      {/* Accents come from resolved tokens rather than the raw #3B82F6 / #06B6D4
+          / #F59E0B these cards used to pass, which never changed with the theme
+          and matched nothing else in the portal. */}
+      <div className="stats-row stats-row-3">
+        <KpiCard
           className="stagger-child"
-          title="Total Drivers"
-          value={totalDrivers}
+          label="Total drivers"
+          value={loading ? dash : totalDrivers}
+          sub="On the roster"
           icon={UsersIcon}
-          color="#3B82F6"
+          accent={c["color-primary"]}
         />
-        <StatCard
+        <KpiCard
           className="stagger-child"
-          title="Active Drivers"
-          value={activeDrivers}
+          label="Active drivers"
+          value={loading ? dash : activeDrivers}
+          sub={totalDrivers ? `of ${totalDrivers} registered` : "None registered yet"}
           icon={CheckCircleIcon}
-          color="#06B6D4"
+          accent={c["success-500"]}
         />
-        <StatCard
+        <KpiCard
           className="stagger-child"
-          title="On Duty Today"
-          value={onDutyCount}
+          label="On duty now"
+          value={loading ? dash : onDutyCount}
+          sub="Currently running a trip"
           icon={TruckIcon}
-          color="#F59E0B"
+          accent={c["warning-500"]}
         />
       </div>
 
-      <div className="search-bar-wrapper">
-        <SearchIcon size={16} className="search-bar-icon" />
-        <input
-          className="search-bar-input"
-          placeholder="Search by name, licence, phone..."
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-      </div>
-
-      {error && <div className="error-message">{error}</div>}
-
-      <div className="trips-table-card">
-        {loading ? (
-          <div className="loading-text">Loading drivers…</div>
-        ) : filteredDrivers.length === 0 ? (
-          <div className="trips-empty-state">
-            <UsersIcon size={64} className="trips-empty-icon" />
-            <h2 className="trips-empty-title">No drivers registered</h2>
-            <p className="trips-empty-subtitle">Add your first driver to get started</p>
-          </div>
-        ) : (
-          <DriverTable
-            drivers={filteredDrivers}
-            canDeactivate={role === "SUPER_ADMIN"}
-            onDeactivate={(driver) => setDeactivateTarget(driver)}
+      <FilterBar
+        search={
+          <SearchBar
+            label="Search drivers"
+            placeholder="Name, licence or phone…"
+            onChange={setSearch}
           />
-        )}
-      </div>
+        }
+        activeFilters={
+          search ? [{ key: "q", label: "Search", value: `“${search}”`, onRemove: () => setSearch("") }] : []
+        }
+        onClearAll={search ? () => setSearch("") : undefined}
+        resultCount={loading ? undefined : filteredDrivers.length}
+        totalCount={drivers.length}
+      />
 
-      <Modal isOpen={addModalOpen} onClose={() => setAddModalOpen(false)} title="Add Driver" size="md">
-        <DriverForm onComplete={handleAddComplete} onError={handleFormError} />
+      <DriverTable
+        drivers={filteredDrivers}
+        canDeactivate={role === "SUPER_ADMIN"}
+        onDeactivate={(driver) => setDeactivateTarget(driver)}
+        loading={loading}
+        error={error}
+        onRetry={loadDrivers}
+        onAdd={() => setAddModalOpen(true)}
+        isFiltered={Boolean(search)}
+        onClearFilters={() => setSearch("")}
+        sort={sort}
+        onSortChange={setSort}
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
+
+      <Modal isOpen={addModalOpen} onClose={() => setAddModalOpen(false)} title="Add driver" size="md">
+        <DriverForm
+          onComplete={handleAddComplete}
+          onError={(message) => showToast("error", "Couldn't add driver", message)}
+        />
       </Modal>
 
       <Modal
         isOpen={Boolean(deactivateTarget)}
         onClose={() => setDeactivateTarget(null)}
-        title="Deactivate Driver"
+        title="Deactivate this driver?"
         size="sm"
       >
         <p className="confirm-dialog-text">
-          Deactivate {deactivateTarget?.fullName}? They will no longer be assignable to trips.
+          {deactivateTarget?.fullName} will no longer appear when assigning trips. Trips already
+          assigned to them are not affected.
         </p>
         <div className="confirm-dialog-actions">
-          <Button variant="ghost" onClick={() => setDeactivateTarget(null)}>
-            Cancel
+          <Button variant="secondary" size="sm" onClick={() => setDeactivateTarget(null)} disabled={deactivating}>
+            Keep active
           </Button>
-          <Button variant="danger" onClick={confirmDeactivate}>
-            Confirm
+          <Button variant="danger" size="sm" onClick={confirmDeactivate} loading={deactivating}>
+            Deactivate
           </Button>
         </div>
       </Modal>
-
     </div>
   );
 }

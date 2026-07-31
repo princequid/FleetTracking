@@ -3,7 +3,6 @@ import {
   View, Text, StyleSheet, Pressable,
   ScrollView, Modal,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -19,6 +18,8 @@ import api from '../../services/api_1';
 import { useTheme } from '../../theme/ThemeContext';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import AppHeader from '../../components/common/AppHeader';
+import ListItem from '../../components/common/ListItem';
 
 const MENU = [
   { key: 'notif',   icon: 'bell',        label: 'Notifications', sub: 'Manage alerts & push settings',  route: '/(driver)/notifications_5' },
@@ -27,55 +28,9 @@ const MENU = [
   { key: 'privacy', icon: 'shield',      label: 'Privacy policy',sub: 'Data usage and permissions',     route: '/(driver)/privacy-policy' },
 ];
 
-function MenuItem({ item, onPress, styles, C }) {
-  const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return (
-    <Animated.View style={animStyle}>
-      <Pressable
-        style={styles.menuItem}
-        onPress={onPress}
-        onPressIn={() => { scale.value = withSpring(0.97, { damping: 14, stiffness: 300 }); }}
-        onPressOut={() => { scale.value = withSpring(1,    { damping: 14, stiffness: 300 }); }}
-      >
-        <View style={styles.menuIcon}>
-          <Feather name={item.icon} size={18} color={C.navyPrimary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.menuLabel}>{item.label}</Text>
-          <Text style={styles.menuSub}>{item.sub}</Text>
-        </View>
-        <Feather name="chevron-right" size={16} color={C.text3} />
-      </Pressable>
-    </Animated.View>
-  );
-}
-
-function SignOutRow({ onPress, styles, C }) {
-  const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return (
-    <Animated.View style={animStyle}>
-      <Pressable
-        style={[styles.menuItem, { borderBottomWidth: 0 }]}
-        onPress={onPress}
-        // withTiming (not withSpring) — a flat ease-out with no overshoot, so the
-        // press feels solid rather than bouncy for this destructive action.
-        onPressIn={() => { scale.value = withTiming(0.97, { duration: 100 }); }}
-        onPressOut={() => { scale.value = withTiming(1,    { duration: 100 }); }}
-      >
-        <View style={[styles.menuIcon, { backgroundColor: C.redLight }]}>
-          <Feather name="log-out" size={18} color={C.red} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.menuLabel, { color: C.red }]}>Sign out</Text>
-          <Text style={styles.menuSub}>Sign out of your account</Text>
-        </View>
-        <Feather name="chevron-right" size={16} color={C.red} />
-      </Pressable>
-    </Animated.View>
-  );
-}
+// MenuItem and SignOutRow lived here. Both are now `ListItem`, which carries the
+// press feedback, haptic and — the reason they had to go — the accessible name
+// neither of them supplied. They announced as unlabelled buttons.
 
 function initials(name = '') {
   const parts = name.trim().split(' ');
@@ -85,7 +40,6 @@ function initials(name = '') {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -187,12 +141,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <Feather name="chevron-left" size={20} color="#fff" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Profile</Text>
-      </View>
+      <AppHeader title="Profile" />
 
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: 110 }]}
@@ -255,19 +204,28 @@ export default function ProfileScreen() {
 
         <Text style={[styles.sectionLabel, { marginTop: 20 }]}>SETTINGS</Text>
         <View style={styles.menuList}>
-          {MENU.map((item) => (
-            <MenuItem
+          {MENU.map((item, i) => (
+            <ListItem
               key={item.key}
-              item={item}
-              styles={styles}
-              C={C}
-              onPress={() => {
-                Haptics.selectionAsync();
-                if (item.route) router.push(item.route);
-              }}
+              icon={item.icon}
+              title={item.label}
+              subtitle={item.sub}
+              hint={`Opens ${item.label}`}
+              // The row's own press feedback and haptic come from ListItem now,
+              // so the explicit Haptics.selectionAsync() call is gone.
+              onPress={() => { if (item.route) router.push(item.route); }}
+              style={i > 0 && styles.menuRowDivider}
             />
           ))}
-          <SignOutRow onPress={openSignOut} styles={styles} C={C} />
+          <ListItem
+            icon="log-out"
+            title="Sign out"
+            subtitle="Sign out of your account"
+            destructive
+            hint="Opens a confirmation before signing out"
+            onPress={openSignOut}
+            style={styles.menuRowDivider}
+          />
         </View>
 
         <Text style={styles.version}>FleetSync Driver App v1.0.0</Text>
@@ -280,7 +238,15 @@ export default function ProfileScreen() {
             <Animated.View
               style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }, backdropStyle]}
             />
-            <Pressable style={StyleSheet.absoluteFill} onPress={closeSignOut} />
+            {/* Tap-outside-to-dismiss. Needs a name of its own or it reads as an
+                unlabelled button covering the whole screen. */}
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={closeSignOut}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+              accessibilityHint="Closes the sign-out prompt"
+            />
             <Animated.View style={[styles.sheet, sheetAnimStyle]}>
               <View style={styles.sheetHandle} />
               <Text style={styles.sheetTitle}>Sign out?</Text>
@@ -292,6 +258,10 @@ export default function ProfileScreen() {
                   style={[styles.sheetBtn, styles.sheetBtnCancel, signingOut && styles.sheetBtnDisabled]}
                   onPress={closeSignOut}
                   disabled={signingOut}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                  accessibilityHint="Stays signed in and closes this prompt"
+                  accessibilityState={{ disabled: signingOut }}
                 >
                   <Text style={styles.sheetBtnCancelText}>Cancel</Text>
                 </Pressable>
@@ -299,6 +269,11 @@ export default function ProfileScreen() {
                   style={[styles.sheetBtn, styles.sheetBtnConfirm, signingOut && styles.sheetBtnDisabled]}
                   onPress={confirmSignOut}
                   disabled={signingOut}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign out"
+                  accessibilityHint="Ends your session and returns to the sign-in screen"
+                  // `busy` so the spinner state is announced, not just drawn.
+                  accessibilityState={{ disabled: signingOut, busy: signingOut }}
                 >
                   {signingOut ? (
                     <LoadingSpinner color="#fff" />
@@ -316,24 +291,7 @@ export default function ProfileScreen() {
 }
 
 const makeStyles = (C) => StyleSheet.create({
-  header: {
-    backgroundColor: C.navyDark,
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
+  // header / backBtn / headerTitle removed — AppHeader owns that block now.
   content: { padding: 20, paddingBottom: 40 },
   avatarSection: { alignItems: 'center', gap: 6, paddingVertical: 20 },
   avatar: {
@@ -429,25 +387,10 @@ const makeStyles = (C) => StyleSheet.create({
     shadowRadius: 6,
     elevation: 1,
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-  },
-  menuIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: C.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuLabel: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1 },
-  menuSub:   { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3 },
+  // ListItem supplies the row itself; the list only needs the hairline between
+  // rows, which the component deliberately doesn't own (it can't know whether
+  // it's in a grouped list or standing alone).
+  menuRowDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.border },
   version: {
     fontFamily: 'Inter-Regular',
     fontSize: 12,

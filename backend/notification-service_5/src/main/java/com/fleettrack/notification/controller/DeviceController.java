@@ -29,9 +29,14 @@ public class DeviceController {
         return ResponseEntity.noContent().build();
     }
 
+    // Scoped to the caller's own tokens. Previously this took only the token from
+    // the path with no ownership check, so any authenticated user who obtained
+    // another user's device token could silently disable their push delivery —
+    // which in this system includes critical incident alerts to drivers.
     @DeleteMapping("/devices/{token}")
-    public ResponseEntity<Void> unregister(@PathVariable String token) {
-        deviceService.unregister(token);
+    public ResponseEntity<Void> unregister(@PathVariable String token, HttpServletRequest request) {
+        Long callerId = extractUserId(request);
+        deviceService.unregisterForUser(callerId, token);
         return ResponseEntity.noContent().build();
     }
 

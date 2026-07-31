@@ -1,14 +1,17 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  FlatList, RefreshControl, ActivityIndicator, Animated,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../services/api_1';
 import { useAlertsStore } from '../../store/alertsStore';
 import { useTheme } from '../../theme/ThemeContext';
+import AppHeader from '../../components/common/AppHeader';
+import PressableScale from '../../components/common/PressableScale';
+import EmptyState from '../../components/common/EmptyState';
+import ErrorState from '../../components/common/ErrorState';
+import Skeleton from '../../components/common/Skeleton';
+import { NoAlertsIllustration, OfflineIllustration } from '../../components/common/Illustrations';
+import { TRIP_PAGE_SIZE } from '../../constants/config';
 
 // The Alerts page is a live view of the driver's ACTIVE trips. Assigned trips (from the
 // admin) and started trips show here; once a trip is DELIVERED or CANCELLED it drops off
@@ -45,17 +48,18 @@ function tripStamp(t) {
 }
 
 const AlertCard = React.memo(function AlertCard({ trip, onPress, C, styles }) {
-  const meta  = statusMeta(C)[trip.status] || statusMeta(C).ASSIGNED;
-  const scale = useRef(new Animated.Value(1)).current;
+  const meta = statusMeta(C)[trip.status] || statusMeta(C).ASSIGNED;
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
-        style={styles.card}
-        activeOpacity={1}
-        onPress={() => onPress(trip)}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.97, damping: 14, useNativeDriver: true }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, damping: 14, useNativeDriver: true }).start()}
-      >
+    // Was a hand-rolled scale on the legacy `Animated` API, which runs the
+    // spring on the JS thread. PressableScale runs it on the UI thread, adds a
+    // haptic, and supplies the accessible name this card never had.
+    <PressableScale
+      style={styles.card}
+      onPress={() => onPress(trip)}
+      activeScale={0.985}
+      label={`${meta.title}. From ${trip.origin || 'unknown'} to ${trip.destination || 'unknown'}. ${meta.tag}`}
+      hint="Opens trip details"
+    >
         <View style={[styles.iconWrap, { backgroundColor: meta.bg }]}>
           <Feather name={meta.icon} size={18} color={meta.color} />
         </View>
@@ -73,14 +77,12 @@ const AlertCard = React.memo(function AlertCard({ trip, onPress, C, styles }) {
           </View>
           <Text style={styles.metaText}>Trip #{trip.id} · {timeAgo(tripStamp(trip))}</Text>
         </View>
-      </TouchableOpacity>
-    </Animated.View>
+    </PressableScale>
   );
 });
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
@@ -92,7 +94,7 @@ export default function NotificationsScreen() {
   const load = useCallback(async () => {
     setError('');
     try {
-      const res = await api.get('/trips');
+      const res = await api.get('/trips', { params: { size: TRIP_PAGE_SIZE } });
       const raw = res.data;
       const all = Array.isArray(raw) ? raw
         : Array.isArray(raw?.content) ? raw.content
@@ -138,34 +140,41 @@ export default function NotificationsScreen() {
     [openTrip, C, styles],
   );
 
-  const renderEmpty = () => (
-    <View style={styles.empty}>
-      <Feather name={error ? 'wifi-off' : 'bell-off'} size={44} color={C.border} />
-      <Text style={styles.emptyTitle}>{error ? 'Couldn’t load alerts' : 'No active trips'}</Text>
-      <Text style={styles.emptySub}>
-        {error ? error : 'New trips assigned by dispatch will appear here'}
-      </Text>
-    </View>
-  );
+  // A failed request and a genuinely quiet day are different things. Previously
+  // both rendered through the same block; an outage could read as "No active
+  // trips", which tells the driver they have nothing to do when we simply
+  // couldn't reach the server.
+  const renderEmpty = () =>
+    error ? (
+      <ErrorState
+        variant="offline"
+        illustration={<OfflineIllustration />}
+        title="Couldn't load alerts"
+        message="Check your connection and pull down to retry."
+        onRetry={() => { setLoading(true); load(); }}
+      />
+    ) : (
+      <EmptyState
+        illustration={<NoAlertsIllustration />}
+        title="No active trips"
+        message="New trips assigned by dispatch will appear here. You'll also get a push notification."
+      />
+    );
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Feather name="chevron-left" size={20} color="#fff" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Alerts</Text>
-          {trips.length > 0 && (
-            <Text style={styles.headerSub}>{trips.length} active trip{trips.length !== 1 ? 's' : ''}</Text>
-          )}
-        </View>
-      </View>
+      <AppHeader
+        title="Alerts"
+        subtitle={
+          trips.length > 0
+            ? `${trips.length} active trip${trips.length !== 1 ? 's' : ''}`
+            : undefined
+        }
+      />
 
       {loading ? (
-        <View style={styles.empty}>
-          <ActivityIndicator size="large" color={C.teal} />
-          <Text style={styles.emptySub}>Loading alerts…</Text>
+        <View style={styles.skeletonWrap}>
+          <Skeleton.List count={3} />
         </View>
       ) : (
         <FlatList
@@ -187,13 +196,8 @@ export default function NotificationsScreen() {
 }
 
 const makeStyles = (C) => StyleSheet.create({
-  header: {
-    backgroundColor: C.navyDark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 20,
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-  },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
-  headerSub: { fontFamily: 'Inter-Regular', fontSize: 12, color: 'rgba(255,255,255,0.5)', marginTop: 1 },
+  // header / backBtn / headerTitle / headerSub removed — AppHeader owns them.
+  skeletonWrap: { padding: 16, gap: 10 },
 
   card: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
@@ -209,7 +213,6 @@ const makeStyles = (C) => StyleSheet.create({
   routeText: { fontFamily: 'Inter-Medium', fontSize: 13, color: C.text2, flexShrink: 1 },
   metaText: { fontFamily: 'Inter-Regular', fontSize: 11, color: C.text3 },
 
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 32, paddingTop: 60 },
-  emptyTitle: { fontFamily: 'Inter-SemiBold', fontSize: 18, color: C.text1 },
-  emptySub: { fontFamily: 'Inter-Regular', fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
+  // empty / emptyTitle / emptySub removed — EmptyState and ErrorState own these,
+  // and unlike the old shared block they can't be confused for each other.
 });

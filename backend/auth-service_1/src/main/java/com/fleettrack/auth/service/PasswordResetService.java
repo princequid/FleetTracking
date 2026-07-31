@@ -6,6 +6,7 @@ import com.fleettrack.auth.model.entity.PasswordResetToken;
 import com.fleettrack.auth.model.entity.User;
 import com.fleettrack.auth.model.enums.Role;
 import com.fleettrack.auth.repository.PasswordResetTokenRepository;
+import com.fleettrack.auth.repository.RefreshTokenRepository;
 import com.fleettrack.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class PasswordResetService {
 
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
 
@@ -84,6 +86,13 @@ public class PasswordResetService {
         // again in-app right after.
         user.setMustChangePassword(false);
         userRepository.save(user);
+
+        // Evict every existing session. Password reset is the primary remedy a
+        // user reaches for when they believe their account is compromised — and
+        // without this it did not remove the attacker: a stolen refresh token
+        // stayed valid for its full 7-day window and could be rotated
+        // indefinitely via the public /auth/refresh endpoint.
+        refreshTokenRepository.revokeAllByUserId(user.getId());
 
         resetToken.setUsed(true);
         passwordResetTokenRepository.save(resetToken);

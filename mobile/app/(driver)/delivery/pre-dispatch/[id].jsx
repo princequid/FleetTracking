@@ -232,7 +232,12 @@ export default function PreDispatchScreen() {
         <Feather name="camera-off" size={44} color={C.text3} />
         <Text style={styles.permTitle}>Camera access needed</Text>
         <Text style={styles.permSub}>Pre-dispatch photos require camera permission</Text>
-        <TouchableOpacity style={styles.grantBtn} onPress={requestPermission}>
+        <TouchableOpacity
+          style={styles.grantBtn}
+          onPress={requestPermission}
+          accessibilityRole="button"
+          accessibilityLabel="Grant camera permission"
+        >
           <Text style={styles.grantBtnText}>Grant permission</Text>
         </TouchableOpacity>
       </SafeAreaView>
@@ -255,7 +260,13 @@ export default function PreDispatchScreen() {
 
       {/* Top overlay */}
       <View style={[styles.topOverlay, { paddingTop: Math.max(48, insets.top + 12) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          accessibilityHint="Leaves the pre-dispatch photo without saving"
+        >
           <Feather name="x" size={20} color="#fff" />
         </TouchableOpacity>
         <View style={styles.stepInfo}>
@@ -280,11 +291,18 @@ export default function PreDispatchScreen() {
             <TouchableOpacity
               style={styles.sideBtn}
               onPress={() => setFacing((f) => (f === 'back' ? 'front' : 'back'))}
+              accessibilityRole="button"
+              accessibilityLabel="Switch camera"
             >
               <Feather name="refresh-cw" size={20} color="#fff" />
             </TouchableOpacity>
             <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-              <TouchableOpacity style={styles.shutter} onPress={capture}>
+              <TouchableOpacity
+                style={styles.shutter}
+                onPress={capture}
+                accessibilityRole="button"
+                accessibilityLabel="Take photo"
+              >
                 <View style={styles.shutterInner} />
               </TouchableOpacity>
             </Animated.View>
@@ -292,13 +310,23 @@ export default function PreDispatchScreen() {
           </View>
         ) : (
           <View style={styles.confirmRow}>
-            <TouchableOpacity style={styles.retakeBtn} onPress={retake} disabled={loading}>
+            <TouchableOpacity
+              style={styles.retakeBtn}
+              onPress={retake}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Retake photo"
+              accessibilityState={{ disabled: loading }}
+            >
               <Text style={styles.retakeBtnText}>Retake</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.useBtn, loading && { opacity: 0.7 }]}
               onPress={confirmUpload}
               disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Use photo"
+              accessibilityState={{ disabled: loading, busy: loading }}
             >
               <Text style={styles.useBtnText}>{loading ? 'Uploading…' : 'Use photo'}</Text>
               {!loading && <Feather name="check" size={16} color="#fff" style={{ marginLeft: 6 }} />}

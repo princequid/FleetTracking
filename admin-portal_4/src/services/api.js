@@ -19,6 +19,32 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * Single-flight refresh.
+ *
+ * Refresh tokens rotate server-side, so the token is consumed by the first
+ * request that redeems it. Without this guard, a page that fires several
+ * requests at once (the dashboard fires four) would have all of them 401,
+ * all of them POST /auth/refresh with the same token, and only the first
+ * succeed — the rest failed into a hard redirect. The visible symptom was a
+ * random full-page logout whenever a token expired with the dashboard open.
+ *
+ * Every concurrent 401 now awaits the same in-flight promise.
+ */
+let refreshPromise = null;
+
+function refreshSession(refreshToken) {
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post(`${BASE_URL}/auth/refresh`, { refreshToken })
+      .then(({ data }) => data)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -36,7 +62,7 @@ api.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
+        const data = await refreshSession(refreshToken);
 
         setAuth({
           userId: data.userId ?? userId,
@@ -52,6 +78,13 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         clearAuth();
+        // Flag the reason so the login screen can explain the bounce instead of
+        // the session appearing to drop for no reason.
+        try {
+          sessionStorage.setItem("ft-session-expired", "1");
+        } catch {
+          // storage unavailable — the redirect still works, just without the notice
+        }
         window.location.href = "/login";
         return Promise.reject(refreshError);
       }

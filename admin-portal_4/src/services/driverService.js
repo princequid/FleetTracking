@@ -1,11 +1,14 @@
 import api from "./api";
+import { LIST_PAGE_SIZE } from "../constants/config";
 
+// size is explicit on both list calls — the backend caps unparameterised requests at 50
+// rows with nothing in the response to say so. See constants/config.js.
 export function getDrivers() {
-  return api.get("/drivers").then((res) => res.data);
+  return api.get("/drivers", { params: { size: LIST_PAGE_SIZE } }).then((res) => res.data);
 }
 
 export function getAvailableDrivers() {
-  return api.get("/drivers/available").then((res) => res.data);
+  return api.get("/drivers/available", { params: { size: LIST_PAGE_SIZE } }).then((res) => res.data);
 }
 
 export function getDriverById(id) {

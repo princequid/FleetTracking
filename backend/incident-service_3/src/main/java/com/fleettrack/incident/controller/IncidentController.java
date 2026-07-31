@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -46,7 +47,8 @@ public class IncidentController {
     @GetMapping
     public ResponseEntity<List<IncidentResponse>> getIncidents(
             @RequestParam(required = false) IncidentStatus status,
-            @PageableDefault(size = 50) Pageable pageable,
+            // Explicit sort required for stable paging — see TripController.getTrips.
+            @PageableDefault(size = 50, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             HttpServletRequest httpRequest) {
         requireRole(httpRequest, LIST_ROLES);
         return ResponseEntity.ok(incidentService.getAllIncidents(status, pageable));

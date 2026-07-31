@@ -130,10 +130,20 @@ export default function TripCompleteScreen() {
       </Animated.View>
 
       <View style={styles.btns}>
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => router.replace('/(driver)/dashboard_2')}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          onPress={() => router.replace('/(driver)/dashboard_2')}
+          accessibilityRole="button"
+          accessibilityLabel="Back to home"
+        >
           <Text style={styles.primaryBtnText}>Back to home</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.ghostBtn} onPress={() => router.push('/(driver)/trip/history_2')}>
+        <TouchableOpacity
+          style={styles.ghostBtn}
+          onPress={() => router.push('/(driver)/trip/history_2')}
+          accessibilityRole="button"
+          accessibilityLabel="View trip history"
+        >
           <Text style={styles.ghostBtnText}>View trip history</Text>
         </TouchableOpacity>
       </View>

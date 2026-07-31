@@ -7,6 +7,20 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 const QUEUE_FILE = `${FileSystem.documentDirectory}ft_upload_queue.json`;
 
+// Hard cap on the retry queue. Every failed capture appends an entry, and entries that
+// exhausted their retries were previously kept forever (see retryFailedUploads) — so a
+// driver with no signal for a shift accumulated a queue that only ever grew, each entry
+// pinning a fileUri into a JSON blob that is fully read and re-serialised on every
+// capture and every foreground. Oldest entries are dropped first.
+const MAX_QUEUE_ITEMS = 50;
+const MAX_RETRIES = 3;
+
+// Guards against overlapping retryFailedUploads() runs. It is invoked on mount AND on
+// every foreground transition, and a slow run can still be mid-flight when the next one
+// starts — both would read the same queue, upload the same photos twice, and the slower
+// one's final writeQueue() would clobber the faster one's result.
+let retryInFlight = null;
+
 async function readQueue() {
   try {
     const info = await FileSystem.getInfoAsync(QUEUE_FILE);
@@ -20,7 +34,10 @@ async function readQueue() {
 
 async function writeQueue(queue) {
   try {
-    await FileSystem.writeAsStringAsync(QUEUE_FILE, JSON.stringify(queue));
+    // Keep only the newest MAX_QUEUE_ITEMS — an unbounded queue grows the JSON blob
+    // that every capture and every foreground read/parses in full.
+    const bounded = queue.length > MAX_QUEUE_ITEMS ? queue.slice(-MAX_QUEUE_ITEMS) : queue;
+    await FileSystem.writeAsStringAsync(QUEUE_FILE, JSON.stringify(bounded));
   } catch {}
 }
 
@@ -121,27 +138,39 @@ export const mediaService = {
   },
 
   async retryFailedUploads() {
-    const queue = await readQueue();
-    if (!queue.length) return;
+    // Single-flight: a second caller joins the run already in progress instead of
+    // starting a competing one over the same queue.
+    if (retryInFlight) return retryInFlight;
+    retryInFlight = (async () => {
+      const queue = await readQueue();
+      if (!queue.length) return;
 
-    const remaining = [];
-    for (const item of queue) {
-      if (item.retryCount >= 3) {
-        remaining.push(item); // give up after 3 tries
-        continue;
+      const remaining = [];
+      for (const item of queue) {
+        // Retries exhausted — stop attempting, but KEEP the entry. These are POD /
+        // pre-dispatch photos and dropping one silently destroys delivery evidence.
+        // MAX_QUEUE_ITEMS is what bounds the file; see the note in retryFailedUploads'
+        // caller about surfacing these to the driver instead of stranding them here.
+        if ((item.retryCount || 0) >= MAX_RETRIES) {
+          remaining.push(item);
+          continue;
+        }
+        try {
+          await this.fullUploadFlow(
+            item.tripId, item.photoType, item.fileUri,
+            item.lat ? { latitude: item.lat, longitude: item.lng } : null,
+            null,
+            { stopId: item.stopId ?? null },
+          );
+        } catch {
+          remaining.push({ ...item, retryCount: (item.retryCount || 0) + 1 });
+        }
       }
-      try {
-        await this.fullUploadFlow(
-          item.tripId, item.photoType, item.fileUri,
-          item.lat ? { latitude: item.lat, longitude: item.lng } : null,
-          null,
-          { stopId: item.stopId ?? null },
-        );
-      } catch {
-        remaining.push({ ...item, retryCount: (item.retryCount || 0) + 1 });
-      }
-    }
-    await writeQueue(remaining);
+      // Authoritative rewrite: fullUploadFlow's own catch re-appended each failed item
+      // to the file as it went, so this overwrite is what keeps the queue from doubling.
+      await writeQueue(remaining);
+    })().finally(() => { retryInFlight = null; });
+    return retryInFlight;
   },
 };
 

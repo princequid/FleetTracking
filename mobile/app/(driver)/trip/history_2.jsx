@@ -1,21 +1,20 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  FlatList, RefreshControl, ActivityIndicator,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
 import api from '../../../services/api_1';
 import { useTheme } from '../../../theme/ThemeContext';
+import AppHeader from '../../../components/common/AppHeader';
+import PressableScale from '../../../components/common/PressableScale';
+import TripCard from '../../../components/trip/TripCard_2';
+import EmptyState from '../../../components/common/EmptyState';
+import ErrorState from '../../../components/common/ErrorState';
+import Skeleton from '../../../components/common/Skeleton';
+import { NoTripsIllustration, NoResultsIllustration, OfflineIllustration } from '../../../components/common/Illustrations';
+import { space, radius, type } from '../../../constants/tokens';
+import { TRIP_PAGE_SIZE } from '../../../constants/config';
 
 // Only finished trips belong in history
 const HISTORY_STATUSES = ['DELIVERED', 'CANCELLED'];
-
-const statusMeta = (C) => ({
-  DELIVERED: { label: 'Completed', color: C.green, bg: C.greenLight, icon: 'check-circle' },
-  CANCELLED: { label: 'Cancelled', color: C.red,   bg: C.redLight,   icon: 'x-circle' },
-});
 
 const TABS = [
   { key: 'all',       label: 'All' },
@@ -23,71 +22,35 @@ const TABS = [
   { key: 'CANCELLED', label: 'Cancelled' },
 ];
 
-// Trim long location names to the first 3 words so rows stay tidy
-function shortLocation(name) {
-  if (!name) return '—';
-  const words = name.trim().split(/\s+/);
-  return words.length <= 3 ? name : words.slice(0, 3).join(' ') + '…';
-}
-
-function tripDate(trip) {
-  const d = trip.completedAt || trip.cancelledAt || trip.arrivedAt || trip.createdAt;
-  if (!d) return '';
-  return new Date(d).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
-       + ' · ' + new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-const HistoryRow = React.memo(function HistoryRow({ trip, onPress, C, styles }) {
-  const meta = statusMeta(C)[trip.status] || statusMeta(C).DELIVERED;
-  return (
-    <TouchableOpacity style={styles.card} onPress={() => onPress(trip)} activeOpacity={0.85}>
-      <View style={[styles.iconWrap, { backgroundColor: meta.bg }]}>
-        <Feather name={meta.icon} size={18} color={meta.color} />
-      </View>
-      <View style={{ flex: 1, gap: 3 }}>
-        <View style={styles.routeRow}>
-          <Text style={styles.routeText} numberOfLines={1}>{shortLocation(trip.origin)}</Text>
-          <Feather name="arrow-right" size={12} color={C.text3} />
-          <Text style={styles.routeText} numberOfLines={1}>{shortLocation(trip.destination)}</Text>
-        </View>
-        <Text style={styles.metaText}>Trip #{trip.id} · {tripDate(trip)}</Text>
-      </View>
-      <View style={[styles.badge, { backgroundColor: meta.bg }]}>
-        <Text style={[styles.badgeText, { color: meta.color }]}>{meta.label}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-});
-
 export default function TripHistoryScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
-  const [trips, setTrips]       = useState([]);
-  const [tab, setTab]           = useState('all');
-  const [loading, setLoading]   = useState(true);
-  const [refreshing, setRef]    = useState(false);
-  const [error, setError]       = useState('');
+  const [trips, setTrips]     = useState([]);
+  const [tab, setTab]         = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRef]  = useState(false);
+  const [error, setError]     = useState('');
 
+  // Unchanged from the original — same endpoint, same response-shape handling,
+  // same filter and sort. Only the presentation below it was rebuilt.
   const load = useCallback(async () => {
     setError('');
     try {
-      const res = await api.get('/trips');
+      const res = await api.get('/trips', { params: { size: TRIP_PAGE_SIZE } });
       const raw = res.data;
       const all = Array.isArray(raw) ? raw
         : Array.isArray(raw?.content) ? raw.content
         : Array.isArray(raw?.data) ? raw.data
         : [];
-      // Keep only finished trips, newest first
       const finished = all
         .filter((t) => HISTORY_STATUSES.includes(t.status))
         .sort((a, b) => new Date(b.completedAt || b.cancelledAt || b.createdAt || 0)
                       - new Date(a.completedAt || a.cancelledAt || a.createdAt || 0));
       setTrips(finished);
     } catch {
-      setError('Could not load trip history. Pull to retry.');
+      setError('Could not load trip history.');
       setTrips([]);
     } finally {
       setLoading(false);
@@ -103,62 +66,87 @@ export default function TripHistoryScreen() {
   const filtered = tab === 'all' ? trips : trips.filter((t) => t.status === tab);
 
   const openTrip = useCallback((trip) => router.push(`/(driver)/trip/${trip.id}`), [router]);
+
   const renderItem = useCallback(
-    ({ item }) => <HistoryRow trip={item} onPress={openTrip} C={C} styles={styles} />,
-    [openTrip, C, styles],
+    ({ item }) => <TripCard trip={item} variant="card" onPress={() => openTrip(item)} />,
+    [openTrip],
   );
 
-  const renderEmpty = () => (
-    <View style={styles.empty}>
-      <Feather name={error ? 'wifi-off' : 'clock'} size={44} color={C.border} />
-      <Text style={styles.emptyTitle}>
-        {error ? 'Couldn’t load history' : 'No trips yet'}
-      </Text>
-      <Text style={styles.emptySub}>
-        {error ? error : 'Completed and cancelled trips will appear here'}
-      </Text>
-    </View>
-  );
+  /**
+   * A failed request and an empty history are different situations and now
+   * render differently. Previously both went through one block, so an outage
+   * could read as "No trips yet" — telling the driver their history is empty
+   * when we simply couldn't reach the server.
+   */
+  const renderEmpty = () =>
+    error ? (
+      <ErrorState
+        variant="offline"
+        illustration={<OfflineIllustration />}
+        title="Couldn't load history"
+        message="Check your connection and pull down to retry."
+        onRetry={() => { setLoading(true); load(); }}
+      />
+    ) : (
+      <EmptyState
+        // "No trips at all" and "no trips matching this filter" are different
+        // situations, so they get different drawings.
+        illustration={tab === 'all' ? <NoTripsIllustration /> : <NoResultsIllustration />}
+        title={tab === 'all' ? 'No trips yet' : `No ${tab === 'DELIVERED' ? 'completed' : 'cancelled'} trips`}
+        message={
+          tab === 'all'
+            ? 'Completed and cancelled trips will appear here once you finish your first delivery.'
+            : 'Try a different filter to see your other trips.'
+        }
+        action={tab !== 'all' ? { label: 'Show all trips', onPress: () => setTab('all') } : undefined}
+      />
+    );
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <View style={[styles.header, { paddingTop: Math.max(16, insets.top + 12) }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Feather name="chevron-left" size={20} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Trip History</Text>
-      </View>
+      <AppHeader title="Trip History" />
 
       <View style={styles.tabRow}>
         {TABS.map((t) => {
           const count = t.key === 'all' ? trips.length : t.key === 'DELIVERED' ? completedCount : cancelledCount;
+          const active = tab === t.key;
           return (
-            <TouchableOpacity
+            <PressableScale
               key={t.key}
-              style={[styles.tabBtn, tab === t.key && styles.tabBtnActive]}
               onPress={() => setTab(t.key)}
+              haptic="selection"
+              activeScale={0.96}
+              label={`${t.label}, ${count} trips`}
+              // Announces which filter is on, rather than leaving a screen-reader
+              // user to infer it from an underline they can't see.
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              style={[styles.tabBtn, active && styles.tabBtnActive]}
             >
-              <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>
                 {t.label} ({count})
               </Text>
-            </TouchableOpacity>
+            </PressableScale>
           );
         })}
       </View>
 
       {loading ? (
-        <View style={styles.empty}>
-          <ActivityIndicator size="large" color={C.teal} />
-          <Text style={styles.emptySub}>Loading your trips…</Text>
+        // A skeleton list rather than a centred spinner: it reserves the shape
+        // the rows will take, so nothing jumps when the data lands.
+        <View style={styles.skeletonWrap}>
+          <Skeleton.List count={5} />
         </View>
       ) : (
         <FlatList
           data={filtered}
           keyExtractor={(t) => String(t.id)}
-          contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1, paddingBottom: 110 }}
+          contentContainerStyle={styles.listContent}
           renderItem={renderItem}
           ListEmptyComponent={renderEmpty}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.teal} colors={[C.teal]} />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.teal} colors={[C.teal]} />
+          }
           showsVerticalScrollIndicator={false}
           initialNumToRender={10}
           maxToRenderPerBatch={10}
@@ -171,29 +159,25 @@ export default function TripHistoryScreen() {
 }
 
 const makeStyles = (C) => StyleSheet.create({
-  header: { backgroundColor: C.navyDark, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: 'Inter-Bold', fontSize: 20, color: '#fff' },
-
-  tabRow: { flexDirection: 'row', backgroundColor: C.surface, borderBottomWidth: 1, borderBottomColor: C.border, paddingHorizontal: 12, gap: 2 },
-  tabBtn: { paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabBtnActive: { borderBottomColor: C.navyPrimary },
-  tabText: { fontFamily: 'Inter-Medium', fontSize: 13, color: C.text3 },
-  tabTextActive: { color: C.navyPrimary, fontFamily: 'Inter-SemiBold' },
-
-  card: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: C.surface, borderRadius: 14, padding: 14,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: C.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    paddingHorizontal: space[3],
+    gap: 2,
   },
-  iconWrap: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  routeText: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.text1, flexShrink: 1 },
-  metaText: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3 },
-  badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
-  badgeText: { fontFamily: 'Inter-SemiBold', fontSize: 11 },
+  tabBtn: {
+    paddingHorizontal: space[3],
+    paddingVertical: space[3],
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabBtnActive: { borderBottomColor: C.navyPrimary },
+  tabText: { ...type.small, color: C.text3 },
+  tabTextActive: { color: C.navyPrimary, fontFamily: type.bodyStrong.fontFamily },
 
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 32, paddingTop: 60 },
-  emptyTitle: { fontFamily: 'Inter-SemiBold', fontSize: 18, color: C.text1 },
-  emptySub: { fontFamily: 'Inter-Regular', fontSize: 14, color: C.text3, textAlign: 'center', lineHeight: 22 },
+  // 110 clears the floating tab bar (see layout.tabBarClearance).
+  listContent: { padding: space[4], gap: space[3], flexGrow: 1, paddingBottom: 110 },
+  skeletonWrap: { padding: space[4], gap: space[3] },
 });

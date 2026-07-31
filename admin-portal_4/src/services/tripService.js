@@ -1,7 +1,10 @@
 import api from "./api";
+import { LIST_PAGE_SIZE } from "../constants/config";
 
 export function getTrips(statusFilter) {
-  const params = {};
+  // size is explicit: without it the backend's @PageableDefault caps this at 50 rows
+  // silently, which quietly wrongs every KPI and report derived from it. See config.js.
+  const params = { size: LIST_PAGE_SIZE };
   if (statusFilter && statusFilter !== "All") {
     params.status = statusFilter.toUpperCase();
   }

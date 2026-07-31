@@ -150,7 +150,14 @@ export default function ResetPasswordPage() {
                 </div>
 
                 <button className="login-button" type="submit" disabled={loading}>
-                  {loading ? <span className="login-spinner" /> : "Update password"}
+                  {loading ? (
+                    <span className="login-button-loading">
+                      <span className="login-spinner" />
+                      Updating…
+                    </span>
+                  ) : (
+                    "Update password"
+                  )}
                 </button>
 
                 {error && <div className="login-error">{error}</div>}

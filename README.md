@@ -2,10 +2,6 @@
 
 Fleet tracking platform with mobile app, admin portal, and microservices backend.
 
-SPER ADMIN:
-
-# FleetTrack Pro
-
 A fleet tracking and cargo safety application built with React Native (driver app), React.js/Vite (admin portal), and Java Spring Boot microservices.
 
 ---
@@ -312,7 +308,7 @@ You should see `infrastructure_1-postgres-1` and `infrastructure_1-osrm-1` both 
 ### 3. Start Eureka Server (open a new terminal)
 
 ```powershell
-cd backend\eureka-server
+cd backend\eureka-server_1
 mvn spring-boot:run
 ```
 
@@ -330,7 +326,7 @@ Wait until you see `Started AuthServiceApplication`. Check http://localhost:8761
 ### 5. Start API Gateway (open a new terminal)
 
 ```powershell
-cd backend\api-gateway
+cd backend\api-gateway_1
 mvn spring-boot:run
 ```
 
@@ -361,42 +357,42 @@ Once the foundation is running (steps 1-5 above), start your own service in a ne
 **M1 — vehicle-service:**
 
 ```powershell
-cd backend\vehicle-service
+cd backend\vehicle-service_1
 mvn spring-boot:run
 ```
 
 **M2 — trip-service:**
 
 ```powershell
-cd backend\trip-service
+cd backend\trip-service_2
 mvn spring-boot:run
 ```
 
 **M2 — gps-service:**
 
 ```powershell
-cd backend\gps-service
+cd backend\gps-service_2
 mvn spring-boot:run
 ```
 
 **M3 — media-service:**
 
 ```powershell
-cd backend\media-service
+cd backend\media-service_3
 mvn spring-boot:run
 ```
 
 **M3 — incident-service:**
 
 ```powershell
-cd backend\incident-service
+cd backend\incident-service_3
 mvn spring-boot:run
 ```
 
 **M4 — admin portal:**
 
 ```powershell
-cd admin-portal
+cd admin-portal_4
 npm install
 npm run dev
 ```
@@ -406,7 +402,7 @@ Open http://localhost:5173 in your browser.
 **M5 — notification-service:**
 
 ```powershell
-cd backend\notification-service
+cd backend\notification-service_5
 mvn spring-boot:run
 ```
 
@@ -447,7 +443,7 @@ mvn clean spring-boot:run
 mvn compile
 
 # Run tests
-mvn test
+# mvn test   # no tests exist yet — see .github/workflows/test-and-build.yml
 ```
 
 ### Git

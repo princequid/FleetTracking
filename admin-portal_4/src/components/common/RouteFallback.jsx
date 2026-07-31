@@ -6,7 +6,7 @@ export default function RouteFallback() {
   return (
     <div className="route-fallback" role="status" aria-live="polite" aria-busy="true">
       <span className="route-fallback-spinner" />
-      <span className="route-fallback-text">Loading…</span>
+      <span className="route-fallback-text">Loading page…</span>
     </div>
   );
 }
