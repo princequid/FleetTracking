@@ -10,16 +10,18 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withSpring, withTiming,
   runOnJS, Easing,
 } from 'react-native-reanimated';
-import { useAuthStore } from '../../store/authStore_1';
-import { useDriverStore } from '../../store/driverStore_1';
-import { useTripStore } from '../../store/tripStore_2';
-import authService from '../../services/authService_1';
-import api from '../../services/api_1';
-import { useTheme } from '../../theme/ThemeContext';
-import { ThemeToggle } from '../../components/ThemeToggle';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import AppHeader from '../../components/common/AppHeader';
-import ListItem from '../../components/common/ListItem';
+import { useAuthStore } from '../../../store/authStore_1';
+import { useDriverStore } from '../../../store/driverStore_1';
+import { useTripStore } from '../../../store/tripStore_2';
+import authService from '../../../services/authService_1';
+import api from '../../../services/api_1';
+import { useTheme } from '../../../theme/ThemeContext';
+import { useTripsCacheStore } from '../../../store/tripsCacheStore';
+import { useTripPhotosStore } from '../../../store/tripPhotosStore';
+import { ThemeToggle } from '../../../components/ThemeToggle';
+import LoadingSpinner from '../../../components/common/LoadingSpinner';
+import AppHeader from '../../../components/common/AppHeader';
+import ListItem from '../../../components/common/ListItem';
 
 const MENU = [
   { key: 'notif',   icon: 'bell',        label: 'Notifications', sub: 'Manage alerts & push settings',  route: '/(driver)/notifications_5' },
@@ -121,6 +123,12 @@ export default function ProfileScreen() {
     await authService.logout();
     clearAuth();
     clearDriver();
+    // The tab screens now stay mounted for the whole session and hold their data
+    // in a shared cache, so signing out has to empty it explicitly — otherwise
+    // the next driver to log in on this device would briefly see the previous
+    // driver's trips before the first fetch replaced them.
+    useTripsCacheStore.getState().reset();
+    useTripPhotosStore.getState().reset();
     router.replace('/(auth)/login_1');
   };
 

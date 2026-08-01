@@ -6,7 +6,7 @@ import PageHeader from "../components/common/PageHeader";
 import FilterBar from "../components/common/FilterBar";
 import SearchBar from "../components/common/SearchBar";
 import Button from "../components/common/Button";
-import { getTrips } from "../services/tripService";
+import { peekTrips, getTrips } from "../services/tripService";
 import { getDrivers } from "../services/driverService";
 import { getVehicles } from "../services/vehicleService";
 import { FILTER_TABS } from "../constants/tripStatus";
@@ -18,18 +18,27 @@ const tabToStatus = (tab) => tab.toUpperCase().replace(/\s+/g, "_");
 
 export default function TripsPage() {
   const navigate = useNavigate();
-  const [trips, setTrips] = useState([]);
+  // Seed from the cache synchronously so returning to this page paints the list on the
+  // FIRST render instead of flashing a skeleton. Caching the fetch alone wasn't enough:
+  // the cached promise resolves a microtask AFTER React has already painted the empty
+  // state. `undefined` means a miss; `[]` is a real (empty) cached result.
+  const [trips, setTrips] = useState(() => peekTrips() ?? []);
   const [driversById, setDriversById] = useState({});
   const [vehiclesById, setVehiclesById] = useState({});
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => peekTrips() === undefined);
   const [error, setError] = useState(null);
 
   const loadTrips = useCallback(() => {
-    setLoading(true);
+    // Only show the skeleton when there is genuinely nothing to show. When cached data
+    // is already on screen we revalidate silently in the background
+    // (stale-while-revalidate). Flipping this on unconditionally is what still made
+    // the page flash on return, even after the initial state was seeded from cache —
+    // the mount effect calls this loader, which immediately overwrote that `false`.
+    if (peekTrips() === undefined) setLoading(true);
     setError(null);
     Promise.all([getTrips(), getDrivers(), getVehicles()])
       .then(([tripData, driverData, vehicleData]) => {
