@@ -35,8 +35,17 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // internet). Restricting origins here too duplicated that check with a separately
         // configured, independently-drifting origin list, which is what caused the browser
         // to see two Access-Control-Allow-Origin headers on the same response and reject it.
+        // setSuppressCors(true) is the part that actually delegates. setAllowedOriginPatterns("*")
+        // alone does NOT stop SockJS writing its own Access-Control-Allow-Origin — it only
+        // widens which origins it accepts, then echoes the request origin straight back. The
+        // gateway's CorsWebFilter adds the identical header, so the browser received
+        //   Access-Control-Allow-Origin: <origin>, <origin>
+        // and rejected the /ws/info handshake outright ("contains multiple values, but only
+        // one is allowed"), which broke the admin portal's live map. Suppressing CORS here
+        // leaves exactly one writer of that header: the gateway.
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
-                .withSockJS();
+                .withSockJS()
+                .setSuppressCors(true);
     }
 }
