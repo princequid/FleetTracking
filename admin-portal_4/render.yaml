@@ -45,12 +45,39 @@ services:
     headers:
       - path: /*
         name: Content-Security-Policy
+        # ── script-src hash ───────────────────────────────────────────────────────────
+        # The sha256 covers the inline theme-bootstrap script in index.html (~line 17),
+        # which reads the saved theme and stamps data-theme on <html> BEFORE first paint
+        # so the page never flashes the wrong theme. It has to be inline to beat the
+        # bundle, so it can't be moved to a file without reintroducing the flash.
+        #
+        # A hash is used rather than 'unsafe-inline' deliberately: 'unsafe-inline' would
+        # disable the single protection that matters most here, since the admin session
+        # (access AND refresh token) is stored in localStorage and is readable by any
+        # script that executes.
+        #
+        # ⚠️  If that inline script is EDITED — even by one character — this hash stops
+        # matching and the script is silently blocked. The symptom is a theme flash on
+        # load, not an obvious error. The browser console prints the correct replacement
+        # hash in the violation message; paste the new one here.
+        #
+        # ── img-src ───────────────────────────────────────────────────────────────────
+        # Tiles come from CartoDB (LiveMapPage.jsx uses basemaps.cartocdn.com light_all/
+        # dark_all), NOT OpenStreetMap — an earlier version of this policy listed only
+        # *.tile.openstreetmap.org and blocked every tile, rendering a blank grey map.
+        # The OSM host stays listed because other map components still reference it.
+        #
+        # ── connect-src ───────────────────────────────────────────────────────────────
+        # router.project-osrm.org is deliberately ABSENT. It is the public-OSRM fallback
+        # in constants/config.js, and omitting it here means a missing VITE_OSRM_URL
+        # fails visibly instead of silently shipping live vehicle coordinates offsite.
         value: >-
           default-src 'self';
-          script-src 'self';
+          script-src 'self' 'sha256-HBPnFng5Sa/29JfdDdMifl16NHyUKPD1890xlaiPFDQ=';
           style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
           font-src 'self' https://fonts.gstatic.com;
-          img-src 'self' data: blob: https://*.tile.openstreetmap.org;
+          img-src 'self' data: blob: https://*.basemaps.cartocdn.com
+          https://*.tile.openstreetmap.org;
           connect-src 'self' https://fleettrack.duckdns.org wss://fleettrack.duckdns.org
           https://fleettrack-routing.duckdns.org https://nominatim.openstreetmap.org;
           frame-ancestors 'none';

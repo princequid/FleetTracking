@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, Pressable,
   RefreshControl, Linking, Modal,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -12,15 +12,15 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withTiming, withSpring,
   withDelay, withRepeat, withSequence, Easing, runOnJS, interpolate,
 } from 'react-native-reanimated';
-import { useAuthStore } from '../../store/authStore_1';
-import { useTripStore } from '../../store/tripStore_2';
-import { useDriverStore } from '../../store/driverStore_1';
-import api from '../../services/api_1';
-import { useTheme } from '../../theme/ThemeContext';
-import { DISPATCH_PHONE, TRIP_PAGE_SIZE } from '../../constants/config';
-import PressableScale from '../../components/common/PressableScale';
-import EmptyState from '../../components/common/EmptyState';
-import { NoTripsIllustration } from '../../components/common/Illustrations';
+import { useAuthStore } from '../../../store/authStore_1';
+import { useTripStore } from '../../../store/tripStore_2';
+import { useDriverStore } from '../../../store/driverStore_1';
+import { useTripsCacheStore } from '../../../store/tripsCacheStore';
+import { useTheme } from '../../../theme/ThemeContext';
+import { DISPATCH_PHONE } from '../../../constants/config';
+import PressableScale from '../../../components/common/PressableScale';
+import EmptyState from '../../../components/common/EmptyState';
+import { NoTripsIllustration } from '../../../components/common/Illustrations';
 
 /* Trim a location name to its first 3 words (+ …) so long addresses stay
    readable on the card instead of being shrunk to a tiny font. */
@@ -192,7 +192,9 @@ export default function HomeScreen() {
   const ss = useMemo(() => makeStyles(C), [C]);
 
   const { userId }   = useAuthStore();
-  const { activeTrip, setActiveTrip } = useTripStore();
+  // Only the setter: `activeTrip` is derived from the shared trips cache below
+  // and pushed into the store, so there is one source of truth for it.
+  const setActiveTrip = useTripStore((s) => s.setActiveTrip);
 
   // Read straight from the shared driver cache so a name already fetched by
   // splash (prefetch) or a prior visit renders instantly, with no local-state
@@ -201,9 +203,13 @@ export default function HomeScreen() {
   const fetchDriverProfile = useDriverStore((s) => s.fetchProfile);
 
   const [driverName, setDriverName] = useState(cachedDriverName || 'Driver');
-  const [trips, setTrips]           = useState([]);
-  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Trips are shared with the Trips and Alerts tabs — one request, one copy.
+  const trips       = useTripsCacheStore((s) => s.trips);
+  const loading     = useTripsCacheStore((s) => s.loading);
+  const refreshCache = useTripsCacheStore((s) => s.refresh);
+  const ensureFresh = useTripsCacheStore((s) => s.ensureFresh);
   const [trackWidth, setTrackWidth] = useState(0);
   const [showEndShift, setShowEndShift] = useState(false);
   const [toast, setToast]           = useState(null);
@@ -290,36 +296,31 @@ export default function HomeScreen() {
   /* data */
   const loadData = useCallback(async (force = false) => {
     try {
-      const [profileRes, tripsRes] = await Promise.allSettled([
-        fetchDriverProfile(userId, { force }),
-        api.get('/trips', { params: { size: TRIP_PAGE_SIZE } }),
+      await Promise.allSettled([
+        fetchDriverProfile(userId, { force }).then((profile) => {
+          if (profile) setDriverName(profile.fullName || 'Driver');
+        }),
+        force ? refreshCache() : ensureFresh(),
       ]);
-
-      if (profileRes.status === 'fulfilled' && profileRes.value) {
-        setDriverName(profileRes.value.fullName || 'Driver');
-      }
-
-      if (tripsRes.status === 'fulfilled') {
-        const raw = tripsRes.value.data;
-        const all = Array.isArray(raw)           ? raw
-          : Array.isArray(raw?.content)          ? raw.content
-          : Array.isArray(raw?.data)             ? raw.data
-          : [];
-        setTrips(all);
-        const active = all.find((t) =>
-          ['ASSIGNED', 'STARTED', 'EN_ROUTE', 'ARRIVED'].includes(t.status)
-        );
-        if (active) {
-          setActiveTrip(active);
-          progressAnim.value = withTiming(getProgress(active), { duration: 600 });
-        }
-      }
     } catch (err) {
       if (__DEV__) console.log('[Home] loadData error:', err.message);
-    } finally {
-      setLoading(false);
     }
-  }, [userId, fetchDriverProfile]);
+  }, [userId, fetchDriverProfile, refreshCache, ensureFresh]);
+
+  // Derived, not stored. Previously the active trip was picked inside the fetch,
+  // so it only updated when *this* screen re-fetched; now it tracks the shared
+  // cache, which means an action taken on another tab is reflected here without
+  // Home having to reload.
+  const activeTrip = useMemo(
+    () => trips.find((t) => ['ASSIGNED', 'STARTED', 'EN_ROUTE', 'ARRIVED'].includes(t.status)),
+    [trips],
+  );
+
+  useEffect(() => {
+    if (!activeTrip) return;
+    setActiveTrip(activeTrip);
+    progressAnim.value = withTiming(getProgress(activeTrip), { duration: 600 });
+  }, [activeTrip, setActiveTrip]);
 
   useEffect(() => {
     // Animate the shell in immediately so the screen appears instantly (skeleton first),
@@ -329,10 +330,12 @@ export default function HomeScreen() {
     actionsAnim.value = withDelay(160, withTiming(1, { duration: 300 }));
     tripsAnim.value   = withDelay(240, withTiming(1, { duration: 300 }));
 
-    const fallback = setTimeout(() => setLoading(false), 3000);
-    loadData().then(() => clearTimeout(fallback));
-    return () => clearTimeout(fallback);
+    loadData();
   }, []);
+
+  // Revalidate when Home is re-focused, but only if the cache went stale — and
+  // without ever clearing what is already rendered.
+  useFocusEffect(useCallback(() => { ensureFresh(); }, [ensureFresh]));
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

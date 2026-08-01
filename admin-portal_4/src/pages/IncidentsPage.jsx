@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { getIncidents, updateIncidentStatus } from "../services/incidentService";
+import { peekIncidents, getIncidents, updateIncidentStatus } from "../services/incidentService";
 import Badge from "../components/common/Badge";
 import DataTable from "../components/common/DataTable";
 import PageHeader from "../components/common/PageHeader";
@@ -43,8 +43,12 @@ function DetailField({ label, children }) {
 export default function IncidentsPage() {
   const location = useLocation();
   const showToast = useToast();
-  const [incidents, setIncidents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Seed from the cache synchronously so returning to this page paints the list on the
+  // FIRST render instead of flashing a skeleton. Caching the fetch alone wasn't enough:
+  // the cached promise resolves a microtask AFTER React has already painted the empty
+  // state. `undefined` means a miss; `[]` is a real (empty) cached result.
+  const [incidents, setIncidents] = useState(() => peekIncidents() ?? []);
+  const [loading, setLoading] = useState(() => peekIncidents() === undefined);
   const [severityFilter, setSeverityFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedId, setExpandedId] = useState(null);
@@ -55,7 +59,12 @@ export default function IncidentsPage() {
   const [page, setPage] = useState(1);
 
   const load = useCallback(() => {
-    setLoading(true);
+    // Only show the skeleton when there is genuinely nothing to show. When cached data
+    // is already on screen we revalidate silently in the background
+    // (stale-while-revalidate). Flipping this on unconditionally is what still made
+    // the page flash on return, even after the initial state was seeded from cache —
+    // the mount effect calls this loader, which immediately overwrote that `false`.
+    if (peekIncidents() === undefined) setLoading(true);
     setError(null);
     return getIncidents()
       .then((data) => setIncidents(Array.isArray(data) ? data : []))
