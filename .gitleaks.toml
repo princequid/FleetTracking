@@ -1,0 +1,62 @@
+# gitleaks configuration for FleetTrack Pro
+#
+# Consumed by the "Secret scan" job in .github/workflows/test-and-build.yml, which runs
+# gitleaks-action with fetch-depth: 0 — i.e. it scans the ENTIRE git history, not just the
+# diff. That is deliberate and should stay that way.
+#
+# ── Why an allowlist exists at all ────────────────────────────────────────────────────
+# Two Google API keys are committed to this repo ON PURPOSE. Both are Android *client*
+# configuration, not bearer credentials, and Google's own documentation says they are
+# expected to ship inside the APK — an attacker can trivially extract either one from any
+# installed build, so withholding them from the repo buys nothing.
+#
+# What actually protects them is the API-key restriction configured in Google Cloud
+# Console, NOT their secrecy. That is the control to verify, and the reason each entry
+# below names the restriction it depends on.
+#
+#   ⚠️  An UNRESTRICTED key here is a real problem: it can be scraped from this public
+#       repo and billed to the project's GCP account. Allowlisting the path does not make
+#       the key safe — the Console restriction does. Re-check both if either is rotated.
+#
+# ── What is NOT allowlisted, and must never be ────────────────────────────────────────
+# Server-side secrets: JWT_SECRET, INTERNAL_SERVICE_SECRET, database/RabbitMQ/MinIO/Redis
+# passwords, the Gmail app password, and any Firebase Admin SDK service-account JSON.
+# Those live only in gitignored .env files and on the deploy host. If gitleaks ever flags
+# one of those, it is a genuine leak — rotate the credential, do not add it here.
+
+title = "FleetTrack Pro gitleaks config"
+
+[extend]
+# Keep every upstream rule; this file only narrows results, never widens them.
+useDefault = true
+
+[allowlist]
+description = "Deliberately committed Android client configuration (see header)"
+
+paths = [
+  # Firebase Android client config (google-services.json).
+  #
+  # Contains `current_key` — an Android API key restricted by package name
+  # (com.fleettrack.mobile) + SHA-1 signing certificate. This file is also explicitly
+  # NOT gitignored, and .gitignore documents why: EAS Build packages the project from
+  # what git tracks, so gitignoring it would risk it being silently omitted from a build.
+  #
+  # Restriction to verify in Console: Application restrictions = Android apps,
+  # with the package name and BOTH the debug and release SHA-1 fingerprints listed.
+  '''mobile/google-services\.json$''',
+
+  # Expo app config (app.json) — expo.android.config.googleMaps.apiKey.
+  #
+  # The Maps SDK for Android key used by react-native-maps. Same reasoning as above:
+  # it ships inside the APK by necessity.
+  #
+  # NOTE: this key was previously also copied into admin-portal_4/.env as
+  # VITE_GOOGLE_MAPS_API_KEY. That copy was dead config and was removed on 2026-07-31 —
+  # the admin portal maps with Leaflet + OpenStreetMap tiles and never used the Google
+  # Maps JS API. The key therefore serves exactly ONE platform and can be locked down to
+  # Android alone; there is no web referrer restriction to accommodate.
+  #
+  # Restriction to verify in Console: Application restrictions = Android apps, and
+  # API restrictions = "Maps SDK for Android" only.
+  '''mobile/app\.json$''',
+]
