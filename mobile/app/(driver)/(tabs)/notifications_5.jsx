@@ -2,16 +2,15 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import api from '../../services/api_1';
-import { useAlertsStore } from '../../store/alertsStore';
-import { useTheme } from '../../theme/ThemeContext';
-import AppHeader from '../../components/common/AppHeader';
-import PressableScale from '../../components/common/PressableScale';
-import EmptyState from '../../components/common/EmptyState';
-import ErrorState from '../../components/common/ErrorState';
-import Skeleton from '../../components/common/Skeleton';
-import { NoAlertsIllustration, OfflineIllustration } from '../../components/common/Illustrations';
-import { TRIP_PAGE_SIZE } from '../../constants/config';
+import { useTripsCacheStore } from '../../../store/tripsCacheStore';
+import { useAlertsStore } from '../../../store/alertsStore';
+import { useTheme } from '../../../theme/ThemeContext';
+import AppHeader from '../../../components/common/AppHeader';
+import PressableScale from '../../../components/common/PressableScale';
+import EmptyState from '../../../components/common/EmptyState';
+import ErrorState from '../../../components/common/ErrorState';
+import Skeleton from '../../../components/common/Skeleton';
+import { NoAlertsIllustration, OfflineIllustration } from '../../../components/common/Illustrations';
 
 // The Alerts page is a live view of the driver's ACTIVE trips. Assigned trips (from the
 // admin) and started trips show here; once a trip is DELIVERED or CANCELLED it drops off
@@ -86,47 +85,41 @@ export default function NotificationsScreen() {
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
-  const [trips, setTrips]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRef]  = useState(false);
-  const [error, setError]     = useState('');
+  const [refreshing, setRef] = useState(false);
 
-  const load = useCallback(async () => {
-    setError('');
-    try {
-      const res = await api.get('/trips', { params: { size: TRIP_PAGE_SIZE } });
-      const raw = res.data;
-      const all = Array.isArray(raw) ? raw
-        : Array.isArray(raw?.content) ? raw.content
-        : Array.isArray(raw?.data) ? raw.data
-        : [];
-      const active = all
-        .filter((t) => ACTIVE_STATUSES.includes(t.status))
-        .sort((a, b) => new Date(tripStamp(b)) - new Date(tripStamp(a)));
-      setTrips(active);
-      // Keep the badge store in sync and mark everything here as seen — viewing the
-      // Alerts page clears the red dot on the tab.
-      const store = useAlertsStore.getState();
-      store.setActiveIds(active.map((t) => t.id));
-      store.markAllSeen();
-    } catch {
-      setError('Could not load alerts. Pull to retry.');
-      setTrips([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const allTrips  = useTripsCacheStore((s) => s.trips);
+  const loading   = useTripsCacheStore((s) => s.loading);
+  const error     = useTripsCacheStore((s) => s.error);
+  const refresh   = useTripsCacheStore((s) => s.refresh);
+  const ensureFresh = useTripsCacheStore((s) => s.ensureFresh);
 
-  // Reload on focus AND poll every 15s while focused, so admin actions (cancel a trip,
-  // assign a new one) show up on their own within ~15s without a manual refresh.
-  // The interval is cleared on blur so it never runs off-screen.
+  const trips = useMemo(
+    () => allTrips
+      .filter((t) => ACTIVE_STATUSES.includes(t.status))
+      .sort((a, b) => new Date(tripStamp(b)) - new Date(tripStamp(a))),
+    [allTrips],
+  );
+
+  // Poll every 15s while focused so admin actions (cancel a trip, assign a new
+  // one) appear on their own. `ensureFresh` on entry rather than an unconditional
+  // reload: if another tab fetched moments ago the cached list is already right,
+  // and re-requesting it only to render the same rows is what used to make this
+  // screen flash a skeleton every single time it was opened.
   useFocusEffect(useCallback(() => {
-    load();
-    const id = setInterval(load, 15000);
+    ensureFresh();
+    const id = setInterval(refresh, 15000);
     return () => clearInterval(id);
-  }, [load]));
+  }, [ensureFresh, refresh]));
 
-  const onRefresh = async () => { setRef(true); await load(); setRef(false); };
+  // Opening Alerts clears the tab's red dot. Runs off the derived list rather
+  // than inside the fetch, so it still happens when the data came from cache.
+  useFocusEffect(useCallback(() => {
+    const store = useAlertsStore.getState();
+    store.setActiveIds(trips.map((t) => t.id));
+    store.markAllSeen();
+  }, [trips]));
+
+  const onRefresh = async () => { setRef(true); await refresh(); setRef(false); };
 
   // Assigned → trip detail (review/start); already-started → straight to the map.
   // useCallback keeps the reference stable so React.memo'd rows don't re-render.
@@ -151,7 +144,7 @@ export default function NotificationsScreen() {
         illustration={<OfflineIllustration />}
         title="Couldn't load alerts"
         message="Check your connection and pull down to retry."
-        onRetry={() => { setLoading(true); load(); }}
+        onRetry={() => refresh()}
       />
     ) : (
       <EmptyState

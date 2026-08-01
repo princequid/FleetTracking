@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, Animated, Easing, Image, Modal,
+  Dimensions, Animated, Easing, Image, Modal, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -45,12 +45,43 @@ function shortLocation(name, max = 3) {
   return words.length <= max ? name : words.slice(0, max).join(' ') + '…';
 }
 
-function statusToStep(status) {
-  if (!status) return 0;
-  if (status === 'ASSIGNED') return 0;
-  if (status === 'STARTED' || status === 'EN_ROUTE') return 1;
-  if (status === 'ARRIVED') return 2;
-  return 4;
+/**
+ * How far the trip got, and what it's doing now — two separate questions.
+ *
+ * These used to be one number, with everything unrecognised falling through to
+ * `return 4`. CANCELLED hit that fallback, so a cancelled trip rendered
+ * identically to a delivered one: four green ticks reading "Completed" under a
+ * delivery that never happened.
+ *
+ * `doneCount` is how many steps genuinely completed. `activeIndex` is the step
+ * in progress, or -1 when the trip is over — a finished trip has no current
+ * step, whether it finished well or not.
+ */
+function tripProgress(trip) {
+  const status = trip?.status;
+
+  if (status === 'CANCELLED') {
+    // Once cancelled, `status` no longer records how far the driver got, so the
+    // timestamps are the only honest source. When they're missing we claim
+    // nothing was done — the safe direction to be wrong in, since overstating
+    // progress is what caused this bug.
+    let done = 0;
+    if (trip?.startedAt) done = 2;                       // pre-dispatch + started
+    if (trip?.arrivedAt) done = 3;                       // + arrived
+    return { doneCount: done, activeIndex: -1, cancelled: true };
+  }
+
+  // A delivered trip has every step behind it, including the last one. The old
+  // code left "Complete trip" showing as the *current* step forever.
+  if (status === 'DELIVERED') {
+    return { doneCount: STEPS.length, activeIndex: -1, cancelled: false };
+  }
+
+  let step = 0;
+  if (status === 'STARTED' || status === 'EN_ROUTE' || status === 'REROUTED') step = 1;
+  else if (status === 'ARRIVED') step = 2;
+
+  return { doneCount: step, activeIndex: step, cancelled: false };
 }
 
 function PulsingRing({ color, styles }) {
@@ -75,9 +106,14 @@ function PulsingRing({ color, styles }) {
   );
 }
 
-function StepCard({ step, index, activeIndex, styles, C }) {
-  const isDone   = index < activeIndex;
+function StepCard({ step, index, activeIndex, doneCount, cancelled, styles, C }) {
+  const isDone   = index < doneCount;
+  // activeIndex is -1 for a finished trip, so nothing pulses or claims to be
+  // "current" once the trip is over.
   const isActive = index === activeIndex;
+  // A step that never happened on a cancelled trip is not "locked, coming up" —
+  // it's never going to happen. Rendered muted rather than pending.
+  const abandoned = cancelled && !isDone;
   const breathe  = useRef(new Animated.Value(1)).current;
   const loopRef  = useRef(null);
 
@@ -123,7 +159,10 @@ function StepCard({ step, index, activeIndex, styles, C }) {
       // can't see the green tick or the muted badge.
       accessibilityLabel={
         `Step ${index + 1}: ${step.label}. ` +
-        (isDone ? 'Completed.' : isActive ? 'Current step.' : 'Not yet available.')
+        (isDone ? 'Completed.'
+          : isActive ? 'Current step.'
+          : abandoned ? 'Not completed — trip was cancelled.'
+          : 'Not yet available.')
       }
     >
       <View style={[
@@ -142,8 +181,9 @@ function StepCard({ step, index, activeIndex, styles, C }) {
         <Text style={[styles.stepLabel, { color: isDone ? C.green : isActive ? C.navyPrimary : C.text3 }]}>
           {step.label}
         </Text>
-        {isDone   && <Text style={styles.stepDoneText}>Completed</Text>}
-        {isActive && <Text style={styles.stepActiveText}>Current step</Text>}
+        {isDone    && <Text style={styles.stepDoneText}>Completed</Text>}
+        {isActive  && <Text style={styles.stepActiveText}>Current step</Text>}
+        {abandoned && <Text style={styles.stepAbandonedText}>Not completed</Text>}
       </View>
       <Feather name={step.icon} size={18} color={isDone ? C.green : isActive ? C.navyPrimary : C.text3} />
     </Animated.View>
@@ -174,6 +214,44 @@ function RouteStop({ color, tag, name, description, number, last, styles }) {
 // there's a single source of truth for those (location-gated) actions instead of two
 // screens that could drift out of sync. This page shows route/status/instructions
 // and hands off to the map for anything that advances the trip.
+const EMPTY_PHOTOS = [];
+
+/**
+ * Thumbnail with its own loading state.
+ *
+ * These are full-resolution camera originals — `takePictureAsync` is called with
+ * a `quality` but no size cap — so even an 88px thumbnail pulls the whole file.
+ * Until they're resized server-side or at capture (see the note in the report),
+ * the least this can do is look like it is loading rather than looking broken.
+ *
+ * `progressiveRenderingEnabled` lets Android paint a progressive JPEG as it
+ * streams instead of waiting for the final byte. It is a no-op on iOS and on
+ * baseline JPEGs, so it costs nothing where it doesn't apply.
+ */
+const PhotoThumb = React.memo(function PhotoThumb({ uri, style, placeholderColor }) {
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  return (
+    <View style={style}>
+      <Image
+        source={{ uri }}
+        style={StyleSheet.absoluteFill}
+        progressiveRenderingEnabled
+        onLoadEnd={() => setLoading(false)}
+        onError={() => { setLoading(false); setFailed(true); }}
+      />
+      {(loading || failed) && (
+        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: placeholderColor }]}>
+          {failed
+            ? <Feather name="image" size={18} color="rgba(255,255,255,0.5)" />
+            : <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />}
+        </View>
+      )}
+    </View>
+  );
+});
+
 export default function TripDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -183,12 +261,22 @@ export default function TripDetailScreen() {
   const tripId = String(id);
 
   const [trip, setTrip] = useState(null);
-  const [photos, setPhotos] = useState([]);
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
   // Another of the driver's trips that's already in progress (started but not finished).
   // Only one trip may be STARTED at a time, so an ASSIGNED trip can't be started while
   // this is set — the driver can still view it, just not move to pickup / start it.
   const [otherActiveTrip, setOtherActiveTrip] = useState(null);
+
+  // A stable empty array, so an unfetched trip doesn't hand a new `[]` to the
+  // selector on every render and force a re-render each time.
+  const photos = useTripPhotosStore((s) => s.byTrip[String(tripId)]?.photos ?? EMPTY_PHOTOS);
+  const photosLoading = useTripPhotosStore((s) => {
+    const entry = s.byTrip[String(tripId)];
+    // Only a genuine first load counts as loading; a background refresh keeps
+    // the existing thumbnails on screen.
+    return !entry || (entry.loading && entry.photos.length === 0);
+  });
+  const fetchPhotos = useTripPhotosStore((s) => s.fetch);
 
   // Re-fetch the trip + its photos every time this screen comes into focus, not just on
   // mount — the driver reaches this screen via back-navigation from the live-nav map
@@ -200,10 +288,12 @@ export default function TripDetailScreen() {
         .then((r) => setTrip(r.data))
         .catch(() => {});
 
-      // Photos the driver uploaded for this trip (pre-dispatch / POD / stop PODs).
-      mediaService.getTripPhotos(tripId)
-        .then(setPhotos)
-        .catch(() => {});
+      // Photos come from the cache. It still refetches when the list is stale or
+      // right after an upload, but it reuses the presigned URL strings it already
+      // handed to <Image>, so the images resolve from the device cache instead of
+      // being re-downloaded on every visit. See tripPhotosStore for why that
+      // mattered so much here.
+      fetchPhotos(tripId);
     }, [tripId]),
   );
 
@@ -224,17 +314,31 @@ export default function TripDetailScreen() {
       .catch(() => {});
   }, [tripId]);
 
-  const activeStep = trip ? statusToStep(trip.status) : 0;
+  const { doneCount, activeIndex, cancelled } = tripProgress(trip);
   const canOpenNav = trip && !['DELIVERED', 'CANCELLED'].includes(trip.status);
   // Block starting THIS trip only while it's still ASSIGNED and another trip is running.
   // Once this trip is itself the active one, the button becomes "Continue navigation".
   const blockedByOtherTrip = trip?.status === 'ASSIGNED' && !!otherActiveTrip;
 
   // Delivery photos to show, ordered pre-dispatch → stop PODs → destination POD.
-  const displayPhotos = photos
-    .filter((p) => PHOTO_ORDER[p.photoType])
-    .sort((a, b) => PHOTO_ORDER[a.photoType] - PHOTO_ORDER[b.photoType]);
+  // Memoised: it feeds the prefetch effect below, and an array rebuilt on every
+  // render would re-trigger that effect on every render.
+  const displayPhotos = useMemo(
+    () => photos
+      .filter((p) => PHOTO_ORDER[p.photoType])
+      .sort((a, b) => PHOTO_ORDER[a.photoType] - PHOTO_ORDER[b.photoType]),
+    [photos],
+  );
 
+
+  useEffect(() => {
+    // Prefetch uses the same URL string as <Image>, and those strings are now
+    // stable across visits — so this warms exactly the entry the lightbox will
+    // ask for, instead of a URL that has already been re-signed.
+    displayPhotos.forEach((photo) => {
+      if (photo.photoUrl) Image.prefetch(photo.photoUrl).catch(() => {});
+    });
+  }, [displayPhotos]);
 
   const navButtonLabel = (() => {
     if (!trip) return 'Open live navigation';
@@ -367,9 +471,41 @@ export default function TripDetailScreen() {
 
         <View>
           <Text style={styles.sectionLabel}>TRIP PROGRESS</Text>
+
+          {/* Stated once, plainly, above the steps. Without this the only cue
+              that a trip was cancelled is the absence of ticks — too subtle for
+              something this consequential. */}
+          {cancelled && (
+            <View
+              style={styles.cancelledBanner}
+              accessible
+              accessibilityRole="alert"
+              accessibilityLabel="This trip was cancelled and was not completed."
+            >
+              <Feather name="x-circle" size={16} color={C.red} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cancelledTitle}>Trip cancelled</Text>
+                <Text style={styles.cancelledSub}>
+                  {doneCount > 0
+                    ? 'The remaining steps were not completed.'
+                    : 'This trip was cancelled before it started.'}
+                </Text>
+              </View>
+            </View>
+          )}
+
           <View style={styles.stepsCol}>
             {STEPS.map((step, i) => (
-              <StepCard key={step.key} step={step} index={i} activeIndex={activeStep} styles={styles} C={C} />
+              <StepCard
+                key={step.key}
+                step={step}
+                index={i}
+                activeIndex={activeIndex}
+                doneCount={doneCount}
+                cancelled={cancelled}
+                styles={styles}
+                C={C}
+              />
             ))}
           </View>
         </View>
@@ -388,7 +524,11 @@ export default function TripDetailScreen() {
                   accessibilityLabel={photo.caption || photo.type || 'Delivery photo'}
                   accessibilityHint="Opens the photo full screen"
                 >
-                  <Image source={{ uri: photo.photoUrl }} style={styles.photoThumb} />
+                  <PhotoThumb
+                    uri={photo.photoUrl}
+                    style={styles.photoThumb}
+                    placeholderColor={C.border}
+                  />
                   <Text style={styles.photoCaption} numberOfLines={1}>
                     {labelForPhoto(photo, trip)}
                   </Text>
@@ -542,6 +682,23 @@ const makeStyles = (C) => StyleSheet.create({
   stepLabel: { fontFamily: 'Inter-SemiBold', fontSize: 14 },
   stepDoneText:   { fontFamily: 'Inter-Regular', fontSize: 12, color: C.green, marginTop: 2 },
   stepActiveText: { fontFamily: 'Inter-Medium', fontSize: 12, color: C.navyPrimary, marginTop: 2 },
+  // Muted, not red: the step didn't fail, it simply never happened. Red here
+  // would read as five errors instead of one cancelled trip.
+  stepAbandonedText: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3, marginTop: 2 },
+
+  cancelledBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderRadius: 12,
+    backgroundColor: C.redLight,
+    borderWidth: 1,
+    borderColor: C.red,
+  },
+  cancelledTitle: { fontFamily: 'Inter-SemiBold', fontSize: 14, color: C.red },
+  cancelledSub:   { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text2, marginTop: 2 },
   actionBtn: {
     flexDirection: 'row',
     backgroundColor: C.teal, borderRadius: 14, height: 54,

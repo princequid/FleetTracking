@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+// Safe to import here: listCache has no imports of its own, so this can't form a cycle
+// with services/api.js (which imports this store).
+import { clearListCache } from "../services/listCache";
 
 // Persisted to localStorage so a page reload restores the session instead of silently
 // logging the admin out (PrivateRoute redirects to /login whenever isLoggedIn is false,
@@ -24,7 +27,12 @@ export const useAuthStore = create(
           refreshToken: data.refreshToken ?? null,
         }),
 
-      clearAuth: () =>
+      clearAuth: () => {
+        // Drop every cached list on sign-out / forced logout. Without this the cache
+        // outlives the session (it's module state, and a logout is a client-side route
+        // change, not a page load), so the next admin to sign in on the same tab could
+        // be served the previous one's driver and trip records for up to the TTL.
+        clearListCache();
         set({
           isLoggedIn: false,
           userId: null,
@@ -32,7 +40,8 @@ export const useAuthStore = create(
           role: null,
           accessToken: null,
           refreshToken: null,
-        }),
+        });
+      },
     }),
     { name: "fleettrack-auth" },
   ),

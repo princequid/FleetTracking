@@ -7,7 +7,6 @@ import Animated, {
   useSharedValue, useAnimatedStyle, withTiming, withSpring, withSequence,
 } from 'react-native-reanimated';
 import { useAlertsStore } from '../../store/alertsStore';
-import { useTabTransitionStore } from '../../store/tabTransitionStore';
 
 const TABS = [
   { key: 'home',    icon: 'home', label: 'Home',    route: '/(driver)/dashboard_2' },
@@ -91,7 +90,6 @@ function TabButton({ tab, isActive, showDot, onPress }) {
 export function FloatingTabBar() {
   const router   = useRouter();
   const pathname = usePathname();
-  const setTabDirection = useTabTransitionStore((s) => s.setDirection);
 
   const activeIds = useAlertsStore((s) => s.activeIds);
   const seenIds   = useAlertsStore((s) => s.seenIds);
@@ -103,8 +101,9 @@ export function FloatingTabBar() {
   const activeKey = getActiveKey(pathname);
 
   // Ignore taps on the tab we're already on (no navigation, no re-mount, no state reset).
-  // Otherwise use navigate() (not push) so the stack doesn't accumulate duplicate pages
-  // and an existing screen instance is reused when possible.
+  // `navigate()` now targets a Tabs navigator, so it JUMPS to the existing screen
+  // instead of pushing a copy — which is what keeps the tab's state and stops it
+  // reloading. See (driver)/(tabs)/_layout for the full story.
   const handleTabPress = (tab) => {
     if (tab.key === activeKey) {
       if (__DEV__) console.log(`[Nav] ignored — already on "${tab.key}"`);
@@ -112,20 +111,12 @@ export function FloatingTabBar() {
     }
     if (__DEV__) console.log(`[Nav] navigate → "${tab.key}"`);
 
-    // Direction is driven by tab ORDER, not stack history: moving to a tab further
-    // right in the bar feels forward (slide from right); moving to one further left
-    // feels like going back (slide from left) — matching what the tab bar visually
-    // implies, regardless of which screen was pushed when.
-    const fromIndex = TABS.findIndex((t) => t.key === activeKey);
-    const toIndex   = TABS.findIndex((t) => t.key === tab.key);
-    setTabDirection(toIndex < fromIndex ? 'back' : 'forward');
-
+    // No direction flag to set any more. The slide used to be faked by writing a
+    // direction into `tabTransitionStore` and reverting it on a 600ms timer —
+    // which also meant an unrelated push landing inside that window (tapping into
+    // a trip while the timer was still running) inherited the wrong direction.
+    // The tabs navigator derives direction from real tab order instead.
     router.navigate(tab.route);
-
-    // Revert to the default shortly after the transition starts, so any LATER,
-    // unrelated push (e.g. tapping into a trip's details) isn't accidentally
-    // affected by whichever direction the last tab switch happened to use.
-    setTimeout(() => setTabDirection('forward'), 600);
   };
 
   return (

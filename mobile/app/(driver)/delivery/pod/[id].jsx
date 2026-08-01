@@ -15,6 +15,7 @@ import RAnimated, {
 } from 'react-native-reanimated';
 import api from '../../../../services/api_1';
 import { mediaService, describeUploadError } from '../../../../services/mediaService_3';
+import { useTripPhotosStore } from '../../../../store/tripPhotosStore';
 import { useTripStore } from '../../../../store/tripStore_2';
 import { useTheme } from '../../../../theme/ThemeContext';
 import { haversineMetres, GEOFENCE_RADIUS_M } from '../../../../utils/geo';
@@ -212,6 +213,10 @@ export default function PODScreen() {
         isStopMode ? { stopId: stopIdNum } : undefined,
       );
       setUploadDone(true);
+      // The trip's photo list is cached so it isn't re-downloaded on every view;
+      // tell it a new photo exists, or this capture wouldn't show up until the
+      // cache went stale on its own.
+      useTripPhotosStore.getState().invalidate(tripId);
       // A stop POD is optional and must NOT satisfy the final-destination POD gate —
       // only mark it as a captured stop; the required POD still sets podUploaded.
       if (isStopMode) addStopPod(stopIdNum);

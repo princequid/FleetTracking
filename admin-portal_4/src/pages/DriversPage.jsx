@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getDrivers, deactivateDriver } from "../services/driverService";
+import { peekDrivers, getDrivers, deactivateDriver } from "../services/driverService";
 import { getTrips } from "../services/tripService";
 import { useAuthStore } from "../store/authStore";
 import KpiCard from "../components/common/KpiCard";
@@ -22,9 +22,13 @@ export default function DriversPage() {
   const showToast = useToast();
   const c = useCssVars(KPI_TOKENS);
 
-  const [drivers, setDrivers] = useState([]);
+  // Seed from the cache synchronously so returning to this page paints the list on the
+  // FIRST render instead of flashing a skeleton. Caching the fetch alone wasn't enough:
+  // the cached promise resolves a microtask AFTER React has already painted the empty
+  // state. `undefined` means a miss; `[]` is a real (empty) cached result.
+  const [drivers, setDrivers] = useState(() => peekDrivers() ?? []);
   const [onDutyCount, setOnDutyCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => peekDrivers() === undefined);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -34,7 +38,12 @@ export default function DriversPage() {
   const [deactivating, setDeactivating] = useState(false);
 
   const loadDrivers = useCallback(() => {
-    setLoading(true);
+    // Only show the skeleton when there is genuinely nothing to show. When cached data
+    // is already on screen we revalidate silently in the background
+    // (stale-while-revalidate). Flipping this on unconditionally is what still made
+    // the page flash on return, even after the initial state was seeded from cache —
+    // the mount effect calls this loader, which immediately overwrote that `false`.
+    if (peekDrivers() === undefined) setLoading(true);
     setError(null);
     Promise.all([getDrivers(), getTrips()])
       .then(([driverData, trips]) => {

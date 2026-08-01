@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
-import { useRouter } from 'expo-router';
-import api from '../../../services/api_1';
-import { useTheme } from '../../../theme/ThemeContext';
-import AppHeader from '../../../components/common/AppHeader';
-import PressableScale from '../../../components/common/PressableScale';
-import TripCard from '../../../components/trip/TripCard_2';
-import EmptyState from '../../../components/common/EmptyState';
-import ErrorState from '../../../components/common/ErrorState';
-import Skeleton from '../../../components/common/Skeleton';
-import { NoTripsIllustration, NoResultsIllustration, OfflineIllustration } from '../../../components/common/Illustrations';
-import { space, radius, type } from '../../../constants/tokens';
-import { TRIP_PAGE_SIZE } from '../../../constants/config';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useTripsCacheStore } from '../../../../store/tripsCacheStore';
+import { useTheme } from '../../../../theme/ThemeContext';
+import AppHeader from '../../../../components/common/AppHeader';
+import PressableScale from '../../../../components/common/PressableScale';
+import TripCard from '../../../../components/trip/TripCard_2';
+import EmptyState from '../../../../components/common/EmptyState';
+import ErrorState from '../../../../components/common/ErrorState';
+import Skeleton from '../../../../components/common/Skeleton';
+import { NoTripsIllustration, NoResultsIllustration, OfflineIllustration } from '../../../../components/common/Illustrations';
+import { space, radius, type } from '../../../../constants/tokens';
 
 // Only finished trips belong in history
 const HISTORY_STATUSES = ['DELIVERED', 'CANCELLED'];
@@ -27,43 +26,44 @@ export default function TripHistoryScreen() {
   const C = useTheme();
   const styles = useMemo(() => makeStyles(C), [C]);
 
-  const [trips, setTrips]     = useState([]);
-  const [tab, setTab]         = useState('all');
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRef]  = useState(false);
-  const [error, setError]     = useState('');
+  // `tab` is local, and now survives leaving the screen: the tab navigator keeps
+  // this component mounted, so the driver's chosen filter (and the list's scroll
+  // position) is exactly where they left it when they come back.
+  const [tab, setTab]        = useState('all');
+  const [refreshing, setRef] = useState(false);
 
-  // Unchanged from the original — same endpoint, same response-shape handling,
-  // same filter and sort. Only the presentation below it was rebuilt.
-  const load = useCallback(async () => {
-    setError('');
-    try {
-      const res = await api.get('/trips', { params: { size: TRIP_PAGE_SIZE } });
-      const raw = res.data;
-      const all = Array.isArray(raw) ? raw
-        : Array.isArray(raw?.content) ? raw.content
-        : Array.isArray(raw?.data) ? raw.data
-        : [];
-      const finished = all
-        .filter((t) => HISTORY_STATUSES.includes(t.status))
-        .sort((a, b) => new Date(b.completedAt || b.cancelledAt || b.createdAt || 0)
-                      - new Date(a.completedAt || a.cancelledAt || a.createdAt || 0));
-      setTrips(finished);
-    } catch {
-      setError('Could not load trip history.');
-      setTrips([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Trips come from the shared cache rather than a per-screen fetch — same
+  // endpoint and same response handling as before, just owned in one place so
+  // Home, Trips and Alerts don't each request the identical payload.
+  const allTrips  = useTripsCacheStore((s) => s.trips);
+  const loading   = useTripsCacheStore((s) => s.loading);
+  const error     = useTripsCacheStore((s) => s.error);
+  const refresh   = useTripsCacheStore((s) => s.refresh);
+  const ensureFresh = useTripsCacheStore((s) => s.ensureFresh);
 
-  useEffect(() => { load(); }, [load]);
+  // Revalidates only when the cache has actually gone stale, and never blanks
+  // what is already on screen. Returning to this tab is therefore instant.
+  useFocusEffect(useCallback(() => { ensureFresh(); }, [ensureFresh]));
 
-  const onRefresh = async () => { setRef(true); await load(); setRef(false); };
+  const trips = useMemo(
+    () => allTrips
+      .filter((t) => HISTORY_STATUSES.includes(t.status))
+      .sort((a, b) => new Date(b.completedAt || b.cancelledAt || b.createdAt || 0)
+                    - new Date(a.completedAt || a.cancelledAt || a.createdAt || 0)),
+    [allTrips],
+  );
 
-  const completedCount = trips.filter((t) => t.status === 'DELIVERED').length;
-  const cancelledCount = trips.filter((t) => t.status === 'CANCELLED').length;
-  const filtered = tab === 'all' ? trips : trips.filter((t) => t.status === tab);
+  const onRefresh = async () => { setRef(true); await refresh(); setRef(false); };
+
+  const { completedCount, cancelledCount } = useMemo(() => ({
+    completedCount: trips.filter((t) => t.status === 'DELIVERED').length,
+    cancelledCount: trips.filter((t) => t.status === 'CANCELLED').length,
+  }), [trips]);
+
+  const filtered = useMemo(
+    () => (tab === 'all' ? trips : trips.filter((t) => t.status === tab)),
+    [trips, tab],
+  );
 
   const openTrip = useCallback((trip) => router.push(`/(driver)/trip/${trip.id}`), [router]);
 
@@ -85,7 +85,7 @@ export default function TripHistoryScreen() {
         illustration={<OfflineIllustration />}
         title="Couldn't load history"
         message="Check your connection and pull down to retry."
-        onRetry={() => { setLoading(true); load(); }}
+        onRetry={() => refresh()}
       />
     ) : (
       <EmptyState

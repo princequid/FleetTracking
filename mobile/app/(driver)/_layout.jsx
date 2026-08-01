@@ -6,14 +6,9 @@ import { useDriverLocationTracker } from '../../hooks/useDriverLocationTracker';
 import { usePushNotifications } from '../../hooks/usePushNotifications';
 import { useAlertsPoller } from '../../hooks/useAlertsPoller';
 import { useInactivityLogout } from '../../hooks/useInactivityLogout';
-import { useTabTransitionStore } from '../../store/tabTransitionStore';
 import mediaService from '../../services/mediaService_3';
 
 export default function DriverLayout() {
-  // Direction of the next screen transition — flipped by the tab bar right before it
-  // navigates, based on relative tab order (see tabTransitionStore for the full story).
-  const tabDirection = useTabTransitionStore((s) => s.direction);
-
   // Sign the driver out after a prolonged background period (lost/left-device protection).
   useInactivityLogout();
   // Single shared GPS watch for the whole driver session — keeps location updating as
@@ -41,7 +36,15 @@ export default function DriverLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false, animation: tabDirection === 'back' ? 'slide_from_left' : 'slide_from_right' }}>
+      {/* Pushed screens (trip detail, incident, help…) keep the standard
+          push-from-the-right motion. Tab-to-tab sliding is the tabs
+          navigator's job now, and it derives direction from tab order. */}
+      <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+        {/* The four primary tabs live inside this one stack entry, in a Tabs
+            navigator — see (tabs)/_layout for why. `(tabs)` is a group, so none
+            of the app's route paths changed: /(driver)/dashboard_2 and friends
+            still resolve exactly as before. */}
+        <Stack.Screen name="(tabs)" options={{ animation: 'none' }} />
         <Stack.Screen
           name="trip/[id]/map"
           options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal', headerShown: false }}

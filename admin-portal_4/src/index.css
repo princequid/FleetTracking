@@ -1215,6 +1215,25 @@ a.navbar-crumb:hover {
   overflow-x: hidden;
   background: var(--color-bg);
   scroll-behavior: smooth;
+  /* Makes this the containing block for absolutely-positioned descendants.
+     `overflow` alone does NOT clip an abspos descendant whose containing block is
+     outside the scroller — and with every ancestor here `position: static`, that
+     containing block was the *initial* one (the viewport), so such elements escaped
+     this scroller entirely and stretched the document instead.
+
+     That is what broke the Reports page: `.sr-only` sets `position: absolute` with
+     auto offsets, so the table's visually-hidden <caption> resolved to its static
+     position — ~187px below the fold once the chart and leaderboard rendered — and
+     dragged the root's scroll height to 896px against a 709px viewport. The whole
+     app-shell then scrolled as one, sliding the fixed-height sidebar up and leaving
+     a white gap beneath it, while `.page-content` kept its own scrollbar. Two
+     scrollbars, one of which should not exist.
+
+     Positioning this element re-anchors those descendants here, where the existing
+     overflow rules actually apply. It costs nothing else: nothing inside relies on
+     the viewport being its containing block (`position: fixed` is unaffected —
+     no transform/filter/contain is introduced here). */
+  position: relative;
 }
 
 /* Caps line length on ultrawide monitors so content doesn't stretch to 3000px */

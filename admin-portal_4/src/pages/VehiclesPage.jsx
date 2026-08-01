@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getVehicles, createVehicle, updateVehicle } from "../services/vehicleService";
+import { peekVehicles, getVehicles, createVehicle, updateVehicle } from "../services/vehicleService";
 import Modal from "../components/common/Modal";
 import Button from "../components/common/Button";
 import FormField from "../components/common/FormField";
@@ -32,12 +32,16 @@ const EMPTY_VEHICLE = { plateNumber: "", model: "", capacity: "" };
 
 export default function VehiclesPage() {
   const showToast = useToast();
-  const [vehicles, setVehicles] = useState([]);
+  // Seed from the cache synchronously so returning to this page paints the list on the
+  // FIRST render instead of flashing a skeleton. Caching the fetch alone wasn't enough:
+  // the cached promise resolves a microtask AFTER React has already painted the empty
+  // state. `undefined` means a miss; `[]` is a real (empty) cached result.
+  const [vehicles, setVehicles] = useState(() => peekVehicles() ?? []);
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => peekVehicles() === undefined);
   const [error, setError] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
@@ -47,7 +51,12 @@ export default function VehiclesPage() {
   const vehicleForm = useFormValidation(EMPTY_VEHICLE, VEHICLE_VALIDATORS);
 
   const loadVehicles = useCallback(() => {
-    setLoading(true);
+    // Only show the skeleton when there is genuinely nothing to show. When cached data
+    // is already on screen we revalidate silently in the background
+    // (stale-while-revalidate). Flipping this on unconditionally is what still made
+    // the page flash on return, even after the initial state was seeded from cache —
+    // the mount effect calls this loader, which immediately overwrote that `false`.
+    if (peekVehicles() === undefined) setLoading(true);
     setError(null);
     getVehicles()
       .then(setVehicles)
