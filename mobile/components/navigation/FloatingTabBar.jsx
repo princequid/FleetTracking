@@ -15,7 +15,14 @@ const TABS = [
   { key: 'profile', icon: 'user', label: 'Profile', route: '/(driver)/profile' },
 ];
 
-const HIDE_ON = ['/map', 'pre-dispatch', '/pod'];
+// Screens that own the whole viewport and must not offer tab navigation.
+//
+// `first-login` is a gate, not a destination: the driver has authenticated but
+// hasn't yet acknowledged the admin-set password, and the only two ways out are
+// the buttons on that screen. Showing tabs there let them sidestep the prompt
+// into the app entirely, leaving mustChangePassword set and the screen waiting
+// to reappear on the next launch.
+const HIDE_ON = ['/map', 'pre-dispatch', '/pod', 'first-login'];
 
 function getActiveKey(pathname) {
   if (pathname.includes('dashboard'))      return 'home';

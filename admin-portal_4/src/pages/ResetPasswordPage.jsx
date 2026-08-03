@@ -22,6 +22,16 @@ export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
 
+  // Same route the mobile app registers (expo `scheme` in mobile/app.json).
+  const appDeepLink = token
+    ? `fleettrack://reset-password?token=${encodeURIComponent(token)}`
+    : null;
+
+  // Only offer the app handoff where an app could plausibly be installed.
+  const isTouchDevice =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(hover: none) and (pointer: coarse)").matches;
+
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -105,6 +115,18 @@ export default function ResetPasswordPage() {
             <>
               <h1 className="login-heading">Set a new password</h1>
               <p className="login-subtext">Choose a new password for your account.</p>
+
+              {/* Handoff to the driver app.
+                  The reset email can only carry an https link — mail clients don't
+                  linkify custom schemes like fleettrack://, so a deep link sent
+                  directly arrives as dead text. Browsers *do* honour them, so the
+                  app handoff has to happen from here. Shown on touch devices only,
+                  since it's meaningless on a desktop with no app installed. */}
+              {isTouchDevice && (
+                <a className="btn btn-secondary btn-block reset-open-app" href={appDeepLink}>
+                  Open in the FleetSync app
+                </a>
+              )}
 
               <form className="login-form" onSubmit={handleSubmit}>
                 <div className="login-field">

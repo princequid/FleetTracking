@@ -8,6 +8,7 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import api from '../../../../services/api_1';
 import { mediaService } from '../../../../services/mediaService_3';
+import { useTripPhotosStore } from '../../../../store/tripPhotosStore';
 import { useTheme } from '../../../../theme/ThemeContext';
 import { TRIP_PAGE_SIZE } from '../../../../constants/config';
 
