@@ -199,10 +199,17 @@ export default function HomeScreen() {
   // Read straight from the shared driver cache so a name already fetched by
   // splash (prefetch) or a prior visit renders instantly, with no local-state
   // hop needed once loadData's fetchProfile call resolves.
-  const cachedDriverName = useDriverStore((s) => s.driver?.fullName);
   const fetchDriverProfile = useDriverStore((s) => s.fetchProfile);
 
-  const [driverName, setDriverName] = useState(cachedDriverName || 'Driver');
+  // Derived from the store, NOT copied into local state.
+  //
+  // It was `useState(cachedDriverName || 'Driver')`, and useState only reads its
+  // argument on the first render — so whenever the profile wasn't already cached
+  // at mount (a fresh login, or any launch where the fetch hadn't resolved yet)
+  // the greeting stayed the literal "Driver" no matter what landed later.
+  // Reading the store directly means the name appears the moment any caller
+  // resolves the profile, whoever fetched it.
+  const driverName = useDriverStore((s) => s.driver?.fullName)?.trim() || 'Driver';
   const [refreshing, setRefreshing] = useState(false);
 
   // Trips are shared with the Trips and Alerts tabs — one request, one copy.
@@ -296,12 +303,19 @@ export default function HomeScreen() {
   /* data */
   const loadData = useCallback(async (force = false) => {
     try {
-      await Promise.allSettled([
-        fetchDriverProfile(userId, { force }).then((profile) => {
-          if (profile) setDriverName(profile.fullName || 'Driver');
-        }),
+      const [profileResult] = await Promise.allSettled([
+        // fetchProfile commits to the driver store itself, and the greeting reads
+        // straight from there — nothing to copy into local state here.
+        fetchDriverProfile(userId, { force }),
         force ? refreshCache() : ensureFresh(),
       ]);
+
+      // A failed profile fetch used to be indistinguishable from a driver
+      // genuinely called "Driver". Surface it in dev at least, so the next time
+      // the name is missing there's a reason in the log rather than silence.
+      if (__DEV__ && profileResult.status === 'rejected') {
+        console.log('[Home] driver profile fetch failed:', profileResult.reason?.message);
+      }
     } catch (err) {
       if (__DEV__) console.log('[Home] loadData error:', err.message);
     }
@@ -329,9 +343,21 @@ export default function HomeScreen() {
     cardAnim.value    = withDelay(80,  withSpring(1, { damping: 18, stiffness: 160 }));
     actionsAnim.value = withDelay(160, withTiming(1, { duration: 300 }));
     tripsAnim.value   = withDelay(240, withTiming(1, { duration: 300 }));
-
-    loadData();
   }, []);
+
+  // Load once `userId` is actually known.
+  //
+  // This used to sit in the mount-only effect above, which captured the very
+  // first `loadData` closure — the one built while `userId` was still null on a
+  // cold start (the auth store hydrates from SecureStore asynchronously).
+  // `fetchProfile(null)` resolves to null immediately, and with `[]` deps the
+  // effect never re-ran once the real id arrived, so the profile was simply
+  // never requested. Keyed on `userId` so it fires exactly when there's an id
+  // to fetch with, and again if a different driver signs in.
+  useEffect(() => {
+    if (!userId) return;
+    loadData();
+  }, [userId, loadData]);
 
   // Revalidate when Home is re-focused, but only if the cache went stale — and
   // without ever clearing what is already rendered.

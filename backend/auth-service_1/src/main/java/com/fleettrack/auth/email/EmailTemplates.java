@@ -51,10 +51,20 @@ public final class EmailTemplates {
                 + "</td></tr></table>";
     }
 
-    public static String buildPasswordResetEmail(String resetLink) {
+    /**
+     * @param resetLink always an https URL — never a custom scheme. Mail clients
+     *                  do not linkify schemes like {@code fleettrack://}, so such a
+     *                  link arrives as dead text and the whole flow silently fails.
+     * @param isDriver  drivers land on the same web page, which then offers to open
+     *                  the app; the copy just tells them to expect that.
+     */
+    public static String buildPasswordResetEmail(String resetLink, boolean isDriver) {
         String body = "<h1 style=\"font-size:20px;margin:0 0 16px;color:#111827;\">Reset your password</h1>"
                 + "<p style=\"font-size:14px;line-height:22px;color:#374151;margin:0;\">"
                 + "We received a request to reset your FleetSync password. Click the button below to choose a new one."
+                + (isDriver
+                        ? " You can finish here, or reopen the FleetSync app from that page."
+                        : "")
                 + "</p>"
                 + button("Reset your password", resetLink)
                 + "<p style=\"font-size:12px;line-height:18px;color:" + TEXT_MUTED + ";margin:0;\">"
