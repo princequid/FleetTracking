@@ -34,4 +34,21 @@ public class VehicleServiceClient {
             throw new RuntimeException("Failed to update vehicle status");
         }
     }
+
+    /**
+     * Hands a vehicle back to the dispatch pool when its trip ends.
+     *
+     * Use this rather than {@code updateVehicleStatus(id, "AVAILABLE")}: the
+     * dedicated endpoint only flips IN_USE → AVAILABLE, so it cannot drag a
+     * vehicle out of MAINTENANCE. That matters most for the reconciliation sweep,
+     * which fires on a timer and may well run after someone has taken the vehicle
+     * off the road for a legitimate reason.
+     */
+    public void releaseVehicle(Long vehicleId) {
+        try {
+            restTemplate.put("http://vehicle-service/" + vehicleId + "/release", null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to release vehicle");
+        }
+    }
 }

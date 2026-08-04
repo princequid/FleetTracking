@@ -195,6 +195,7 @@ export default function TripTable({
       width: 86,
       sortable: true,
       numeric: true,
+      card: "title",
       render: (trip) => <span className="cell-id">#{trip.id}</span>,
     },
     {
@@ -226,6 +227,7 @@ export default function TripTable({
       key: "route",
       header: "Route",
       truncate: true,
+      card: "wide",
       render: (trip) => <RouteCell trip={trip} />,
     },
     {
@@ -233,6 +235,7 @@ export default function TripTable({
       header: "Status",
       width: 128,
       sortable: true,
+      card: "meta",
       // Sort by lifecycle position, not alphabetically — "Arrived, Assigned,
       // Cancelled, Delivered" is an ordering of spellings, not of trips.
       sortValue: (trip) => TRIP_STATUS_ORDER.indexOf(trip.status),
@@ -252,6 +255,7 @@ export default function TripTable({
       header: "Actions",
       width: 100,
       align: "end",
+      card: "actions",
       cellClassName: "trip-actions-td",
       render: (trip) => (
         <div className="cell-actions" onClick={(e) => e.stopPropagation()}>

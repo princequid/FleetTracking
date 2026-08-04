@@ -100,6 +100,14 @@ container, and a scroll container that can't take focus can't be scrolled by key
 off-screen columns are unreachable (WCAG 2.1.1). It owns the `tabIndex`/`role="region"`/
 `aria-label` triple in one place instead of six pages. Always pass a `label`.
 
+**Below 768px a `DataTable` row is a card, not a row**, and every new table must say which
+field is which via the column's `card` role — `"title"` (the record's identity, one per
+table), `"meta"` (its status, top-right), `"wide"` (a route or address, full width) or
+`"actions"` (the footer). Unflagged columns fill a two-up grid. Skip the roles and the card
+still works, but every field renders at the same weight and it reads as a ledger dump — which
+is exactly what it looked like before the roles existed. The CSS lives in the "Mobile" section
+at the foot of `index.css`, appended for the same source-order reason as the premium layer.
+
 Buttons: `primary` (the only gradient — one per view), `secondary`, `outline`, `ghost`,
 `success`, `warning`, `danger`. Sizes `xs`/`sm`/`md`/`lg`, plus `.btn-icon` and `.btn-block`.
 Every variant shares geometry, focus ring and press feedback.

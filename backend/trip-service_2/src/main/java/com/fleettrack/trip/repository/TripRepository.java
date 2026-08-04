@@ -9,6 +9,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.Collection;
+import java.util.Set;
+
 @Repository
 public interface TripRepository extends JpaRepository<Trip, Long> {
 
@@ -27,4 +31,27 @@ public interface TripRepository extends JpaRepository<Trip, Long> {
     @Query("SELECT COUNT(t) FROM Trip t WHERE t.driverId = :driverId AND t.status = 'DELIVERED' "
             + "AND t.eta IS NOT NULL AND t.completedAt <= t.eta")
     long countOnTimeByDriverId(@Param("driverId") Long driverId);
+
+    /**
+     * Vehicles currently held by a trip that hasn't finished.
+     *
+     * Selects only the id column — the reconciliation sweep needs a set of ids, not
+     * hydrated entities, and loading every active Trip to read one field each would
+     * be wasteful on a service with a 5-connection pool.
+     */
+    @Query("SELECT DISTINCT t.vehicleId FROM Trip t "
+            + "WHERE t.status IN :statuses AND t.vehicleId IS NOT NULL")
+    Set<Long> findActiveVehicleIds(@Param("statuses") Collection<TripStatus> statuses);
+
+    /**
+     * Vehicles whose trip finished recently, as reconciliation candidates.
+     *
+     * Time-bounded on purpose: without the cutoff this would return every vehicle
+     * ever used and re-issue a status call for each one on every sweep.
+     */
+    @Query("SELECT DISTINCT t.vehicleId FROM Trip t "
+            + "WHERE t.vehicleId IS NOT NULL "
+            + "AND ((t.status = 'DELIVERED' AND t.completedAt >= :since) "
+            + "  OR (t.status = 'CANCELLED' AND t.cancelledAt >= :since))")
+    Set<Long> findRecentlyEndedVehicleIds(@Param("since") Instant since);
 }
