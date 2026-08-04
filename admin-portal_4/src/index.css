@@ -7590,11 +7590,24 @@ button.stat-strip-item:focus-visible {
 }
 
 /* ETA sits on one line too — the relative part moves beside the clock time
-   rather than under it, which was adding a second line to every active trip. */
+   rather than under it, which was adding a second line to every active trip.
+   It wraps rather than overflowing, though: `nowrap` here meant a long pair
+   like "Yesterday 19:20" + "overdue by 29m" could not break, so it ran out of
+   the 146px column and printed on top of the Actions cell. Wrapping keeps the
+   one-line default for the common case ("21:32 · in 25m") and spends a second
+   line only on the rows that genuinely need one. */
 .data-table.density-compact .eta-cell {
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-2);
+  justify-content: flex-end;
+  gap: 1px var(--space-2);
+}
+
+/* The break belongs between the two parts, never inside them — "overdue by
+   29m" splitting across lines after "by" reads as two separate values. */
+.data-table.density-compact .eta-cell-time,
+.data-table.density-compact .eta-cell-rel {
   white-space: nowrap;
 }
 
@@ -8549,12 +8562,16 @@ button.stat-strip-item:focus-visible {
     flex: 0 1 auto;
   }
 
+  /* `white-space: normal` alone did not do what it looks like it does here: on a
+     flex container it governs text inside the items, not whether the items
+     themselves wrap. flex-wrap is what actually lets the relative part drop
+     below the clock time instead of overrunning the cell. */
   .eta-cell,
   .data-table.density-compact .eta-cell {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--space-2);
-    white-space: normal;
+    gap: 1px var(--space-2);
   }
 
   .cell-actions {
