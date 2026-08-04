@@ -154,6 +154,7 @@ export default function VehiclesPage() {
       header: "Plate number",
       width: 160,
       sortable: true,
+      card: "title",
       render: (vehicle) => <span className="cell-mono cell-plate">{vehicle.plateNumber}</span>,
     },
     {
@@ -183,6 +184,7 @@ export default function VehiclesPage() {
       header: "Status",
       width: 150,
       sortable: true,
+      card: "meta",
       render: (vehicle) => (
         <Badge variant={getVehicleStatusVariant(vehicle.status)} dot>
           {getVehicleStatusLabel(vehicle.status)}
@@ -194,6 +196,7 @@ export default function VehiclesPage() {
       header: "Actions",
       width: 90,
       align: "end",
+      card: "actions",
       render: (vehicle) => (
         <div className="cell-actions">
           <button

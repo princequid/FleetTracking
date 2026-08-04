@@ -19,6 +19,7 @@ import com.fleettrack.trip.repository.TripStopRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,9 +30,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -44,6 +47,14 @@ public class TripService {
     private final TripStopRepository tripStopRepository;
     private final DriverServiceClient driverServiceClient;
     private final VehicleServiceClient vehicleServiceClient;
+
+    /** Statuses that mean a trip still legitimately holds its vehicle. */
+    private static final List<TripStatus> ACTIVE_STATUSES = List.of(
+            TripStatus.ASSIGNED, TripStatus.STARTED, TripStatus.EN_ROUTE,
+            TripStatus.REROUTED, TripStatus.ARRIVED);
+
+    /** How far back the reconciliation sweep looks for finished trips. */
+    private static final int RECONCILE_LOOKBACK_HOURS = 24;
     private final MediaServiceClient mediaServiceClient;
     private final OutboxPublisherService outboxPublisherService;
     private final EtaService etaService;
@@ -249,6 +260,11 @@ public class TripService {
                 trip.getVehicleId(), trip.getCompletedAt(), true);
         outboxPublisherService.saveToOutbox("trip.completed", event);
 
+        // Release the vehicle. This was missing entirely, so every DELIVERED trip
+        // left its vehicle stuck IN_USE forever — it could never be dispatched
+        // again, and the fleet silently shrank with each completed delivery.
+        releaseVehicleAfterCommit(trip.getId(), trip.getVehicleId(), "completed");
+
         return mapToResponse(trip);
     }
 
@@ -272,16 +288,95 @@ public class TripService {
                 trip.getOrigin(), trip.getDestination());
         outboxPublisherService.saveToOutbox("trip.cancelled", cancelledEvent);
 
-        try {
-            vehicleServiceClient.updateVehicleStatus(trip.getVehicleId(), "AVAILABLE");
-        } catch (Exception e) {
-            // Vehicle service might be down — logged, will reconcile later
-            log.warn("Trip {} cancelled but failed to mark vehicle {} AVAILABLE — " +
-                    "vehicle status may be stale and require manual reconciliation",
-                    trip.getId(), trip.getVehicleId(), e);
-        }
+        // Was a bare call inside the transaction: if the DB later rolled back, the
+        // vehicle had already been freed for a trip that still existed. Deferred to
+        // afterCommit for the same reason createTrip defers its IN_USE call.
+        releaseVehicleAfterCommit(trip.getId(), trip.getVehicleId(), "cancelled");
 
         return mapToResponse(trip);
+    }
+
+    /**
+     * Returns a vehicle to AVAILABLE once the trip's own transaction has committed.
+     *
+     * Deferred rather than inline so a rollback can never leave the vehicle freed
+     * while the trip still exists, and so the blocking HTTP call is outside the
+     * transaction — holding a connection from a pool of 5 across a network round
+     * trip is how this service stalls under load.
+     *
+     * Best-effort by design: a delivery must not fail because vehicle-service is
+     * briefly unreachable. The trip is already committed and the event already in
+     * the outbox, so the worst case is a stale vehicle status, which the
+     * reconciliation sweep below repairs.
+     */
+    private void releaseVehicleAfterCommit(Long tripId, Long vehicleId, String reason) {
+        if (vehicleId == null) return;
+
+        Runnable release = () -> {
+            try {
+                vehicleServiceClient.releaseVehicle(vehicleId);
+                log.debug("Trip {} {} — vehicle {} released", tripId, reason, vehicleId);
+            } catch (Exception e) {
+                log.warn("Trip {} {} but failed to mark vehicle {} AVAILABLE — "
+                        + "reconciliation will retry", tripId, reason, vehicleId, e);
+            }
+        };
+
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    release.run();
+                }
+            });
+        } else {
+            release.run();
+        }
+    }
+
+    /**
+     * Repairs vehicles left IN_USE with no live trip.
+     *
+     * The release above is a best-effort network call, so it can be lost — the
+     * service restarting between commit and callback, or vehicle-service being
+     * down at that moment. Without a sweep those vehicles are stranded permanently
+     * and only a human editing the database gets them back.
+     *
+     * Runs every 10 minutes and is cheap: it only looks at vehicles the fleet
+     * currently believes are in use, and only frees one when this service can see
+     * no trip holding it.
+     */
+    @Scheduled(fixedDelayString = "${fleetsync.vehicle-reconcile-ms:600000}",
+               initialDelayString = "${fleetsync.vehicle-reconcile-initial-ms:60000}")
+    @Transactional(readOnly = true)
+    public void reconcileStrandedVehicles() {
+        Instant since = Instant.now().minus(RECONCILE_LOOKBACK_HOURS, ChronoUnit.HOURS);
+
+        // Candidates: vehicles whose trip finished recently. Bounded by time so this
+        // never walks the whole trip history.
+        Set<Long> candidates = tripRepository.findRecentlyEndedVehicleIds(since);
+        if (candidates.isEmpty()) return;
+
+        // Anything still held by a live trip is legitimately IN_USE — a vehicle can
+        // be reassigned the moment it's freed, so this guard is what stops the sweep
+        // yanking a vehicle out from under a trip that just started.
+        candidates.removeAll(tripRepository.findActiveVehicleIds(ACTIVE_STATUSES));
+        if (candidates.isEmpty()) return;
+
+        int freed = 0;
+        for (Long vehicleId : candidates) {
+            try {
+                // Idempotent: setting an already-AVAILABLE vehicle to AVAILABLE is a
+                // no-op, so this is safe to re-run and needs no "is it stuck?" query.
+                vehicleServiceClient.releaseVehicle(vehicleId);
+                freed++;
+            } catch (Exception e) {
+                log.warn("Reconciliation could not free vehicle {}", vehicleId, e);
+            }
+        }
+        if (freed > 0) {
+            log.info("Vehicle reconciliation released {} vehicle(s) with no active trip", freed);
+        }
     }
 
     public List<TripResponse> getAllTrips(String status, Pageable pageable) {

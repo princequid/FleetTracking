@@ -26,6 +26,7 @@ export default function StaffTable({ staff, loading, error, onRetry, onAdd, sort
       key: "email",
       header: "Account",
       sortable: true,
+      card: "title",
       render: (member) => (
         <div className="driver-name-cell">
           <span
@@ -44,6 +45,7 @@ export default function StaffTable({ staff, loading, error, onRetry, onAdd, sort
       header: "Role",
       width: 160,
       sortable: true,
+      card: "meta",
       sortValue: (member) => ROLE_RANK[member.role] ?? 99,
       render: (member) => (
         <Badge variant={ROLE_BADGE_VARIANT[member.role] || "default"}>

@@ -6588,142 +6588,11 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* ── DataTable — card layout below the table breakpoint ─────────────────────────
-   A horizontally-scrolling eight-column table on a 412px screen shows Trip ID,
-   Driver, Vehicle and Origin, and pushes Status, ETA and every action off the
-   right edge — the three things a dispatcher is actually looking for. Below
-   768px each row becomes a card instead, with the column header printed as the
-   field label from the `data-label` attribute the component already emits.
+   Lives in the premium layer at the foot of this file, not here. The card
+   layout has to override .route-cell, .cell-truncate and the compact-density
+   padding, all of which are themselves defined down there — at this position
+   in the file it lost every one of those cascades.  See "Mobile data cards".
    ─────────────────────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  /* Undo the horizontal-scroll arrangement this breakpoint sets up for legacy
-     tables. `.trips-data-table` gets `min-width: 640px` there so the columns
-     stay readable inside a scroller — but once the rows are cards, that width
-     is what pushes every value 640px off the right edge, leaving a column of
-     labels with nothing beside them. The scroll container goes too: there is
-     nothing left to scroll, and a focusable scroller with no overflow is just
-     an empty tab stop. */
-.data-table,
-  .data-table td {
-    min-width: 0 !important;
-    width: auto !important;
-  }
-
-  /* DataTable tags its own card, so this needs no :has() and no guesswork about
-     which tables have been migrated. */
-.trips-table-card.data-table-card {
-    overflow-x: visible;
-  }
-
-  .data-table,
-  .data-table thead,
-  .data-table tbody,
-  .data-table tr,
-  .data-table td {
-    display: block;
-  }
-
-  /* Header cells are hidden one by one rather than by clipping the whole
-     `thead`, for two reasons. They must stay in the DOM — they are the
-     accessible names for the data cells, and removing them severs that. And
-     clipping the container also buried the select-all checkbox inside it, which
-     left card mode with per-row selection but no way to select or clear them
-     all: bulk actions were effectively desktop-only without anyone deciding
-     that they should be. */
-.data-table thead th {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  /* The one header that stays visible, promoted to a "Select all" row. */
-.data-table thead th.select-cell {
-    position: static;
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    width: auto !important;
-    height: auto;
-    overflow: visible;
-    clip: auto;
-    clip-path: none;
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .data-table thead th.select-cell::after {
-    content: "Select all";
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    letter-spacing: var(--tracking-caps);
-    text-transform: uppercase;
-    color: var(--color-text-3);
-  }
-
-  /* Row checkboxes get their label from the card layout's ::before like every
-     other cell, so the redundant "Select" caption comes off. */
-.data-table td.select-cell::before {
-    content: none;
-  }
-
-  .data-table td.select-cell {
-    justify-content: flex-start;
-  }
-
-  .data-table tbody tr {
-    position: relative;
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .data-table tbody tr:last-child {
-    border-bottom: none;
-  }
-
-  .data-table td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-1) 0 !important;
-    border: none !important;
-    text-align: left !important;
-  }
-
-  .data-table td::before {
-    content: attr(data-label);
-    flex-shrink: 0;
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    letter-spacing: var(--tracking-caps);
-    text-transform: uppercase;
-    color: var(--color-text-3);
-  }
-
-  /* A column hidden on desktop for space reasons is still worth showing here,
-     where there is a whole card to put it in. */
-.data-table .hide-below-md,
-  .data-table .hide-below-lg {
-    display: flex;
-  }
-
-  .data-table .data-table-state-cell {
-    display: block;
-  }
-
-  .data-table .data-table-state-cell::before {
-    content: none;
-  }
-
-  /* The card is the tap target, so it takes the whole row focus ring. */
-.data-table tbody tr[tabindex]:focus-visible {
-    box-shadow: inset 0 0 0 2px var(--color-primary);
-    border-radius: var(--radius-sm);
-  }
-}
 
 /* ── EmptyState ─────────────────────────────────────────────────────────────── */
 .empty-state {
@@ -6856,25 +6725,6 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   align-items: center;
   justify-content: flex-end;
   gap: var(--space-1);
-}
-
-@media (max-width: 768px) {
-  /* In card mode the ETA stack should read left-to-right like every other
-     field, not stay right-aligned against the card edge. */
-.eta-cell {
-    flex-direction: row;
-    align-items: baseline;
-    gap: var(--space-2);
-  }
-
-  .route-cell {
-    justify-content: flex-end;
-    text-align: right;
-  }
-
-  .cell-actions {
-    justify-content: flex-end;
-  }
 }
 
 /* ── Severity meter ─────────────────────────────────────────────────────────────
@@ -7949,4 +7799,953 @@ button.stat-strip-item:focus-visible {
 .dispatch-field + .modal-submit-btn,
 .dispatch-field + .btn {
   margin-top: var(--space-4);
+}
+
+/* ═══════════════════════════ DRIVER DETAIL ════════════════════════════════
+   This page previously borrowed Trip Detail's classes wholesale —
+   `.trip-detail-header`, `.trip-detail-card`, `.trip-detail-meta-grid`. That
+   grid is `repeat(2, 1fr)`, sized for a trip's four fields; a driver has three,
+   so the third wrapped alone onto row two and left a large dead gap. The avatar
+   sat above it in a `flex-direction: column` card, stranded, with the name in a
+   separate header entirely — identity split across two blocks.
+
+   These classes give the page its own structure: one identity band that holds
+   avatar, name, status and contact together, then metrics, then history.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.driver-profile {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-5);
+}
+
+/* Brand wash, same radial treatment as the sidebar rail so the page reads as
+   part of the product rather than a generic card. Sits behind content and never
+   intercepts clicks. */
+.driver-profile::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 128px;
+  background: radial-gradient(
+    120% 100% at 0% 0%,
+    var(--color-primary-soft) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.driver-profile-identity {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6);
+}
+
+.driver-profile-avatar {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--color-on-brand);
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Ring rather than a border so the avatar fill stays the exact AVATAR_SHADES
+     value — those are contrast-tuned against white initials (constants/colors.js). */
+  box-shadow: 0 0 0 4px var(--color-white), 0 0 0 5px var(--color-border);
+}
+
+.driver-profile-headings {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.driver-profile-name {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-1);
+  line-height: 1.15;
+  /* Long names truncate rather than pushing the status chip off the card. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driver-profile-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.driver-profile-id {
+  font-size: var(--text-sm);
+  color: var(--color-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Contact strip. Its own row with a rule above, so identity and detail are
+   visually separate without needing a second card. */
+.driver-profile-fields {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  /* Page background, not the card face — recesses the contact strip so the
+     identity band above it reads as the primary surface. */
+  background: var(--color-bg);
+}
+
+.driver-profile-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.driver-profile-field-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.driver-profile-field-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.driver-profile-field-label {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--color-text-3);
+}
+
+.driver-profile-field-value {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-1);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Metrics row ──────────────────────────────────────────────────────────
+   Four KpiCards rather than the old flat `.driver-stat-box` text pairs, so the
+   driver page uses the same tile as every other metric surface in the product. */
+.driver-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+/* ── Section heading ──────────────────────────────────────────────────────
+   The old `.section-title` sat at body weight and read as a caption rather than
+   a heading. This pairs the title with a live count so the table has context
+   before it renders. */
+.driver-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.driver-section-title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text-1);
+}
+
+.driver-section-count {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-3);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .driver-profile-identity {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: var(--space-5);
+  }
+
+  .driver-profile-avatar {
+    width: 60px;
+    height: 60px;
+    font-size: var(--text-xl);
+  }
+
+  /* The name can use the full width once the avatar is above it, so let it wrap
+     to two lines instead of truncating on a narrow screen. */
+  .driver-profile-name {
+    white-space: normal;
+    font-size: var(--text-xl);
+  }
+
+  .driver-profile-fields {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+    padding: var(--space-5);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MOBILE — the phone layout
+   ═══════════════════════════════════════════════════════════════════════════════
+   Everything below 768px that has to win over a page section above. It is
+   appended for the same reason the premium layer is appended: `.route-cell`,
+   `.cell-truncate`, `.data-table.density-compact td` and the report stat cards
+   are all defined in the sections above, and a card layout that overrides them
+   cannot sit before them in the file.
+   ═════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Identifiers the card headline leans on ─────────────────────────────────── */
+
+/* Rank as a chip rather than a bare digit: "1" alone in the corner of a card
+   says nothing, and the column is 78px wide either way. */
+.cell-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--color-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-score {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The word beside the incidents chevron. Redundant under a "Details" column
+   header, so it appears only once that header is gone. */
+.incident-expand-text {
+  display: none;
+}
+
+/* ── Live map — contain Leaflet's stacking context ───────────────────────────────
+   Leaflet numbers its panes 400-700 and its control layer 1000. Those z-indexes
+   only stay inside the map if the map's own box establishes a stacking context,
+   and `position: relative` alone does not. Without this, the driver popup and
+   the zoom buttons paint over the off-canvas sidebar (z-index 200) and its
+   backdrop — which is what put a map card on top of an open navigation drawer.
+   ─────────────────────────────────────────────────────────────────────────── */
+.fleet-map-panel,
+.trip-route-map,
+.map-modal-map {
+  isolation: isolate;
+}
+
+@media (max-width: 768px) {
+  /* ── Top bar ────────────────────────────────────────────────────────────────
+     A 68px bar holding a full crumb trail, a search pill, a three-way theme
+     control and a bell has ~150px left for the trail — so "Home > Drivers >
+     Driver #1" ran under the search button. Two changes: the trail gives up the
+     crumbs that carry no information on a phone, and what remains becomes the
+     page title it was already acting as.
+     ───────────────────────────────────────────────────────────────────────── */
+  :root {
+    --navbar-height: 58px;
+  }
+
+  .navbar {
+    gap: var(--space-2);
+    padding: 0 var(--space-4);
+  }
+
+  .navbar-left {
+    flex: 1 1 auto;
+    gap: var(--space-2);
+  }
+
+  .navbar-heading {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .navbar-crumbs {
+    min-width: 0;
+    gap: var(--space-1);
+  }
+
+  /* "Home" is the sidebar's job, and its separator goes with it. On a list page
+     this leaves the section name alone; on a detail page it leaves the pair
+     that actually locates you — "Drivers > Driver #1". */
+  .navbar-crumbs > .navbar-crumb:first-child,
+  .navbar-crumbs > .navbar-crumb:first-child + .navbar-crumb-sep {
+    display: none;
+  }
+
+  .navbar-crumb {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-sm);
+  }
+
+  /* The deepest crumb is the only page label on screen, so it carries the
+     weight of one. */
+  .navbar-crumb-current {
+    font-family: var(--font-display);
+    font-size: var(--text-md);
+    font-weight: 700;
+    letter-spacing: var(--tracking-tight);
+    color: var(--color-text-1);
+  }
+
+  .navbar-actions {
+    flex-shrink: 0;
+    gap: var(--space-1);
+  }
+
+  .navbar-hamburger,
+  .navbar-search,
+  .navbar-icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .theme-toggle {
+    padding: 2px;
+  }
+
+  .theme-toggle-btn {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* ── DataTable — one card per record ──────────────────────────────────────────
+   An eight-column table on a 390px screen shows Trip, Driver, Vehicle and the
+   left edge of Origin, and pushes Status, ETA and every action off the right
+   edge — the three things a dispatcher is looking for. So each row becomes a
+   card.
+
+   The first version of this printed every column as a "LABEL……value" line. That
+   fixed the reachability problem and created a legibility one: the trip number,
+   the plate and the ETA all rendered at the same size and weight, so a card
+   read as a ledger dump with no way in. This version gives the card a structure
+   — headline, state, detail grid, footer — from the `card` role each column
+   declares. See the "Card roles" section of DataTable.jsx.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Undo the horizontal-scroll arrangement the tablet breakpoint sets up.
+     `.trips-data-table` gets `min-width: 640px` there so columns stay readable
+     inside a scroller — but once rows are cards, that width is what pushes
+     every value off the right edge. The scroll container goes too: there is
+     nothing left to scroll, and a focusable scroller with no overflow is just
+     an empty tab stop. */
+  .data-table,
+  .data-table td {
+    min-width: 0 !important;
+    width: auto !important;
+  }
+
+  /* DataTable tags its own card, so this needs no :has() and no guesswork about
+     which tables have been migrated. The surface becomes a tray the record
+     cards sit in, rather than a card wrapped around a table. */
+  .trips-table-card.data-table-card {
+    overflow-x: visible;
+    background: var(--color-bg);
+  }
+
+  .data-table,
+  .data-table thead,
+  .data-table tbody,
+  .data-table tr,
+  .data-table td {
+    display: block;
+  }
+
+  /* Header cells are hidden one by one rather than by clipping the whole
+     `thead`, for two reasons. They must stay in the DOM — they are the
+     accessible names for the data cells, and removing them severs that. And
+     clipping the container also buried the select-all checkbox inside it, which
+     left card mode with per-row selection but no way to select or clear them
+     all: bulk actions were effectively desktop-only without anyone deciding
+     that they should be. */
+  .data-table thead th {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* The one header that stays visible, promoted to the tray's toolbar. */
+  .data-table thead th.select-cell {
+    position: static;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: auto !important;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    clip-path: none;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .data-table thead th.select-cell::after {
+    content: "Select all";
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--color-text-3);
+  }
+
+  /* The tray: a stack of cards, gapped rather than ruled. */
+  .data-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  /* Twelve columns, because the card's header row needs a narrow checkbox track
+     beside a wide title and a right-aligned state, while its body needs an even
+     two-up split — six-of-twelve and one-of-twelve fall out of the same grid.
+     Column gap is zero and the gutter comes from cell padding, so a twelve-track
+     grid doesn't spend a third of a 300px card on gaps. */
+  .data-table tbody tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    column-gap: 0;
+    row-gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-xs);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  /* The card is the tap target, so it takes the whole focus ring — and press
+     feedback, since there is no hover on a phone to confirm the tap landed. */
+  .data-table tbody tr[tabindex]:focus-visible {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+
+  .data-table tbody tr[tabindex]:active {
+    background: var(--color-surface);
+  }
+
+  /* Default cell: a labelled field in the two-up grid. Label above value, not
+     label-left/value-right — a right-aligned column of values against a ragged
+     left edge is what made the old layout read as a receipt. */
+  .data-table td {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    grid-column: span 6;
+    min-width: 0;
+    padding: 0 var(--space-3) 0 0 !important;
+    border: none !important;
+    text-align: left !important;
+    font-size: var(--text-sm);
+    color: var(--color-text-1);
+  }
+
+  .data-table td::before {
+    content: attr(data-label);
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--color-text-3);
+  }
+
+  /* A column hidden on desktop for space reasons is still worth showing here,
+     where there is a whole card to put it in. */
+  .data-table .hide-below-md,
+  .data-table .hide-below-lg {
+    display: flex;
+  }
+
+  /* Truncation is a fixed-table-layout concern. In a card the value has a line
+     of its own and should use it. */
+  .data-table td.cell-truncate {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  /* ── Card header: identity, state, and one rule under both ───────────────── */
+  .data-table td.card-cell-title {
+    grid-column: 1 / 9;
+    order: -3;
+    font-family: var(--font-display);
+    font-size: var(--text-lg);
+    font-weight: 700;
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--leading-tight);
+  }
+
+  .data-table td.card-cell-meta {
+    grid-column: 9 / -1;
+    order: -2;
+    align-items: flex-end;
+    text-align: right !important;
+    padding-right: 0 !important;
+  }
+
+  .data-table-selectable tbody td.select-cell {
+    grid-column: 1 / 2;
+    order: -4;
+    align-items: flex-start;
+    padding-right: 0 !important;
+  }
+
+  .data-table-selectable tbody td.card-cell-title {
+    grid-column: 2 / 9;
+  }
+
+  .data-table td.select-cell::before {
+    content: none;
+  }
+
+  /* The rule is drawn by the header cells themselves. They stretch to a common
+     height, so their bottom borders meet as one continuous line across the card
+     — without a separator element the markup doesn't have. */
+  .data-table tbody td.select-cell,
+  .data-table td.card-cell-title,
+  .data-table td.card-cell-meta {
+    align-self: stretch;
+    padding-bottom: var(--space-3) !important;
+    border-bottom: 1px solid var(--color-border) !important;
+  }
+
+  /* ── Full-width and footer cells ─────────────────────────────────────────── */
+
+  /* Ordered after the two-up fields rather than left in column order. A
+     full-width cell sitting between two half-width ones breaks the pairing and
+     strands whatever follows it on a row of its own — the driver's trip history
+     rendered Vehicle, then Destination, then Date as three rows where two would
+     do. Sinking wide cells to just above the footer keeps the grid packed. */
+  .data-table td.card-cell-wide {
+    grid-column: 1 / -1;
+    order: 50;
+    padding-right: 0 !important;
+  }
+
+  .data-table td.card-cell-actions {
+    grid-column: 1 / -1;
+    order: 90;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    padding-top: var(--space-3) !important;
+    padding-right: 0 !important;
+    border-top: 1px solid var(--color-border) !important;
+  }
+
+  .data-table td.card-cell-actions::before {
+    content: none;
+  }
+
+  /* Text-link actions are a 13px word with 2px of padding — fine in a dense
+     table row under a cursor, not a target on a phone. In the footer they
+     become real buttons. */
+  .data-table td.card-cell-actions .cell-actions {
+    width: 100%;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+
+  .data-table td.card-cell-actions .trip-view-btn,
+  .data-table td.card-cell-actions .driver-deactivate-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 0 var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-white);
+    font-size: var(--text-sm);
+  }
+
+  .data-table td.card-cell-actions .trip-kebab-btn {
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+  }
+
+  .data-table td.card-cell-actions .incident-expand-btn {
+    width: auto;
+    height: 38px;
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+    border-radius: var(--radius-md);
+    color: var(--color-primary);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  .incident-expand-text {
+    display: inline;
+  }
+
+  /* ── Row states ──────────────────────────────────────────────────────────── */
+
+  /* A rail on the card, not an inset shadow on a first cell that no longer sits
+     at the card's edge. */
+  .data-table tbody tr.data-table-row-flagged {
+    border-left: 3px solid var(--color-danger);
+  }
+
+  .data-table tbody tr.data-table-row-selected {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+
+  .data-table-row-flagged td:first-child,
+  .data-table tbody tr.data-table-row-selected td:first-child {
+    box-shadow: none;
+  }
+
+  /* An expansion belongs to the card above it: the gap closes and the facing
+     radii square off so the two read as one surface, not a stray panel. */
+  .data-table tbody tr.expanded-row {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .data-table tbody tr.detail-expansion-row {
+    display: block;
+    margin-top: calc(var(--space-3) * -1);
+    padding: 0;
+    border-top: none;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  .data-table tbody tr.detail-expansion-row > td {
+    display: block;
+    padding: 0 !important;
+  }
+
+  .data-table tbody tr.detail-expansion-row > td::before {
+    content: none;
+  }
+
+  .expanded-row > td {
+    background: none;
+  }
+
+  .incident-detail-panel {
+    padding: var(--space-4);
+    background: none;
+    border-top: none;
+  }
+
+  .incident-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .incident-status-update {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  /* Empty, error and loading states are not records, so they don't get a record
+     card — they take the tray. */
+  .data-table tbody tr.data-table-state-row {
+    display: block;
+    padding: 0;
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+  }
+
+  .data-table .data-table-state-cell {
+    display: block;
+  }
+
+  .data-table .data-table-state-cell::before {
+    content: none;
+  }
+
+  .data-table tbody tr.skeleton-row td::before {
+    content: none;
+  }
+
+  .skeleton-row td {
+    padding: 0 var(--space-3) 0 0;
+  }
+
+  /* ── Cell contents inside a card ─────────────────────────────────────────── */
+
+  /* The route has the card's full width, so it wraps to show both ends of the
+     journey instead of clipping the destination — the half of a route an
+     operator is actually looking for. */
+  .route-cell {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: var(--space-1);
+  }
+
+  .route-cell-line {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    flex: 0 1 auto;
+  }
+
+  .eta-cell,
+  .data-table.density-compact .eta-cell {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+    white-space: normal;
+  }
+
+  .cell-actions {
+    justify-content: flex-end;
+  }
+
+  /* The headline sets its own type; the identifier spans inside it stop
+     competing with a second font and size. */
+  .data-table td.card-cell-title .cell-id,
+  .data-table td.card-cell-title .cell-mono,
+  .data-table td.card-cell-title .cell-plate,
+  .data-table td.card-cell-title .driver-name-text {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+  }
+
+  .data-table td.card-cell-title .cell-id {
+    color: var(--color-primary);
+  }
+
+  .data-table td.card-cell-meta .cell-score {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    line-height: var(--leading-tight);
+  }
+
+  /* Pagination sits on the tray floor rather than floating on it. */
+  .data-table-card .pagination {
+    background: var(--color-white);
+    border-top: 1px solid var(--color-border);
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+/* ── Filter groups — label above chips ────────────────────────────────────────
+   `Severity [All][Low][Medium][High]  [Critical]` inline puts a caps label at
+   the left of a wrapping chip set, so the second row starts under the label and
+   the group loses its left edge. Stacked, each group is a labelled block.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .filter-bar-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: var(--space-4);
+  }
+
+  .filter-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .filter-group-chips {
+    gap: var(--space-2);
+  }
+
+  /* 24px is the AA floor for a target (WCAG 2.5.8) and these chips were sitting
+     exactly on it. */
+  .incident-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 var(--space-4);
+    font-size: var(--text-sm);
+  }
+
+  .filter-tabs {
+    gap: var(--space-2);
+  }
+
+  /* Four KPI tiles at `minmax(200px, 1fr)` fall to one column on a 390px screen,
+     which is ~580px of scrolling for four figures — two of which are usually an
+     em dash. Two-up is what `.stats-row-4` already does at this width, and it is
+     the same tile. */
+  .driver-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+}
+
+/* ── Reports ──────────────────────────────────────────────────────────────────
+   The three summary figures were three full-width cards, each 1.5rem-padded
+   around a 30px numeral, so a phone showed roughly one stat per screenful of
+   scrolling. They are three readings of one thing rather than three separate
+   objects, so below 640px they become a single divided strip — the treatment
+   StatStrip already uses for level-2 metrics elsewhere in the product.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .report-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+
+  .report-controls .dispatch-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .report-controls > .btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .report-summary-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xs);
+    overflow: hidden;
+  }
+
+  .report-stat-card {
+    padding: var(--space-4) var(--space-3);
+    background: none;
+    border: none;
+    border-left: 1px solid var(--color-border);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .report-stat-card:first-child {
+    border-left: none;
+  }
+
+  .report-stat-card:hover {
+    box-shadow: none;
+  }
+
+  .report-stat-label {
+    font-size: var(--text-2xs);
+    margin-bottom: var(--space-2);
+  }
+
+  .report-stat-value {
+    font-size: var(--text-xl);
+  }
+
+  .report-stat-sub {
+    font-size: var(--text-2xs);
+  }
+
+  .report-placeholder {
+    padding: var(--space-8) var(--space-4);
+  }
+}
+
+/* Below ~480px, three columns of "Avg On-Time Rate" is four wrapped lines over
+   a number. The strip turns vertical and each figure becomes a row: name and
+   context on the left, value on the right. */
+@media (max-width: 480px) {
+  .report-summary-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .report-stat-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--space-4);
+    padding: var(--space-4);
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .report-stat-card:first-child {
+    border-top: none;
+  }
+
+  .report-stat-label {
+    grid-column: 1;
+    grid-row: 1;
+    margin-bottom: 0;
+  }
+
+  .report-stat-sub {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .report-stat-value {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    justify-self: end;
+    font-size: var(--text-2xl);
+  }
 }

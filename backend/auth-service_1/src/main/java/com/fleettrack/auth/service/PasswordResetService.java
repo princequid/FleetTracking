@@ -57,14 +57,21 @@ public class PasswordResetService {
 
         String rawToken = createToken(user.getId(), RESET_TOKEN_TTL_MINUTES, ChronoUnit.MINUTES);
 
-        // Drivers only ever use the mobile app, never the admin portal — send them a
-        // deep link straight into it. Everyone else (dispatcher/admin/super_admin) only
-        // ever uses the web admin portal, so they get the web reset-password page.
-        String resetLink = user.getRole() == Role.DRIVER
-                ? mobileAppScheme + "://reset-password?token=" + rawToken
-                : frontendUrl + "/reset-password?token=" + rawToken;
+        // Everyone gets the https web link, drivers included.
+        //
+        // Drivers previously got `fleettrack://reset-password?token=...` directly.
+        // That address is valid — the app registers the scheme and the screen reads
+        // the token correctly — but mail clients do not linkify custom URI schemes.
+        // Gmail and Outlook render it as dead text or strip the href entirely, so
+        // the button was unclickable and the flow appeared to do nothing at all.
+        //
+        // An https link is clickable everywhere. The reset page then offers to hand
+        // off into the app via the deep link, which works from a browser because
+        // browsers *do* honour custom schemes.
+        String resetLink = frontendUrl + "/reset-password?token=" + rawToken;
+
         emailService.sendEmail(user.getEmail(), "Reset your FleetSync password",
-                EmailTemplates.buildPasswordResetEmail(resetLink));
+                EmailTemplates.buildPasswordResetEmail(resetLink, user.getRole() == Role.DRIVER));
     }
 
     @Transactional

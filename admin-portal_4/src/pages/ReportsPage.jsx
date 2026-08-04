@@ -170,11 +170,21 @@ export default function ReportsPage() {
   );
 
   const driverColumns = [
-    { key: "rank", header: "Rank", width: 70, numeric: true, sortable: true },
+    {
+      key: "rank",
+      header: "Rank",
+      width: 78,
+      numeric: true,
+      sortable: true,
+      // A bare "1" in a card corner says nothing. The chip carries its own
+      // noun, which also reads better than a naked digit in the table.
+      render: (d) => <span className="cell-rank">#{d.rank}</span>,
+    },
     {
       key: "driverId",
       header: "Driver",
       sortable: true,
+      card: "title",
       render: (d) => <span className="cell-id">Driver #{d.driverId}</span>,
     },
     { key: "total", header: "Total trips", width: 120, numeric: true, sortable: true },
@@ -197,8 +207,11 @@ export default function ReportsPage() {
       width: 100,
       numeric: true,
       sortable: true,
+      card: "meta",
       render: (d) => (
-        <span style={{ fontWeight: 700, color: scoreColor(d.score) }}>{d.score}</span>
+        <span className="cell-score" style={{ color: scoreColor(d.score) }}>
+          {d.score}
+        </span>
       ),
     },
   ];

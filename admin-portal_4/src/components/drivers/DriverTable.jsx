@@ -28,6 +28,7 @@ export default function DriverTable({
       key: "fullName",
       header: "Driver",
       sortable: true,
+      card: "title",
       render: (driver) => (
         <div className="driver-name-cell">
           <span
@@ -70,6 +71,7 @@ export default function DriverTable({
       header: "Status",
       width: 120,
       sortable: true,
+      card: "meta",
       sortValue: (driver) => (driver.isActive ? 0 : 1),
       render: (driver) => (
         <Badge variant={driver.isActive ? "success" : "default"} dot>
@@ -82,6 +84,7 @@ export default function DriverTable({
       header: "Actions",
       width: 150,
       align: "end",
+      card: "actions",
       render: (driver) => (
         <div className="cell-actions" onClick={(event) => event.stopPropagation()}>
           <button
