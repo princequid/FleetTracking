@@ -153,6 +153,7 @@ export default function IncidentsPage() {
       width: 84,
       numeric: true,
       sortable: true,
+      card: "title",
       render: (incident) => <span className="cell-id">#{incident.id}</span>,
     },
     {
@@ -192,6 +193,7 @@ export default function IncidentsPage() {
       header: "Status",
       width: 150,
       sortable: true,
+      card: "meta",
       sortValue: (incident) => STATUS_RANK[incident.status] ?? 99,
       render: (incident) => (
         <Badge variant={STATUS_BADGE[incident.status] || "default"} dot>
@@ -215,6 +217,7 @@ export default function IncidentsPage() {
       header: "Details",
       width: 60,
       align: "end",
+      card: "actions",
       cellClassName: "incident-expand-cell",
       render: (incident) => (
         <button
@@ -228,6 +231,11 @@ export default function IncidentsPage() {
             toggleExpand(incident.id);
           }}
         >
+          {/* Visible only in the mobile card footer, where a lone chevron on a
+              rule has nothing to attach itself to. The aria-label already
+              contains the word "details", so the visible text stays a subset of
+              the accessible name (WCAG 2.5.3). */}
+          <span className="incident-expand-text">Details</span>
           <ChevronDownIcon size={16} />
         </button>
       ),

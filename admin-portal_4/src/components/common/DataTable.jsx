@@ -28,8 +28,23 @@ import { ChevronDownIcon } from "./Icons";
  *     sortValue: (row) => any, // what to compare when sorting
  *     hideBelow: "md",         // drop from the table on small screens
  *     truncate: true,          // clip to one line with an ellipsis (text only)
- *     cardHeader: true,        // in card mode, promote to the card's title row
+ *     card: "title",           // role in the mobile card layout — see below
  *   }
+ *
+ * ## Card roles
+ *
+ * Below 768px a row is a card, not a strip of cells. Without direction every
+ * field renders at the same weight, so a card reads as a column of "LABEL
+ * value" pairs where the trip number is no more prominent than the plate. The
+ * `card` role says which field is which:
+ *
+ *   "title"    the record's identity — headline of the card (one per table)
+ *   "meta"     the state that qualifies it — status badge, top-right
+ *   "wide"     too long for a half-width cell — spans the card (route, address)
+ *   "actions"  controls — footer row under a rule, tap-target sized
+ *
+ * Unflagged columns fill a two-up grid beneath the header. `hideBelow` columns
+ * come back here: a card has room a table column didn't.
  *
  * ## Why sorting lives here
  *
@@ -181,7 +196,9 @@ export default function DataTable({
             </td>
           )}
           {columns.map((column) => (
-            <td key={column.key}>
+            // The card roles ride along on the skeleton so the placeholder has
+            // the shape of the card it's standing in for, not six equal bars.
+            <td key={column.key} className={column.card ? `card-cell-${column.card}` : undefined}>
               <div
                 className="skeleton-bar"
                 /* Vary the width per column so the placeholder reads as a table
@@ -196,7 +213,10 @@ export default function DataTable({
 
     if (error) {
       return (
-        <tr>
+        // Tagged so card mode can opt this row out of the card treatment —
+        // an empty/error state framed as one more record card reads as a
+        // result rather than the absence of results.
+        <tr className="data-table-state-row">
           <td colSpan={colSpan} className="data-table-state-cell">
             <ErrorState
               title={error.title}
@@ -210,7 +230,7 @@ export default function DataTable({
 
     if (visibleRows.length === 0) {
       return (
-        <tr>
+        <tr className="data-table-state-row">
           <td colSpan={colSpan} className="data-table-state-cell">
             <EmptyState {...empty} />
           </td>
@@ -272,6 +292,9 @@ export default function DataTable({
                   // holding a badge or a pair of buttons, which came out as a
                   // status pill with a stray "…" beside it.
                   column.truncate ? "cell-truncate" : "",
+                  // Inert above 768px; below it, this is what gives the card a
+                  // headline, a status corner and a footer instead of a list.
+                  column.card ? `card-cell-${column.card}` : "",
                   column.cellClassName || "",
                 ]
                   .filter(Boolean)
@@ -299,7 +322,13 @@ export default function DataTable({
   return (
     <TableCard label={label} className={`data-table-card ${className}`.trim()}>
       <table
-        className={`trips-data-table data-table density-${density}`}
+        // `data-table-selectable` lets card mode reserve a checkbox column in
+        // the card's header row. It can't be derived in CSS: the checkbox is a
+        // cell like any other, and a card with no selection must not leave a
+        // gap where one would have been.
+        className={`trips-data-table data-table density-${density}${
+          selectable ? " data-table-selectable" : ""
+        }`}
         // `aria-busy` is what tells a screen reader the skeleton rows are a
         // placeholder rather than six real records of blank data.
         aria-busy={loading || undefined}

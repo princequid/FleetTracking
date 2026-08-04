@@ -6,6 +6,7 @@ import com.fleettrack.vehicle.model.entity.Vehicle;
 import com.fleettrack.vehicle.model.enums.VehicleStatus;
 import com.fleettrack.vehicle.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +15,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class VehicleService {
     private final VehicleRepository vehicleRepository;
 
@@ -56,6 +58,41 @@ public class VehicleService {
         Vehicle v = vehicleRepository.findById(id).orElseThrow(() -> new RuntimeException("Vehicle not found"));
         v.setStatus(status);
         return mapToResponse(vehicleRepository.save(v));
+    }
+
+    /**
+     * Returns a vehicle to the available pool when its trip ends.
+     *
+     * Deliberately narrow: it only ever flips IN_USE → AVAILABLE. A vehicle that
+     * someone has since moved to MAINTENANCE or DECOMMISSIONED must not be dragged
+     * back into dispatch by a late-arriving trip event — the trip finishing says
+     * nothing about whether the van is roadworthy.
+     *
+     * Idempotent by construction, which matters because this is driven by a message
+     * queue: a redelivered trip.completed event simply finds the vehicle already
+     * AVAILABLE and does nothing.
+     *
+     * @return true if the vehicle was actually released
+     */
+    @Transactional
+    public boolean releaseIfInUse(Long vehicleId) {
+        if (vehicleId == null) return false;
+
+        Vehicle v = vehicleRepository.findById(vehicleId).orElse(null);
+        if (v == null) {
+            log.warn("Cannot release vehicle {} — not found", vehicleId);
+            return false;
+        }
+
+        if (v.getStatus() != VehicleStatus.IN_USE) {
+            log.debug("Vehicle {} is {}, not IN_USE — leaving it alone", vehicleId, v.getStatus());
+            return false;
+        }
+
+        v.setStatus(VehicleStatus.AVAILABLE);
+        vehicleRepository.save(v);
+        log.info("Vehicle {} released back to AVAILABLE", vehicleId);
+        return true;
     }
 
     private VehicleResponse mapToResponse(Vehicle v) {

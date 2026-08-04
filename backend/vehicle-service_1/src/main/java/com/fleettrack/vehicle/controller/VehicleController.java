@@ -90,6 +90,29 @@ public class VehicleController {
         return ResponseEntity.ok(vehicleService.updateStatus(id, status));
     }
 
+    /**
+     * Returns a vehicle to the dispatch pool after its trip ends.
+     *
+     * Separate from the generic status endpoint because the intent is narrower and
+     * the safety guarantee matters: this only ever flips IN_USE → AVAILABLE, and
+     * leaves MAINTENANCE or DECOMMISSIONED untouched.
+     *
+     * trip-service calls this when a trip completes or is cancelled, and again from
+     * its periodic reconciliation sweep. That sweep is time-based, so it can fire
+     * after someone has legitimately moved the vehicle to MAINTENANCE — sending a
+     * blanket "AVAILABLE" would put an off-road van back into dispatch. Refusing
+     * that here means neither caller has to reason about it.
+     */
+    @PutMapping("/{id}/release")
+    public ResponseEntity<VehicleResponse> release(@PathVariable Long id, HttpServletRequest r) {
+        requireRoleOrInternal(r, WRITE_ROLES);
+        vehicleService.releaseIfInUse(id);
+        // Always returns the vehicle's current state, released or not — the caller
+        // is reconciling, not asserting, so "it was already AVAILABLE" and "it is
+        // in maintenance" are both successful outcomes, not errors.
+        return ResponseEntity.ok(vehicleService.getVehicleById(id));
+    }
+
     private void requireRole(HttpServletRequest r, List<String> roles) {
         String role = r.getHeader("X-User-Role");
         if (role == null || !roles.contains(role))

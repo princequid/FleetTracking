@@ -5,8 +5,16 @@ import { getTrips } from "../services/tripService";
 import { getVehicles } from "../services/vehicleService";
 import DriverStatsCard from "../components/drivers/DriverStatsCard";
 import TripStatusBadge from "../components/trips/TripStatusBadge";
-import { ArrowLeftIcon, EmptyTruckIllustration } from "../components/common/Icons";
+import {
+  ArrowLeftIcon,
+  EmptyTruckIllustration,
+  ShieldIcon,
+  UsersIcon,
+} from "../components/common/Icons";
 import DataTable from "../components/common/DataTable";
+import PageHeader from "../components/common/PageHeader";
+import Badge from "../components/common/Badge";
+import Button from "../components/common/Button";
 import { TRIP_STATUS_ORDER } from "../constants/tripStatus";
 import { formatDate, formatFull } from "../utils/formatDate";
 import { getInitials, getAvatarColor } from "../constants/colors";
@@ -31,6 +39,7 @@ export default function DriverDetailPage() {
       width: 90,
       numeric: true,
       sortable: true,
+      card: "title",
       render: (trip) => <span className="cell-id">#{trip.id}</span>,
     },
     {
@@ -47,6 +56,7 @@ export default function DriverDetailPage() {
     {
       key: "destination",
       header: "Destination",
+      card: "wide",
       render: (trip) => trip.destination || <span className="cell-muted">—</span>,
     },
     {
@@ -54,6 +64,7 @@ export default function DriverDetailPage() {
       header: "Status",
       width: 130,
       sortable: true,
+      card: "meta",
       sortValue: (trip) => TRIP_STATUS_ORDER.indexOf(trip.status),
       render: (trip) => <TripStatusBadge status={trip.status} />,
     },
@@ -124,45 +135,84 @@ export default function DriverDetailPage() {
 
   return (
     <div>
-      <div className="trip-detail-header">
-        <button
-          className="trip-back-btn"
-          type="button"
-          onClick={() => navigate("/drivers")}
-          aria-label="Back to drivers"
-        >
-          <ArrowLeftIcon size={18} />
-        </button>
-        <h1 className="trip-detail-id">{driver.fullName}</h1>
-      </div>
+      <PageHeader
+        title={driver.fullName}
+        subtitle="Driver profile, performance and assigned trips"
+        actions={
+          <Button variant="ghost" size="sm" onClick={() => navigate("/drivers")}>
+            <ArrowLeftIcon size={16} />
+            Back to drivers
+          </Button>
+        }
+      />
 
-      <div className="trip-detail-card driver-info-card">
-        <span
-          className="driver-avatar driver-avatar-lg"
-          style={{ background: getAvatarColor(driver.fullName) }}
-        >
-          {getInitials(driver.fullName)}
-        </span>
-        <div className="trip-detail-meta-grid">
-          <div className="trip-meta-field">
-            <span className="trip-meta-label">Phone</span>
-            <span className="trip-meta-value">{driver.phone || "—"}</span>
-          </div>
-          <div className="trip-meta-field">
-            <span className="trip-meta-label">Licence</span>
-            <span className="trip-meta-value">{driver.licenceNo || "—"}</span>
-          </div>
-          <div className="trip-meta-field">
-            <span className="trip-meta-label">Status</span>
-            <span className="trip-meta-value">{driver.isActive ? "Active" : "Inactive"}</span>
+      {/* Identity band — avatar, name, status and contact in ONE block. These
+          used to be split across a page header and a separate card, so nothing
+          tied the initials to the person. */}
+      <section className="driver-profile" aria-label="Driver profile">
+        <div className="driver-profile-identity">
+          <span
+            className="driver-profile-avatar"
+            style={{ background: getAvatarColor(driver.fullName) }}
+            aria-hidden="true"
+          >
+            {getInitials(driver.fullName)}
+          </span>
+          <div className="driver-profile-headings">
+            <h2 className="driver-profile-name" title={driver.fullName}>
+              {driver.fullName}
+            </h2>
+            <div className="driver-profile-sub">
+              <span className="driver-profile-id">Driver #{driver.id ?? id}</span>
+              {/* `dot` so status is carried by shape as well as hue — the chip
+                  must not depend on colour alone (CLAUDE.md, Accessibility). */}
+              <Badge variant={driver.isActive ? "success" : "default"} dot>
+                {driver.isActive ? "Active" : "Inactive"}
+              </Badge>
+            </div>
           </div>
         </div>
-      </div>
+
+        <div className="driver-profile-fields">
+          <div className="driver-profile-field">
+            <span className="driver-profile-field-icon">
+              <UsersIcon size={16} />
+            </span>
+            <span className="driver-profile-field-text">
+              <span className="driver-profile-field-label">Phone</span>
+              <span className="driver-profile-field-value">{driver.phone || "—"}</span>
+            </span>
+          </div>
+          <div className="driver-profile-field">
+            <span className="driver-profile-field-icon">
+              <ShieldIcon size={16} />
+            </span>
+            <span className="driver-profile-field-text">
+              <span className="driver-profile-field-label">Licence</span>
+              <span className="driver-profile-field-value">{driver.licenceNo || "—"}</span>
+            </span>
+          </div>
+        </div>
+        {/* Deliberately only contact facts here. A "Trips assigned" field sat in
+            this strip briefly and had to go: it counts the client-filtered trip
+            list, while the "Total trips" KPI below comes from the stats endpoint.
+            They agree in normal use but can diverge (the list is capped at
+            LIST_PAGE_SIZE, and stats can lag), and two similarly-named numbers
+            disagreeing a few centimetres apart is worse than a sparser strip.
+            Metrics belong in the KPI row; identity belongs here. */}
+      </section>
 
       <DriverStatsCard stats={stats} />
 
       <section className="trip-detail-section">
-        <h2 className="section-title">Trip history</h2>
+        <div className="driver-section-head">
+          <h2 className="driver-section-title">Trip history</h2>
+          {trips.length > 0 && (
+            <span className="driver-section-count">
+              {trips.length} {trips.length === 1 ? "trip" : "trips"}
+            </span>
+          )}
+        </div>
         <DataTable
           label="Trip history"
           caption={`Trips assigned to ${driver.fullName}`}
