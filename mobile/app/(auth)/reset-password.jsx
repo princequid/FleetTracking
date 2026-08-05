@@ -13,11 +13,18 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 
 const { height } = Dimensions.get('window');
 
-// Reached only via the forgot-password flow: tapping "Reset your password" in the
-// emailed reset link (fleettrack://reset-password?token=...), sent when a driver taps
-// "Forgot password?" on the login screen. Account creation no longer uses this screen
-// or wording — a newly-created driver already has a working password and instead sets
-// their own via the in-app first-login prompt.
+// Reached only via the forgot-password flow, and only at one remove: the email now
+// carries an https link to the portal's reset page for every role, because mail
+// clients don't linkify custom schemes. That page offers "Open in the FleetSync app",
+// which is the fleettrack://reset-password?token=... deep link that lands here — a
+// browser will follow a custom scheme even though a mail client won't.
+//
+// A driver who instead finishes on the web page never reaches this screen; that page
+// sends them back to the app afterwards rather than to the portal's sign-in.
+//
+// Account creation no longer uses this screen or wording — a newly-created driver
+// already has a working password and instead sets their own via the in-app
+// first-login prompt.
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const insets  = useSafeAreaInsets();
