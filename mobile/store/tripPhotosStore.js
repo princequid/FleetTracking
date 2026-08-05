@@ -109,6 +109,16 @@ export const useTripPhotosStore = create((set, get) => ({
     // Only "loading" when there is genuinely nothing to show yet.
     return !entry || (entry.loading && entry.photos.length === 0);
   },
+  /**
+   * The last fetch failed AND we have nothing cached to fall back on — i.e. the
+   * screen has nothing to show and it is not because the trip has no photos.
+   * A failed *refresh* over a populated cache is deliberately not an error here:
+   * the driver can still see their evidence, so there is nothing to interrupt.
+   */
+  getError: (tripId) => {
+    const entry = get().byTrip[String(tripId)];
+    return entry && entry.error && entry.photos.length === 0 ? entry.error : null;
+  },
 
   fetch: async (tripId, { force = false } = {}) => {
     const key = String(tripId);
@@ -127,18 +137,32 @@ export const useTripPhotosStore = create((set, get) => ({
         set((s) => ({
           byTrip: {
             ...s.byTrip,
-            [key]: { photos, fetchedAt: Date.now(), loading: false, inflight: null },
+            [key]: { photos, fetchedAt: Date.now(), loading: false, inflight: null, error: null },
           },
         }));
         return photos;
       })
-      .catch(() => {
+      .catch((err) => {
         // Leave whatever is cached on screen — a failed refresh should not empty
         // a gallery of delivery evidence the driver can still look at.
+        //
+        // But DO record that it failed. Swallowing this was why "I can't see my
+        // photos" was undiagnosable: the screen rendered nothing at all, which is
+        // byte-for-byte what a trip with no photos looks like. A driver — and
+        // anyone debugging — could not tell an outage from an empty trip.
         set((s) => ({
           byTrip: {
             ...s.byTrip,
-            [key]: { ...(s.byTrip[key] ?? { photos: [] }), loading: false, inflight: null, fetchedAt: Date.now() },
+            [key]: {
+              ...(s.byTrip[key] ?? { photos: [] }),
+              loading: false,
+              inflight: null,
+              // NOT Date.now(). Marking a failed fetch as freshly-fetched meant the
+              // staleness guard above short-circuited every retry for the next 30
+              // seconds, so re-opening the screen after a blip did nothing at all.
+              fetchedAt: 0,
+              error: err,
+            },
           },
         }));
         return get().byTrip[key]?.photos ?? [];
@@ -147,7 +171,13 @@ export const useTripPhotosStore = create((set, get) => ({
     set((s) => ({
       byTrip: {
         ...s.byTrip,
-        [key]: { photos: entry?.photos ?? [], fetchedAt: entry?.fetchedAt ?? 0, loading: true, inflight: request },
+        [key]: {
+          photos: entry?.photos ?? [],
+          fetchedAt: entry?.fetchedAt ?? 0,
+          loading: true,
+          inflight: request,
+          error: null,
+        },
       },
     }));
 

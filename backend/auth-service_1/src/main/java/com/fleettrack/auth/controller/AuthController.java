@@ -2,6 +2,7 @@ package com.fleettrack.auth.controller;
 
 import com.fleettrack.auth.model.dto.*;
 import com.fleettrack.auth.model.entity.User;
+import com.fleettrack.auth.model.enums.Role;
 import com.fleettrack.auth.service.AuthService;
 import com.fleettrack.auth.service.PasswordResetService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -62,10 +63,17 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "If that email is registered, a reset link has been sent."));
     }
 
+    // `role` is returned so the client knows where to send the user next. Both the
+    // web page and the app screen post here, and the reset link's token is opaque —
+    // neither can tell a driver from a portal user on its own, and sending a driver
+    // to the admin portal's sign-in screen strands them at a login they cannot use.
     @PostMapping("/reset-password")
     public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-        passwordResetService.resetPassword(request.getToken(), request.getNewPassword());
-        return ResponseEntity.ok(Map.of("message", "Password updated successfully."));
+        Role role = passwordResetService.resetPassword(request.getToken(), request.getNewPassword());
+        return ResponseEntity.ok(Map.of(
+                "message", "Password updated successfully.",
+                "role", role.name()
+        ));
     }
 
     // NOT in the gateway's PUBLIC_PATHS — the caller must already have a valid JWT,

@@ -15,6 +15,11 @@ import { TRIP_PAGE_SIZE } from '../../../../constants/config';
 // Delivery-photo types shown on the trip, in capture order (incident/profile excluded).
 const PHOTO_ORDER = { PRE_DISPATCH: 1, STOP_POD: 2, POD: 3 };
 
+// Generous — these are multi-megapixel camera originals over whatever signal the
+// driver has. Long enough not to give up on a slow but working connection, short
+// enough that an unreachable host stops pretending to load.
+const IMAGE_TIMEOUT_MS = 20_000;
+
 function labelForPhoto(photo, trip) {
   if (photo.photoType === 'STOP_POD') {
     const idx = trip?.stops?.findIndex((s) => s.id === photo.stopId);
@@ -233,6 +238,17 @@ const PhotoThumb = React.memo(function PhotoThumb({ uri, style, placeholderColor
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
+  // `onError` only fires when the request actually fails. If the presigned URL
+  // points at a host that is merely unreachable — the wrong external endpoint,
+  // a private IP baked in by config — the connection hangs instead, and the
+  // thumbnail spins forever. An indefinite spinner is the worst of both: it
+  // never shows the photo and never admits it cannot. Time it out and fail.
+  useEffect(() => {
+    if (!loading) return undefined;
+    const timer = setTimeout(() => { setLoading(false); setFailed(true); }, IMAGE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loading, uri]);
+
   return (
     <View style={style}>
       <Image
@@ -278,6 +294,12 @@ export default function TripDetailScreen() {
     return !entry || (entry.loading && entry.photos.length === 0);
   });
   const fetchPhotos = useTripPhotosStore((s) => s.fetch);
+  // Distinguishes "this trip has no photos" from "we could not load them", which
+  // previously rendered identically — as nothing at all.
+  const photosError = useTripPhotosStore((s) => {
+    const entry = s.byTrip[String(tripId)];
+    return entry && entry.error && entry.photos.length === 0 ? entry.error : null;
+  });
 
   // Re-fetch the trip + its photos every time this screen comes into focus, not just on
   // mount — the driver reaches this screen via back-navigation from the live-nav map
@@ -511,9 +533,64 @@ export default function TripDetailScreen() {
           </View>
         </View>
 
-        {displayPhotos.length > 0 && (
-          <View>
-            <Text style={styles.sectionLabel}>DELIVERY PHOTOS</Text>
+        {/*
+          Photos render four ways, and the reason they are all here is that three of
+          them used to render as the *fourth*: this block was `displayPhotos.length > 0
+          && …`, so a failed fetch, a still-loading fetch and a trip with genuinely no
+          photos were all indistinguishable — the section simply was not on the screen.
+          That is how "I can't see the photos on past trips" became impossible to
+          diagnose from the app. See ErrorState's own note on never conflating the two.
+        */}
+        <View>
+          <View style={styles.photosHeader}>
+            {/* The row owns the spacing below; the label's own margin would double it. */}
+            <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>DELIVERY PHOTOS</Text>
+            {displayPhotos.length > 2 && (
+              <TouchableOpacity
+                onPress={() => router.push({
+                  pathname: '/(driver)/delivery/gallery/[id]',
+                  params: { id: tripId },
+                })}
+                accessibilityRole="button"
+                accessibilityLabel={`View all ${displayPhotos.length} photos`}
+                accessibilityHint="Opens the full photo gallery for this trip"
+                hitSlop={8}
+              >
+                <Text style={styles.photosViewAll}>View all ({displayPhotos.length})</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {photosLoading ? (
+            <View style={styles.photosNotice}>
+              <ActivityIndicator size="small" color={C.navyPrimary} />
+              <Text style={styles.photosNoticeText}>Loading photos…</Text>
+            </View>
+          ) : photosError ? (
+            <View style={styles.photosNotice}>
+              <Feather name="wifi-off" size={16} color={C.amber} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.photosNoticeText}>Couldn’t load photos</Text>
+                <Text style={styles.photosNoticeHint}>
+                  They are still stored — check your connection and try again.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => fetchPhotos(tripId, { force: true })}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading photos"
+                accessibilityHint="Tries to load the delivery photos again"
+                hitSlop={8}
+              >
+                <Text style={styles.photosRetry}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : displayPhotos.length === 0 ? (
+            <View style={styles.photosNotice}>
+              <Feather name="image" size={16} color={C.text3} />
+              <Text style={styles.photosNoticeText}>No photos were captured for this trip</Text>
+            </View>
+          ) : (
             <View style={styles.photosRow}>
               {displayPhotos.map((photo) => (
                 <TouchableOpacity
@@ -536,8 +613,8 @@ export default function TripDetailScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
         {canOpenNav && (
           blockedByOtherTrip ? (
@@ -715,6 +792,18 @@ const makeStyles = (C) => StyleSheet.create({
   },
 
   /* Delivery photos */
+  photosHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  photosViewAll: { fontFamily: 'Inter-SemiBold', fontSize: 13, color: C.navyPrimary },
+  /* Loading / error / empty all share one row so the section keeps its height and
+     the page does not jump as the fetch resolves. */
+  photosNotice: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 14, paddingHorizontal: 14,
+    backgroundColor: C.surface, borderRadius: 12, borderWidth: 1, borderColor: C.border,
+  },
+  photosNoticeText: { fontFamily: 'Inter-Medium', fontSize: 14, color: C.text2 },
+  photosNoticeHint: { fontFamily: 'Inter-Regular', fontSize: 12, color: C.text3, marginTop: 2 },
+  photosRetry: { fontFamily: 'Inter-SemiBold', fontSize: 13, color: C.navyPrimary },
   photosRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   photoItem: {
     width: (width - 32 - 20) / 3, // 3 across within the 16px page padding + 10px gaps
