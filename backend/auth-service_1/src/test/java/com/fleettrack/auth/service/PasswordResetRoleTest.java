@@ -37,9 +37,10 @@ import static org.mockito.Mockito.when;
  * page rendering the form has no way to tell a driver from a portal user.
  *
  * Without the role in the response, the web page sent everyone to the portal's
- * sign-in screen once the reset succeeded. For a driver that is a dead end: they
- * have no portal account, so they enter the password they have just set and are
- * rejected, with nothing on screen explaining why.
+ * sign-in screen once the reset succeeded. For a driver that is a dead end — not
+ * because the credentials fail there (the portal does not gate on role), but
+ * because every staff endpoint rejects a DRIVER token, so they arrive at a
+ * dashboard of failed requests instead of the app they were trying to get back into.
  *
  * These tests pin the return value, because it is the only thing carrying that
  * routing decision and a `void` is very easy to restore by accident.

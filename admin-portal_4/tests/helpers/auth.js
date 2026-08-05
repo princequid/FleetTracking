@@ -13,11 +13,15 @@
 
 const STORAGE_KEY = "fleettrack-auth";
 
-/** Roles the route guards branch on (mirrors main.jsx). */
+/** Roles the route guards branch on (mirrors constants/roles.js). */
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
   ADMIN: "ADMIN",
   DISPATCHER: "DISPATCHER",
+  // Not a portal role — present so role-access.spec.js can seed the session the
+  // layout guard is meant to reject. Don't seed it in a UI/UX audit spec; those
+  // expect to land on a page, and this one gets bounced to /login.
+  DRIVER: "DRIVER",
 };
 
 /**

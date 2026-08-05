@@ -12,8 +12,14 @@ import { useAuthStore } from "../../store/authStore";
  *
  * This is defence in depth, not the boundary: the server must still enforce
  * every one of these rules, because a determined client can bypass any of it.
+ *
+ * `redirectTo` is where a denied role lands, defaulting to the dashboard. The
+ * guard on the layout route itself must override it: sending a denied user to
+ * /dashboard only works while the dashboard sits *outside* the route that
+ * denied them, and for the layout guard it doesn't — it would re-enter the same
+ * check and redirect at itself forever.
  */
-export default function PrivateRoute({ children, allow }) {
+export default function PrivateRoute({ children, allow, redirectTo = "/dashboard" }) {
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const role = useAuthStore((state) => state.role);
   const location = useLocation();
@@ -23,7 +29,7 @@ export default function PrivateRoute({ children, allow }) {
   }
 
   if (allow && !allow.includes(role)) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={redirectTo} replace />;
   }
 
   return children;

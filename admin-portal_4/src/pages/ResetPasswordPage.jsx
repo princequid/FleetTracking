@@ -48,9 +48,10 @@ export default function ResetPasswordPage() {
   const [done, setDone] = useState(false);
   const [isDriver, setIsDriver] = useState(false);
 
-  // Only portal users get bounced to the portal's sign-in. A driver has no portal
-  // account, so landing them on /login was a dead end — they'd enter the password
-  // they had just set and be rejected, with nothing on screen explaining why.
+  // Only portal users get bounced to the portal's sign-in. A driver's credentials
+  // do work at /login — the portal doesn't gate on role — but there is nothing for
+  // them behind it: the services reject a DRIVER token on every staff endpoint, so
+  // they'd land on a dashboard of failed requests. Their destination is the app.
   useEffect(() => {
     if (done && !isDriver) {
       const t = setTimeout(() => navigate("/login", { replace: true }), 1800);

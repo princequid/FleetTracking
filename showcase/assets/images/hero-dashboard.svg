@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="470" viewBox="0 0 560 470" role="img" aria-label="Illustration of the FleetSync Pro live tracking dashboard">
+  <defs>
+    <linearGradient id="h-prime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16A34A"/>
+      <stop offset="1" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="h-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F1F5F9"/>
+    </linearGradient>
+    <filter id="h-soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <filter id="h-card" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <!-- backdrop glow -->
+  <ellipse cx="430" cy="120" rx="260" ry="180" fill="#22C55E" opacity="0.10"/>
+  <ellipse cx="120" cy="380" rx="240" ry="170" fill="#4ADE80" opacity="0.10"/>
+
+  <!-- dashboard window -->
+  <g filter="url(#h-soft)">
+    <rect x="30" y="40" width="500" height="400" rx="16" fill="url(#h-bg)"/>
+    <rect x="30" y="40" width="500" height="400" rx="16" fill="none" stroke="#E2E8F0"/>
+  </g>
+
+  <!-- window header -->
+  <rect x="30" y="40" width="500" height="46" rx="16" fill="#FFFFFF"/>
+  <rect x="30" y="70" width="500" height="16" fill="#FFFFFF"/>
+  <circle cx="54" cy="63" r="6" fill="#F87171"/>
+  <circle cx="76" cy="63" r="6" fill="#FBBF24"/>
+  <circle cx="98" cy="63" r="6" fill="#34D399"/>
+  <rect x="150" y="55" width="180" height="16" rx="8" fill="#F1F5F9"/>
+
+  <!-- sidebar -->
+  <rect x="30" y="86" width="150" height="354" fill="#FFFFFF"/>
+  <rect x="44" y="102" width="36" height="36" rx="9" fill="url(#h-prime)"/>
+  <path d="M55 120c2-4 2-5 2-8a3.5 3.5 0 1 1 7 0c0 3 0 4 2 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="62" cy="111" r="1.6" fill="#4ADE80"/>
+  <rect x="92" y="109" width="64" height="12" rx="6" fill="#0F172A"/>
+  <rect x="92" y="127" width="44" height="8" rx="4" fill="#94A3B8" opacity="0.6"/>
+
+  <g>
+    <rect x="44" y="154" width="122" height="30" rx="9" fill="#ECFDF5"/>
+    <rect x="52" y="163" width="12" height="12" rx="3.5" fill="#16A34A"/>
+    <rect x="70" y="166" width="60" height="7" rx="3.5" fill="#16A34A" opacity="0.75"/>
+  </g>
+  <g opacity="0.55">
+    <rect x="44" y="194" width="122" height="30" rx="9" fill="#F8FAFC"/>
+    <rect x="52" y="203" width="12" height="12" rx="3.5" fill="#94A3B8"/>
+    <rect x="70" y="206" width="56" height="7" rx="3.5" fill="#94A3B8"/>
+    <rect x="44" y="234" width="122" height="30" rx="9" fill="#F8FAFC"/>
+    <rect x="52" y="243" width="12" height="12" rx="3.5" fill="#94A3B8"/>
+    <rect x="70" y="246" width="64" height="7" rx="3.5" fill="#94A3B8"/>
+  </g>
+
+  <!-- map area -->
+  <g>
+    <rect x="180" y="86" width="350" height="354" fill="#F0FDF4"/>
+    <path d="M180 150h350M180 220h350M180 290h350M180 360h350" stroke="#DCFCE7" stroke-width="1"/>
+    <path d="M240 86v354M310 86v354M380 86v354M450 86v354" stroke="#DCFCE7" stroke-width="1"/>
+    <path d="M180 300C250 250 260 200 330 210 380 216 400 180 530 150" fill="none" stroke="#86EFAC" stroke-width="7" stroke-linecap="round"/>
+    <path d="M210 96c40 60 20 110 90 150 60 34 80 90 120 194" fill="none" stroke="#BBF7D0" stroke-width="7" stroke-linecap="round"/>
+  </g>
+
+  <!-- vehicles on map -->
+  <g>
+    <circle cx="330" cy="210" r="14" fill="#16A34A" opacity="0.18"/>
+    <circle cx="330" cy="210" r="8" fill="#22C55E" opacity="0.4"/>
+    <circle cx="330" cy="210" r="5" fill="#16A34A"/>
+    <circle cx="330" cy="210" r="1.8" fill="#fff"/>
+  </g>
+  <g>
+    <circle cx="420" cy="160" r="13" fill="#16A34A" opacity="0.18"/>
+    <circle cx="420" cy="160" r="7" fill="#22C55E" opacity="0.4"/>
+    <circle cx="420" cy="160" r="4.4" fill="#16A34A"/>
+    <circle cx="420" cy="160" r="1.6" fill="#fff"/>
+  </g>
+  <g>
+    <circle cx="280" cy="330" r="13" fill="#16A34A" opacity="0.18"/>
+    <circle cx="280" cy="330" r="7" fill="#22C55E" opacity="0.4"/>
+    <circle cx="280" cy="330" r="4.4" fill="#16A34A"/>
+    <circle cx="280" cy="330" r="1.6" fill="#fff"/>
+  </g>
+
+  <!-- live tracking card -->
+  <g filter="url(#h-card)">
+    <rect x="216" y="300" width="292" height="96" rx="12" fill="#FFFFFF"/>
+    <rect x="216" y="300" width="292" height="96" rx="12" fill="none" stroke="#E2E8F0"/>
+    <circle cx="240" cy="330" r="9" fill="#ECFDF5"/>
+    <path d="M232 330h16m-8-8v16" stroke="#16A34A" stroke-width="2" stroke-linecap="round"/>
+    <rect x="260" y="322" width="110" height="9" rx="4.5" fill="#0F172A"/>
+    <rect x="260" y="339" width="150" height="7" rx="3.5" fill="#94A3B8" opacity="0.7"/>
+    <rect x="432" y="324" width="56" height="22" rx="11" fill="#ECFDF5"/>
+    <rect x="444" y="332" width="32" height="6" rx="3" fill="#16A34A"/>
+    <rect x="242" y="366" width="82" height="12" rx="6" fill="#F1F5F9"/>
+    <rect x="332" y="366" width="82" height="12" rx="6" fill="#F1F5F9"/>
+  </g>
+
+  <!-- POD floating card -->
+  <g filter="url(#h-card)">
+    <rect x="88" y="360" width="176" height="70" rx="12" fill="#FFFFFF"/>
+    <rect x="88" y="360" width="176" height="70" rx="12" fill="none" stroke="#E2E8F0"/>
+    <rect x="102" y="374" width="34" height="34" rx="8" fill="#F0FDF4"/>
+    <path d="M112 391l6 6 12-13" fill="none" stroke="#16A34A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="146" y="378" width="96" height="8" rx="4" fill="#0F172A"/>
+    <rect x="146" y="392" width="76" height="7" rx="3.5" fill="#94A3B8" opacity="0.7"/>
+    <circle cx="252" cy="384" r="4" fill="#4ADE80"/>
+  </g>
+
+  <!-- header bar under window -->
+  <rect x="250" y="456" width="60" height="4" rx="2" fill="#CBD5E1"/>
+</svg>

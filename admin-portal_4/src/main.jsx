@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "./index.css";
 import { ThemeProvider } from "./context/ThemeContext";
 import PrivateRoute from "./components/common/PrivateRoute";
+import { PORTAL_ROLES, STAFF_ROLES, ADMIN_ROLES } from "./constants/roles";
 import Layout from "./pages/Layout";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -25,9 +26,8 @@ const IncidentsPage = lazy(() => import("./pages/IncidentsPage"));
 const LiveMapPage = lazy(() => import("./pages/LiveMapPage"));
 const StaffPage = lazy(() => import("./pages/StaffPage"));
 
-// Roles permitted on the routes the sidebar hides from DISPATCHER.
-const STAFF_ROLES = ["ADMIN", "SUPER_ADMIN"];
-const ADMIN_ROLES = ["ADMIN", "SUPER_ADMIN"];
+// Role lists live in constants/roles.js — the login screen needs the same
+// answer, and a second copy here would eventually disagree with it.
 
 const root = createRoot(document.getElementById("root"));
 
@@ -38,10 +38,14 @@ root.render(
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      {/* The whole portal is staff-only. The login screen turns drivers away, but
+          this catches a session that predates that check (or one restored from
+          storage), so a stale driver login can't walk back into the shell.
+          redirectTo must not be a route inside this one — see PrivateRoute. */}
       <Route
         path="/"
         element={
-          <PrivateRoute>
+          <PrivateRoute allow={PORTAL_ROLES} redirectTo="/login">
             <Layout />
           </PrivateRoute>
         }

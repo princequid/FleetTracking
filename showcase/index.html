@@ -1,0 +1,1287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="FleetSync Pro — a microservices-based fleet tracking and delivery management system. Live vehicle positions, enforced trip lifecycle, and centrally stored proof of delivery." />
+  <meta name="color-scheme" content="light" />
+  <title>FleetSync Pro — Enterprise Fleet Tracking &amp; Delivery Platform</title>
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ================================================================
+       Accessibility: skip link (keyboard users)
+       ================================================================ -->
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <!-- ================================================================
+       Sticky header & navigation
+       ================================================================ -->
+  <header class="site-header" id="site-header">
+    <div class="container">
+      <nav class="nav" aria-label="Primary navigation">
+        <a class="brand" href="#home" aria-label="FleetSync Pro — home">
+          <img src="assets/images/logo.svg" alt="" width="36" height="36" />
+          <span>FleetSync Pro<small>Delivery platform</small></span>
+        </a>
+
+        <ul class="nav-links" id="nav-links">
+          <li><a href="#overview">Overview</a></li>
+          <li><a href="#workflow">Workflow</a></li>
+          <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#technology">Tech</a></li>
+          <li><a href="#evaluator-qa">Evaluator Q&amp;A</a></li>
+          <li><a href="#security">Security</a></li>
+          <li><a href="#performance">Performance</a></li>
+          <li><a href="#scaling">Scaling</a></li>
+          <li><a href="#testing">Testing</a></li>
+          <li><a href="#reference">Reference</a></li>
+        </ul>
+
+        <button class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="nav-links" aria-label="Toggle navigation menu">
+          <svg aria-hidden="true"><use href="#i-menu"></use></svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ==============================================================
+         1. HERO
+         ============================================================== -->
+    <section class="hero" id="home" aria-label="FleetSync Pro introduction">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="grid"></div>
+      </div>
+
+      <div class="container">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <span class="hero-badge">
+              <span class="dot" aria-hidden="true"></span>
+              University Project &middot; Enterprise Fleet Platform
+            </span>
+
+            <h1>FleetSync <span class="accent">Pro</span></h1>
+
+            <p class="lead">
+              A microservices-based fleet tracking and delivery management system.
+              Live vehicle positions on a map, a trip lifecycle the system enforces,
+              and proof-of-delivery stored centrally — replacing phone calls,
+              stale spreadsheets, and photos stuck on a driver&rsquo;s phone.
+            </p>
+
+            <div class="hero-actions">
+              <a class="btn btn--primary" href="#overview">
+                Explore the platform
+                <svg aria-hidden="true"><use href="#i-arrow-right"></use></svg>
+              </a>
+              <a class="btn btn--ghost" href="#evaluator-qa">
+                <svg aria-hidden="true"><use href="#i-message"></use></svg>
+                Evaluator Q&amp;A
+              </a>
+            </div>
+
+            <div class="hero-facts" aria-label="Key facts">
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-layers"></use></svg>11 microservices</span>
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-box"></use></svg>17 containers</span>
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-activity"></use></svg>~2s GPS updates</span>
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-shield"></use></svg>JWT-secured</span>
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-zap"></use></svg>Offline demo</span>
+            </div>
+          </div>
+
+          <div class="hero-visual">
+            <img src="assets/images/hero-dashboard.svg" alt="Illustration of the FleetSync Pro live tracking dashboard showing vehicles on a map, a live trip card, and a proof-of-delivery confirmation." width="560" height="470" />
+            <span class="hero-floater hero-floater--gps">
+              <svg aria-hidden="true"><use href="#i-activity"></use></svg>
+              Live GPS &middot; every ~2s
+            </span>
+            <span class="hero-floater hero-floater--pod">
+              <svg aria-hidden="true"><use href="#i-camera"></use></svg>
+              POD captured
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         2. PROJECT OVERVIEW
+         ============================================================== -->
+    <section class="section" id="overview" aria-labelledby="overview-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-flag"></use></svg>Project Overview</span>
+          <h2 id="overview-title">From manual chaos to a single source of truth</h2>
+          <p class="lead">
+            A delivery company running vans has no reliable idea where they are. FleetSync Pro
+            replaces phone calls, paper logs and on-phone photos with one enforced system.
+          </p>
+        </div>
+
+        <div class="overview-grid">
+          <article class="card card--hover overview-card reveal">
+            <div class="overview-icon overview-icon--problem">
+              <svg aria-hidden="true"><use href="#i-alert"></use></svg>
+            </div>
+            <h3>The problem</h3>
+            <p>Fleet operations today rely on three fragile manual channels:</p>
+            <ul class="overview-list">
+              <li><svg aria-hidden="true"><use href="#i-x"></use></svg>&ldquo;Where are you?&rdquo; phone calls between dispatcher and driver</li>
+              <li><svg aria-hidden="true"><use href="#i-x"></use></svg>A paper or spreadsheet log of who took which vehicle — stale by the time it&rsquo;s read</li>
+              <li><svg aria-hidden="true"><use href="#i-x"></use></svg>Proof-of-delivery photos that live on the driver&rsquo;s phone</li>
+              <li><svg aria-hidden="true"><use href="#i-x"></use></svg>&ldquo;Was that delivery late?&rdquo; — nobody knows</li>
+            </ul>
+          </article>
+
+          <article class="card card--hover overview-card reveal">
+            <div class="overview-icon overview-icon--solution">
+              <svg aria-hidden="true"><use href="#i-map-pin"></use></svg>
+            </div>
+            <h3>The solution</h3>
+            <p>One system that unifies all three into an enforceable, observable platform:</p>
+            <ul class="overview-list">
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg>Live vehicle positions on a map</li>
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg>A trip lifecycle the system enforces end-to-end</li>
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg>Proof-of-delivery stored centrally, attached to the trip</li>
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg>Recorded ETA and actual completion time for every trip</li>
+            </ul>
+          </article>
+
+          <article class="card card--hover overview-card reveal">
+            <div class="overview-icon overview-icon--benefit">
+              <svg aria-hidden="true"><use href="#i-zap"></use></svg>
+            </div>
+            <h3>Key benefits</h3>
+            <p>Why it beats the manual process — three concrete things, not just &ldquo;it&rsquo;s digital&rdquo;:</p>
+            <ul class="overview-list">
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg>Position updated roughly every <strong>2 seconds</strong>, no calls needed</li>
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg>Vehicle status is a <strong>state machine</strong> — an IN_USE vehicle cannot be assigned</li>
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg>POD retrievable <strong>months later</strong> from object storage</li>
+              <li><svg aria-hidden="true"><use href="#i-check"></use></svg><strong>On-time rate</strong> and audit trail measured across hundreds of trips</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         3. SYSTEM WORKFLOW
+         ============================================================== -->
+    <section class="section section--soft" id="workflow" aria-labelledby="workflow-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-route"></use></svg>System Workflow</span>
+          <h2 id="workflow-title">The lifecycle of a delivery, end to end</h2>
+          <p class="lead">
+            From trip creation to completion, every transition is enforced by the system —
+            the answer most likely to be asked first, so it is told as a story.
+          </p>
+        </div>
+
+        <div class="workflow">
+          <!-- Step 1 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-clipboard"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 01 &middot; Dispatch</span>
+              <h3>Trip creation</h3>
+              <p>The dispatcher creates the trip in the admin portal — driver, vehicle, origin, destination, and any intermediate stops.</p>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-check-circle"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 02 &middot; Reservation</span>
+              <h3>Validation &amp; reservation</h3>
+              <p>trip-service calls driver-service and vehicle-service to confirm availability, then sets the vehicle to IN_USE so nobody else can take it. The trip is written with status ASSIGNED.</p>
+            </div>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-layers"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 03 &middot; Reliability</span>
+              <h3>Event recorded, not sent</h3>
+              <p>In the same database transaction as the trip, a <code class="mono">trip.created</code> row is written to an outbox table — nothing is lost if the broker is down.</p>
+            </div>
+          </div>
+
+          <!-- Step 4 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-navigation"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 04 &middot; Departure</span>
+              <h3>Driver starts</h3>
+              <p>Status moves ASSIGNED &rarr; STARTED &rarr; EN_ROUTE. From this point the phone streams GPS positions roughly every 2 seconds.</p>
+            </div>
+          </div>
+
+          <!-- Step 5 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-activity"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 05 &middot; Tracking</span>
+              <h3>GPS tracking &amp; live map</h3>
+              <p>gps-service rejects implausible pings, caches the latest position in Redis, writes it to Postgres, and pushes it over a WebSocket — the dispatcher&rsquo;s map moves in real time.</p>
+            </div>
+          </div>
+
+          <!-- Step 6 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-map-pin"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 06 &middot; Arrival</span>
+              <h3>Geofence check</h3>
+              <p>The driver arrives — a geofence check confirms they are within 50 m of the destination and status becomes ARRIVED.</p>
+            </div>
+          </div>
+
+          <!-- Step 7 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-camera"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 07 &middot; Verification</span>
+              <h3>Proof of delivery</h3>
+              <p>The driver photographs the delivery. The photo uploads directly to MinIO using a presigned URL — the image never passes through the API.</p>
+            </div>
+          </div>
+
+          <!-- Step 8 -->
+          <div class="wf-item reveal">
+            <div class="wf-marker" aria-hidden="true"><svg><use href="#i-flag"></use></svg></div>
+            <div class="wf-card">
+              <span class="wf-step">Step 08 &middot; Completion</span>
+              <h3>Completion &amp; release</h3>
+              <p>trip-service verifies a POD exists, sets the trip DELIVERED, and releases the vehicle back to AVAILABLE. Downstream, notification-service emails and audit-service records the trail.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         4. ARCHITECTURE
+         ============================================================== -->
+    <section class="section" id="architecture" aria-labelledby="architecture-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-layers"></use></svg>Architecture</span>
+          <h2 id="architecture-title">A layered, event-driven system</h2>
+          <p class="lead">
+            Hover (or tap) each layer to inspect its responsibility. Eleven services, one
+            PostgreSQL instance with ten isolated schemas, and an event bus that keeps
+            notification and audit concerns decoupled.
+          </p>
+        </div>
+
+        <div class="arch-wrap">
+          <div class="arch-layers" id="arch-layers" role="group" aria-label="Architecture layers">
+            <button class="arch-node" data-node="admin" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-globe"></use></svg></span>
+              <span class="arch-meta">
+                <strong>Admin Portal &amp; Driver App</strong>
+                <span>React web (Render) &middot; React Native / Expo mobile</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+
+            <div class="arch-link" aria-hidden="true"><svg><use href="#i-arrow-down"></use></svg></div>
+
+            <button class="arch-node" data-node="gateway" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-shield"></use></svg></span>
+              <span class="arch-meta">
+                <strong>API Gateway</strong>
+                <span>Caddy TLS &middot; Spring Cloud Gateway &middot; JWT validation</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+
+            <div class="arch-link" aria-hidden="true"><svg><use href="#i-arrow-down"></use></svg></div>
+
+            <button class="arch-node" data-node="microservices" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-server"></use></svg></span>
+              <span class="arch-meta">
+                <strong>11 Microservices</strong>
+                <span>Spring Boot &middot; each owns its own schema</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+
+            <div class="arch-link" aria-hidden="true"><svg><use href="#i-arrow-down"></use></svg></div>
+
+            <button class="arch-node" data-node="postgres" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-database"></use></svg></span>
+              <span class="arch-meta">
+                <strong>PostgreSQL 16</strong>
+                <span>1 instance &middot; 10 schemas &middot; Flyway</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+
+            <button class="arch-node" data-node="redis" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-zap"></use></svg></span>
+              <span class="arch-meta">
+                <strong>Redis</strong>
+                <span>Latest positions &middot; TTL-based state</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+
+            <button class="arch-node" data-node="rabbitmq" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-route"></use></svg></span>
+              <span class="arch-meta">
+                <strong>RabbitMQ</strong>
+                <span>Async event bus &middot; durable queues</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+
+            <button class="arch-node" data-node="minio" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-box"></use></svg></span>
+              <span class="arch-meta">
+                <strong>MinIO</strong>
+                <span>Object storage &middot; presigned URLs</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+
+            <button class="arch-node" data-node="osrm" aria-expanded="false">
+              <span class="arch-ico"><svg aria-hidden="true"><use href="#i-navigation"></use></svg></span>
+              <span class="arch-meta">
+                <strong>OSRM</strong>
+                <span>Self-hosted routing &middot; ETAs</span>
+              </span>
+              <svg class="arch-chevron" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+            </button>
+          </div>
+
+          <aside class="arch-inspector" id="arch-inspector" aria-live="polite" aria-label="Architecture layer details">
+            <div class="insp-head">
+              <svg aria-hidden="true"><use href="#i-info"></use></svg>
+              <h3 id="insp-title">API Gateway</h3>
+              <span id="insp-sub">Caddy TLS &middot; Spring Cloud Gateway</span>
+            </div>
+            <div class="insp-body">
+              <p id="insp-desc"></p>
+              <div class="insp-tags" id="insp-tags"></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         5. TECHNOLOGIES
+         ============================================================== -->
+    <section class="section section--soft" id="technology" aria-labelledby="tech-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-cpu"></use></svg>Technology Stack</span>
+          <h2 id="tech-title">Built on a modern, production-shaped stack</h2>
+          <p class="lead">
+            Every component is real and running in the project&rsquo;s containerised deployment.
+          </p>
+        </div>
+
+        <div class="tech-grid reveal">
+          <div class="tech-group">
+            <h3>Backend &amp; Services</h3>
+            <div class="tech-grid">
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Java</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Spring Boot</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Spring Cloud Gateway</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Eureka</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Spring Data JPA</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>WebSockets (STOMP / SockJS)</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>OpenAPI</span>
+            </div>
+          </div>
+
+          <div class="tech-group">
+            <h3>Frontend &amp; Mobile</h3>
+            <div class="tech-grid">
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>React</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Vite</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>React Native</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Expo</span>
+            </div>
+          </div>
+
+          <div class="tech-group">
+            <h3>Data, Messaging &amp; Storage</h3>
+            <div class="tech-grid">
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>PostgreSQL 16</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Redis</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>RabbitMQ</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>MinIO</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Flyway</span>
+            </div>
+          </div>
+
+          <div class="tech-group">
+            <h3>Routing &amp; Infrastructure</h3>
+            <div class="tech-grid">
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>OSRM</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Docker</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Docker Compose</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Caddy</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Google Cloud</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>DuckDNS</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Let&rsquo;s Encrypt</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Render</span>
+            </div>
+          </div>
+
+          <div class="tech-group">
+            <h3>Security</h3>
+            <div class="tech-grid">
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>JWT</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Refresh Tokens</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>BCrypt</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>CORS</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>TLS</span>
+            </div>
+          </div>
+
+          <div class="tech-group">
+            <h3>Quality &amp; Testing</h3>
+            <div class="tech-grid">
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>JUnit 5</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Mockito</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>AssertJ</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>Playwright</span>
+              <span class="tech-badge"><span class="tdot" aria-hidden="true"></span>axe-core</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         6. EVALUATOR QUESTIONS
+         ============================================================== -->
+    <section class="section" id="evaluator-qa" aria-labelledby="evaluator-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-message"></use></svg>Evaluator Q&amp;A</span>
+          <h2 id="evaluator-title">20 evaluator questions, answered</h2>
+          <p class="lead">
+            Every answer is grounded in what the code actually does — short answer, mechanism,
+            and the follow-up an examiner asks when your first answer is good.
+          </p>
+          <noscript>
+            <p class="small" style="text-align: center; margin-top: 12px; color: var(--text-secondary);">
+              JavaScript is required for the searchable Q&amp;A accordions, counters and animations.
+            </p>
+          </noscript>
+        </div>
+
+        <div class="qa-toolbar reveal">
+          <div class="qa-search" role="search">
+            <svg aria-hidden="true"><use href="#i-search"></use></svg>
+            <label class="sr-only" for="qa-search-input">Search evaluator questions</label>
+            <input id="qa-search-input" type="search" placeholder="Search evaluator questions… e.g. outbox, Redis, spoofing, scaling" autocomplete="off" />
+          </div>
+          <div class="qa-count" id="qa-count" aria-live="polite"></div>
+        </div>
+
+        <div class="accordion" id="qa-list"></div>
+
+        <div class="qa-empty" id="qa-empty" role="status">
+          <p>No questions match your search.</p>
+          <p class="small">Try &ldquo;outbox&rdquo;, &ldquo;GPS&rdquo;, &ldquo;security&rdquo; or &ldquo;scaling&rdquo;.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         7. ENGINEER FOLLOW-UP QUESTIONS
+         ============================================================== -->
+    <section class="section section--soft" id="engineer-qa" aria-labelledby="engineer-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-tool"></use></svg>Engineer Level</span>
+          <h2 id="engineer-title">10 engineer follow-ups</h2>
+          <p class="lead">
+            Deeper mechanisms an engineer might probe — with code snippets, tables, callouts
+            and warnings pulled straight from the implementation notes.
+          </p>
+        </div>
+
+        <div class="qa-toolbar reveal">
+          <div class="qa-count" id="engineer-count" aria-live="polite"></div>
+        </div>
+
+        <div class="accordion" id="engineer-list"></div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         8. SECURITY
+         ============================================================== -->
+    <section class="section" id="security" aria-labelledby="security-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-shield"></use></svg>Security</span>
+          <h2 id="security-title">Defence in depth, from the edge to the data</h2>
+          <p class="lead">
+            A structured audit found and fixed roughly 40 issues. These are the layers that
+            keep the platform hardened — and the two findings that remain honestly open.
+          </p>
+        </div>
+
+        <div class="sec-grid">
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--core">Core</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-shield"></use></svg></div>
+            <h3>JWT validated at the gateway</h3>
+            <p>Every external request is authenticated once, at the edge — before it consumes a thread or connection downstream. Services implement only authorization.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--core">Core</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-key"></use></svg></div>
+            <h3>Header overwrite, not append</h3>
+            <p><code class="mono">X-User-Id</code> and <code class="mono">X-User-Role</code> are <em>set</em> from the validated token, so a spoofed <code class="mono">X-User-Role: ADMIN</code> header is discarded on every request.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--core">Core</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-users"></use></svg></div>
+            <h3>Internal calls verified</h3>
+            <p>Service-to-service calls need the internal secret <em>and</em> the absence of a user role — a user request always carries a role, so it can never be mistaken for internal.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--hardening">Hardening</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-refresh"></use></svg></div>
+            <h3>Refresh-token rotation</h3>
+            <p>7-day revocable refresh tokens rotate on use; presenting a spent token revokes the entire token family — the only realistic explanation is theft.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--hardening">Hardening</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-lock"></use></svg></div>
+            <h3>BCrypt cost 12</h3>
+            <p>Password hashing uses BCrypt with cost factor 12, plus account lockout after 5 failed attempts for 15 minutes — counted atomically in the database.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--hardening">Hardening</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-activity"></use></svg></div>
+            <h3>Rate limiting</h3>
+            <p>Requests are rate-limited at the gateway to blunt credential stuffing and abuse of high-volume endpoints.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--hardening">Hardening</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-server"></use></svg></div>
+            <h3>TLS everywhere, minimal surface</h3>
+            <p>Caddy terminates TLS with automatic Let&rsquo;s Encrypt certificates. Public ports are 22, 80 and 443 only; business services use Docker <code class="mono">expose</code>, never published to the host.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--hardening">Hardening</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-database"></use></svg></div>
+            <h3>Redis hardened</h3>
+            <p>An unauthenticated Redis is a remote-code-execution primitive — it now runs with <code class="mono">--requirepass</code> and loopback-only binding.</p>
+          </article>
+
+          <article class="card card--hover sec-card reveal">
+            <span class="sec-tag sec-tag--hardening">Hardening</span>
+            <div class="sec-ico"><svg aria-hidden="true"><use href="#i-camera"></use></svg></div>
+            <h3>Presigned uploads only</h3>
+            <p>POD photos upload directly to MinIO with a signed URL — large uploads never pass through the API, and storage access stays verifiable.</p>
+          </article>
+        </div>
+
+        <div class="callout callout--warn reveal" style="margin-top: 28px; max-width: 860px; margin-inline: auto;">
+          <svg aria-hidden="true"><use href="#i-alert"></use></svg>
+          <div>
+            <strong>Still open — stated honestly</strong>
+            <p style="margin:0">The JWT secret and a Google Maps Android key sit in git history and need rotating; purging the Maps key is what keeps the CI secret scan red. There are also no automated backups yet (see <a href="#limitations">Known Limitations</a>).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         9. PERFORMANCE
+         ============================================================== -->
+    <section class="section section--soft" id="performance" aria-labelledby="performance-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-zap"></use></svg>Performance</span>
+          <h2 id="performance-title">A system built to feel instant</h2>
+          <p class="lead">
+            The numbers that matter, straight from the project — live metrics animate as they
+            enter the viewport.
+          </p>
+        </div>
+
+        <div class="stats-grid">
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="prefix" aria-hidden="true"></span><span class="num" data-count="11">0</span></div>
+            <div class="stat-label">Backend services</div>
+            <div class="stat-sub">Java &middot; Spring Boot</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="17">0</span></div>
+            <div class="stat-label">Containers in production</div>
+            <div class="stat-sub">One VM</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="42">0</span></div>
+            <div class="stat-label">Automated backend tests</div>
+            <div class="stat-sub">JUnit 5 &middot; Mockito &middot; AssertJ</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="10">0</span></div>
+            <div class="stat-label">PostgreSQL schemas</div>
+            <div class="stat-sub">One shared instance</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="prefix">~</span><span class="num" data-count="2">0</span><span class="suffix">s</span></div>
+            <div class="stat-label">GPS ping interval</div>
+            <div class="stat-sub">8 m minimum distance</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="50">0</span><span class="suffix">m</span></div>
+            <div class="stat-label">Geofence radius</div>
+            <div class="stat-sub">Arrival confirmation</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="15">0</span><span class="suffix">min</span></div>
+            <div class="stat-label">Access token lifetime</div>
+            <div class="stat-sub">Stateless JWT</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="7">0</span><span class="suffix">days</span></div>
+            <div class="stat-label">Refresh token lifetime</div>
+            <div class="stat-sub">Stored, hashed, revocable</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="30">0</span><span class="suffix">s</span></div>
+            <div class="stat-label">Outbox publisher sweep</div>
+            <div class="stat-sub">Event reliability</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="5000">0</span></div>
+            <div class="stat-label">GPS writes / second sustained</div>
+            <div class="stat-sub">&asymp;144M rows/day at 10k drivers</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="num" data-count="9">0</span></div>
+            <div class="stat-label">Gateway routes</div>
+            <div class="stat-sub">audit-service is event-driven</div>
+          </div>
+          <div class="card stat-card reveal">
+            <div class="stat-value"><span class="prefix">$</span><span class="num" data-count="0">0</span></div>
+            <div class="stat-label">Infrastructure cost (trial)</div>
+            <div class="stat-sub">Self-hosted &middot; free tier</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         10. SCALING STRATEGY
+         ============================================================== -->
+    <section class="section" id="scaling" aria-labelledby="scaling-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-arrow-up"></use></svg>Scaling Strategy</span>
+          <h2 id="scaling-title">From 50 drivers to 10,000</h2>
+          <p class="lead">
+            Which component breaks first, and how do you fix it? Do the arithmetic out loud —
+            10,000 drivers &times; 1 ping / 2 seconds = <strong>5,000 writes/second</strong>.
+          </p>
+        </div>
+
+        <div class="scale-road">
+          <div class="scale-stage reveal">
+            <div class="scale-rail">
+              <span class="scale-node">50</span>
+              <span class="scale-line" aria-hidden="true"></span>
+            </div>
+            <div class="scale-body">
+              <div class="card scale-card">
+                <h3>Today <small>&middot; single VM, comfortably running</small></h3>
+                <p>The full stack runs on one <code class="mono">e2-standard-2</code> (2 vCPU, 8 GB RAM). Every service is healthy and the entire load profile is far below capacity.</p>
+                <div class="scale-math">
+                  <span class="chip">50 drivers &asymp; 25 pings/s</span>
+                  <span class="chip">17 containers</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scale-stage reveal">
+            <div class="scale-rail">
+              <span class="scale-node">500</span>
+              <span class="scale-line" aria-hidden="true"></span>
+            </div>
+            <div class="scale-body">
+              <div class="card scale-card">
+                <h3>Steady growth <small>&middot; uneven load pays off</small></h3>
+                <p>~250 pings/s — still well within PostgreSQL&rsquo;s simple-insert capability. The service split earns its keep: gps-service&rsquo;s write volume scales and throttles independently of the low-traffic vehicle-service.</p>
+                <div class="scale-math">
+                  <span class="chip">500 drivers &asymp; 250 pings/s</span>
+                  <span class="chip">gps-service scales alone</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scale-stage reveal">
+            <div class="scale-rail">
+              <span class="scale-node">5k</span>
+              <span class="scale-line" aria-hidden="true"></span>
+            </div>
+            <div class="scale-body">
+              <div class="card scale-card">
+                <h3>Approaching the edge <small>&middot; table pressure builds</small></h3>
+                <p>~2,500 pings/s. Raw inserts are fine — the unpartitioned <code class="mono">gps_pings</code> table is not: index maintenance degrades and autovacuum starts falling behind as rows accumulate.</p>
+                <div class="scale-math">
+                  <span class="chip">5,000 drivers &asymp; 2,500 pings/s</span>
+                  <span class="chip">index maintenance</span>
+                  <span class="chip">autovacuum</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="scale-stage reveal">
+            <div class="scale-rail">
+              <span class="scale-node scale-node--peak">10k</span>
+            </div>
+            <div class="scale-body">
+              <div class="card scale-card">
+                <h3>First bottleneck <small>&middot; gps_pings by a wide margin</small></h3>
+                <p>5,000 writes/s &rarr; ~144 million rows per day. Everything else is comfortable at this scale; this table is not. The fix is partitioning plus retention, not raw insert speed.</p>
+                <div class="scale-math">
+                  <span class="chip">10,000 &times; &frac12;s = 5,000 writes/s</span>
+                  <span class="chip">5,000 &times; 3,600 &times; 8h &asymp; 144M rows/day</span>
+                </div>
+              </div>
+              <div class="scale-note">
+                <strong>Second bottleneck — WebSocket fan-out</strong>
+                One dispatcher watching all 10,000 vehicles is 5,000 messages per second to one browser, which no browser will render. That is a product problem before an engineering one: the map should stream only the vehicles in the current viewport.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="section-head center" style="margin-top: 48px; font-size: 1.4rem;">Fixes, cheapest first</h3>
+        <ol class="fix-list reveal">
+          <li>
+            <div>
+              <strong>Partition <code class="mono">gps_pings</code> and add retention</strong>
+              <span>Partition by day or week and drop old partitions instead of deleting rows — dropping a partition is instant; DELETE on 144M rows is not. Nobody needs second-by-second history from six months ago.</span>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Batch on the client</strong>
+              <span>Send one request with 15 pings every 30 seconds instead of 15 separate requests. Same data, one-fifteenth of the HTTP and transaction overhead — already on the roadmap.</span>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Separate reads from writes</strong>
+              <span>The live map does not need Postgres at all — the latest position is already in Redis. Serve the map entirely from Redis and let Postgres be the historical archive only.</span>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Move the time-series data to a store built for it</strong>
+              <span>TimescaleDB is a PostgreSQL extension — the least disruptive version of that change for an append-only, time-ordered stream like <code class="mono">gps_pings</code>.</span>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Scale gps-service horizontally</strong>
+              <span>It is stateless, so this is easy — but only after the steps above, since more instances writing to one unpartitioned table makes the real problem worse, not better.</span>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         11. KNOWN LIMITATIONS
+         ============================================================== -->
+    <section class="section section--soft" id="limitations" aria-labelledby="limitations-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-alert"></use></svg>Known Limitations</span>
+          <h2 id="limitations-title">Gaps, named honestly</h2>
+          <p class="lead">
+            Where something is not built, we say so — and we rank what would hurt most in
+            production. An examiner who watches you name your own gap trusts the rest.
+          </p>
+        </div>
+
+        <div class="lim-grid">
+          <article class="card lim-card lim-card--critical reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-database"></use></svg></div>
+            <div class="lim-body">
+              <h3>No backups <span class="lim-sev lim-sev--critical">Critical</span></h3>
+              <p>Zero. If the VM&rsquo;s disk fails, every trip, photo and audit record is gone. Not built because it needs somewhere to put them and a tested restore — the most serious gap in the project.</p>
+              <p class="lim-fix"><strong>Fix:</strong> Week 1 — <code class="mono">pg_dump</code> plus a MinIO mirror to Cloud Storage on a cron, and a tested restore. An untested backup is not a backup.</p>
+            </div>
+          </article>
+
+          <article class="card lim-card lim-card--high reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-activity"></use></svg></div>
+            <div class="lim-body">
+              <h3>Offline GPS queue is a stub <span class="lim-sev lim-sev--high">High</span></h3>
+              <p>A driver through a tunnel leaves a gap in the recorded track that is never filled. <code class="mono">gpsQueueStore_2.js</code> was intended to be the queue but contains a single comment line.</p>
+              <p class="lim-fix"><strong>Fix:</strong> A ring buffer with a hard cap that batches on flush — each ping carries its own <code class="mono">recordedAt</code>, so the server back-fills the missing segment instead of showing a teleport.</p>
+            </div>
+          </article>
+
+          <article class="card lim-card lim-card--high reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-bell"></use></svg></div>
+            <div class="lim-body">
+              <h3>Background tracking missing <span class="lim-sev lim-sev--high">High</span></h3>
+              <p>Tracking uses <code class="mono">Location.watchPositionAsync</code>, which is foreground-only — if the driver switches apps or locks the phone, tracking stops.</p>
+              <p class="lim-fix"><strong>Fix:</strong> <code class="mono">startLocationUpdatesAsync</code> with a TaskManager background task, a persistent notification, and separate background-permission prompts.</p>
+            </div>
+          </article>
+
+          <article class="card lim-card lim-card--high reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-cpu"></use></svg></div>
+            <div class="lim-body">
+              <h3>No observability <span class="lim-sev lim-sev--high">High</span></h3>
+              <p>No metrics, no structured logs, no alerting — diagnosis is <code class="mono">docker compose logs</code>. We would find out about an outage from a user.</p>
+              <p class="lim-fix"><strong>Fix:</strong> Actuator + Micrometer + Prometheus, alerting on symptoms users feel — not on CPU. You cannot operate what you cannot see.</p>
+            </div>
+          </article>
+
+          <article class="card lim-card lim-card--high reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-server"></use></svg></div>
+            <div class="lim-body">
+              <h3>Single point of failure <span class="lim-sev lim-sev--high">High</span></h3>
+              <p>One VM, one PostgreSQL, no replica. auth-service, the gateway and Postgres are hard dependencies — if any is down, so is the product.</p>
+              <p class="lim-fix"><strong>Fix:</strong> A second node with replicas is the honest boundary — the point at which we would move from Compose to Kubernetes.</p>
+            </div>
+          </article>
+
+          <article class="card lim-card lim-card--medium reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-clock"></use></svg></div>
+            <div class="lim-body">
+              <h3><code class="mono">gps_pings</code> unpartitioned <span class="lim-sev lim-sev--medium">Medium</span></h3>
+              <p>No partitioning and no retention policy — the first bottleneck at scale (see Scaling).</p>
+              <p class="lim-fix"><strong>Fix:</strong> Week 4 — partition by day/week, add retention, and batch pings from the client.</p>
+            </div>
+          </article>
+
+          <article class="card lim-card lim-card--medium reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-box"></use></svg></div>
+            <div class="lim-body">
+              <h3>analytics-service is a stub <span class="lim-sev lim-sev--medium">Medium</span></h3>
+              <p>No <code class="mono">pom.xml</code>, no main class. Its schema exists, nothing writes to it, and it is deliberately not deployed.</p>
+              <p class="lim-fix"><strong>Note:</strong> Auditing and reporting today come from SQL aggregates over the existing schemas.</p>
+            </div>
+          </article>
+
+          <article class="card lim-card lim-card--medium reveal">
+            <div class="lim-ico"><svg aria-hidden="true"><use href="#i-message"></use></svg></div>
+            <div class="lim-body">
+              <h3>No push notifications <span class="lim-sev lim-sev--medium">Medium</span></h3>
+              <p>Notifications default to email; in-app polling covers the current need.</p>
+              <p class="lim-fix"><strong>Fix:</strong> Push would be the next channel, layered onto the same event bus.</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="section-head center reveal" style="margin-top: 56px;">
+          <h3 style="font-size: 1.4rem;">With one more month, in order</h3>
+        </div>
+
+        <div class="plan-grid">
+          <div class="card card--hover plan-card reveal">
+            <span class="plan-week">Week 1</span>
+            <h3>Backups</h3>
+            <p><code class="mono">pg_dump</code> + a MinIO mirror to Cloud Storage on a cron, and a tested restore. Converts an unrecoverable failure into an inconvenient one.</p>
+          </div>
+          <div class="card card--hover plan-card reveal">
+            <span class="plan-week">Week 2</span>
+            <h3>Background GPS &amp; offline queue</h3>
+            <p>The product is called live tracking and currently stops when the driver locks their phone. Background task + ring-buffer queue.</p>
+          </div>
+          <div class="card card--hover plan-card reveal">
+            <span class="plan-week">Week 3</span>
+            <h3>Observability</h3>
+            <p>Actuator + Micrometer + Prometheus, and alerting on service health. You cannot operate what you cannot see.</p>
+          </div>
+          <div class="card card--hover plan-card reveal">
+            <span class="plan-week">Week 4</span>
+            <h3>Partition &amp; batch</h3>
+            <p>Partition <code class="mono">gps_pings</code>, add retention, and batch pings from the client. None of these are features — they are the difference between a system that demos and a system that runs.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         12. TESTING
+         ============================================================== -->
+    <section class="section" id="testing" aria-labelledby="testing-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-check-circle"></use></svg>Testing</span>
+          <h2 id="testing-title">42 backend tests, Playwright frontends, and honest gaps</h2>
+          <p class="lead">
+            Unit-level depth where the failure modes are dangerous, browser-level verification
+            across three viewports — and no integration tests, said plainly.
+          </p>
+        </div>
+
+        <div class="test-grid">
+          <article class="card test-card reveal">
+            <h3>Backend &middot; JUnit 5 + Mockito + AssertJ</h3>
+            <div class="bar-list">
+              <div class="bar-row">
+                <div class="bar-meta"><strong>Vehicle release rule</strong><span class="bar-val">7 tests</span></div>
+                <div class="bar-track"><div class="bar-fill" data-width="16.6"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><strong>Trip lifecycle</strong><span class="bar-val">6 tests</span></div>
+                <div class="bar-track"><div class="bar-fill" data-width="14.3"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><strong>Trip authorization</strong><span class="bar-val">4 tests</span></div>
+                <div class="bar-track"><div class="bar-fill" data-width="9.5"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta"><strong>Auth &amp; email security fixes</strong><span class="bar-val">25 tests</span></div>
+                <div class="bar-track"><div class="bar-fill" data-width="59.5"></div></div>
+              </div>
+            </div>
+            <div class="test-meta">
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-check"></use></svg>42 tests total</span>
+              <span class="chip">parameterised status test</span>
+              <span class="chip">idempotency coverage</span>
+            </div>
+          </article>
+
+          <article class="card test-card reveal">
+            <h3>Frontend &middot; Playwright + axe-core</h3>
+            <p class="small" style="color: var(--text-secondary); margin-bottom: 14px;">
+              Route smoke tests, horizontal-overflow and tap-target checks, and WCAG 2.1 AA
+              auditing — across desktop 1440, tablet 768 and mobile Pixel 7, in both light and dark themes.
+            </p>
+            <div class="test-meta">
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-globe"></use></svg>3 viewports</span>
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-shield"></use></svg>WCAG 2.1 AA</span>
+              <span class="chip chip--green"><svg class="isvg" aria-hidden="true"><use href="#i-eye"></use></svg>light + dark</span>
+              <span class="chip">runs with the API down</span>
+            </div>
+            <div class="test-bad">
+              <strong>Weakly tested — stated plainly</strong>
+              No integration tests — everything is unit-level with mocked collaborators. Testcontainers is the right tool and the biggest single gap. No mobile tests at all.
+            </div>
+            <div class="test-quote">
+              <strong>&ldquo;A test that cannot fail is worse than no test.&rdquo;</strong>
+              It reports confidence it does not have. When the vehicle release moved to a dedicated endpoint, a stale test still passed — it was stubbing an exception on a method no longer called, so it was asserting nothing. It was rewritten to genuinely exercise the outage path.
+            </div>
+          </article>
+        </div>
+
+        <div class="callout callout--success reveal" style="margin-top: 28px; max-width: 860px; margin-inline: auto;">
+          <svg aria-hidden="true"><use href="#i-check-circle"></use></svg>
+          <div>
+            <strong>Deliberately well tested: the vehicle-release rule</strong>
+            <p style="margin:0">It has two opposite failure modes — not releasing strands vehicles, releasing too eagerly puts an unroadworthy van back into dispatch. The parameterised test over the other statuses exists to stop a future &ldquo;simplification&rdquo; back to a blanket status write.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         13. PERSONAL CONTRIBUTION
+         ============================================================== -->
+    <section class="section" id="contribution" aria-labelledby="contribution-title">
+      <div class="container">
+        <div class="contribution reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-user-check"></use></svg>Personal Contribution</span>
+          <h2 id="contribution-title" style="margin-top: 16px;">What I built, decided, and learned</h2>
+          <p class="lead" style="margin-top: 12px;">
+            The structure that scores well: name the area &rarr; name a decision and the
+            alternative you rejected &rarr; name a bug that was genuinely hard &rarr; say what you learned.
+          </p>
+
+          <div class="cont-grid">
+            <div class="cont-card">
+              <h3><svg aria-hidden="true"><use href="#i-tool"></use></svg>My contributions</h3>
+              <ul>
+                <li>Gateway security: JWT validation, <b>header overwrite (set, not add)</b>, internal-call verification</li>
+                <li>Dedicated <b>vehicle-release endpoint</b> and reconciliation sweep for stranded vehicles</li>
+                <li>gps-service filtering: <b>accuracy before plausibility</b> on every ping</li>
+                <li>Outbox pattern for reliable <code class="mono">trip.created</code> events</li>
+                <li>Three-layer <b>design tokens</b> in the admin portal (dark mode remaps only the middle layer)</li>
+                <li>Structured security audit across portal, backend, infrastructure, CI and docs</li>
+              </ul>
+            </div>
+
+            <div class="cont-card">
+              <h3><svg aria-hidden="true"><use href="#i-map-pin"></use></svg>Design decisions</h3>
+              <ul>
+                <li>Vehicle release via a <b>narrow endpoint</b> (<code class="mono">IN_USE &rarr; AVAILABLE</code> only) rather than the generic status endpoint — so a late-firing sweep can never drag a van out of MAINTENANCE</li>
+                <li>Rejected a monolith's shared tables for <b>per-service schemas</b> — a versioned API contract instead of silent runtime breakage</li>
+                <li>Self-hosted <b>OSRM</b> over a metered Directions API — cost and request volume</li>
+                <li>Would I do microservices again? <b>No — a modular monolith</b>, splitting out only gps-service</li>
+              </ul>
+            </div>
+
+            <div class="cont-card">
+              <h3><svg aria-hidden="true"><use href="#i-alert"></use></svg>Challenges — bugs that were genuinely hard</h3>
+              <ul>
+                <li><b>Vehicles never returned to the fleet</b> — completing a trip never released the vehicle. It looked like a display bug: the vehicle was on screen, just wrong.</li>
+                <li><b>Dark-mode contrast at 1.46:1</b> — a token used for the wrong job; the fix was conceptual, not cosmetic</li>
+                <li><b>Stale-jar false positive</b> — grepped the deployed jar, found the string, concluded the fix was live. The old code contained the same string.</li>
+                <li><b>ETA column overflow</b> — 146 px column, 203 px of content; measured against the built stylesheet rather than eyeballed</li>
+              </ul>
+            </div>
+
+            <div class="cont-card">
+              <h3><svg aria-hidden="true"><use href="#i-activity"></use></svg>Lessons learned</h3>
+              <ul>
+                <li><b>A check that cannot fail proves nothing.</b> The real proof was the compiled constant pool — two constants meant old, one meant new.</li>
+                <li><b>Architecture can create bugs.</b> One boolean — is this van in use — had to stay consistent across two services with no shared transaction. That is the cost a service boundary creates.</li>
+                <li><b>The real test of a boundary</b> is not &ldquo;is this a different noun?&rdquo; but &ldquo;does this need to scale, fail, or deploy differently?&rdquo;</li>
+                <li><b>Name your own gaps.</b> An examiner who finds a gap you claimed was covered will discount everything else you said.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==============================================================
+         14. QUICK REFERENCE
+         ============================================================== -->
+    <section class="section section--soft" id="reference" aria-labelledby="reference-title">
+      <div class="container">
+        <div class="section-head center reveal">
+          <span class="eyebrow"><svg aria-hidden="true"><use href="#i-zap"></use></svg>Quick Reference</span>
+          <h2 id="reference-title">All the numbers, at a glance</h2>
+          <p class="lead">
+            Worth memorising — giving a specific figure instead of &ldquo;quite a lot&rdquo; is what
+            separates a confident answer from a vague one.
+          </p>
+        </div>
+
+        <div class="ref-grid">
+          <div class="card ref-card reveal"><span class="ref-value">11 <span class="u">Java</span></span><span class="ref-label">Backend services</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">17</span><span class="ref-label">Containers in production</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">16 <span class="u">v</span></span><span class="ref-label">PostgreSQL</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">10</span><span class="ref-label">Schemas, one instance</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">9</span><span class="ref-label">Gateway routes</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">15 <span class="u">min</span></span><span class="ref-label">Access token lifetime</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">7 <span class="u">days</span></span><span class="ref-label">Refresh token lifetime</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">12</span><span class="ref-label">BCrypt cost factor</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">5 &rarr; 15</span><span class="ref-label">Failed attempts &rarr; lockout (min)</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">~2 <span class="u">s</span></span><span class="ref-label">GPS ping interval</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">8 <span class="u">m</span></span><span class="ref-label">Minimum GPS distance</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">50 <span class="u">m</span></span><span class="ref-label">GPS accuracy rejection</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">180 <span class="u">km/h</span></span><span class="ref-label">Implausible speed threshold</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">5 <span class="u">km</span></span><span class="ref-label">Teleport &mdash; in under 10 s</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">50 <span class="u">m</span></span><span class="ref-label">Geofence radius</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">30 <span class="u">s</span></span><span class="ref-label">Outbox publisher sweep</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">10 <span class="u">min</span></span><span class="ref-label">Vehicle reconciliation sweep</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">50 <span class="u">/ 3</span></span><span class="ref-label">Photo queue cap / retries</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">42</span><span class="ref-label">Backend tests</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">2 <span class="u">vCPU &middot; 8 GB</span></span><span class="ref-label">e2-standard-2 VM</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">22 &middot; 80 &middot; 443</span><span class="ref-label">Public ports only</span></div>
+          <div class="card ref-card reveal"><span class="ref-value">$0</span><span class="ref-label">Cost during trial</span></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================================================================
+       Footer
+       ================================================================ -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <a class="brand" href="#home" aria-label="FleetSync Pro — back to top">
+            <img src="assets/images/logo.svg" alt="" width="36" height="36" />
+            <span>FleetSync Pro</span>
+          </a>
+          <p>
+            A microservices-based fleet tracking and delivery management system.
+            Built offline for presentation — no internet connection required.
+          </p>
+        </div>
+
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h4>Platform</h4>
+            <a href="#overview">Overview</a>
+            <a href="#workflow">Workflow</a>
+            <a href="#architecture">Architecture</a>
+            <a href="#technology">Technology</a>
+          </div>
+          <div class="footer-col">
+            <h4>Evaluation</h4>
+            <a href="#evaluator-qa">Evaluator Q&amp;A</a>
+            <a href="#engineer-qa">Engineer Q&amp;A</a>
+            <a href="#security">Security</a>
+            <a href="#testing">Testing</a>
+          </div>
+          <div class="footer-col">
+            <h4>Project</h4>
+            <a href="#performance">Performance</a>
+            <a href="#scaling">Scaling</a>
+            <a href="#limitations">Limitations</a>
+            <a href="#contribution">Contribution</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <span>&copy; <span id="year">2026</span> FleetSync Pro &middot; University project showcase</span>
+        <span>Source of truth: the evaluator Q&amp;A preparation guide &middot; 100% offline</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Back to top -->
+  <button class="back-top" id="back-top" aria-label="Back to top">
+    <svg aria-hidden="true"><use href="#i-arrow-up"></use></svg>
+  </button>
+
+  <!-- ================================================================
+       Inline SVG sprite — local only, no external requests
+       ================================================================ -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display: none" aria-hidden="true">
+    <symbol id="i-arrow-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+    </symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+    </symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+    </symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="9 18 15 12 9 6"/>
+    </symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"/>
+    </symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+    </symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+    </symbol>
+    <symbol id="i-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>
+    </symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+    </symbol>
+    <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
+    </symbol>
+    <symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
+    </symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 12 12 17 22 12"/><polyline points="2 17 12 22 22 17"/>
+    </symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+    </symbol>
+    <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.3 7 12 12 20.7 7"/><line x1="12" y1="22" x2="12" y2="12"/>
+    </symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+    </symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </symbol>
+    <symbol id="i-navigation" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+    </symbol>
+    <symbol id="i-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+    </symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="15" x2="23" y2="15"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="15" x2="4" y2="15"/>
+    </symbol>
+    <symbol id="i-message" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    </symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+    </symbol>
+    <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+    </symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>
+    </symbol>
+    <symbol id="i-route" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M12 19h4.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7H12"/>
+    </symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+    </symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    </symbol>
+    <symbol id="i-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+    </symbol>
+    <symbol id="i-user-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/>
+    </symbol>
+  </svg>
+
+  <script src="script.js"></script>
+</body>
+</html>

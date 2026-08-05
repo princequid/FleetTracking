@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import api from "../services/api";
+import { PORTAL_ROLES, DRIVER_NOT_PERMITTED } from "../constants/roles";
 import { EyeIcon, EyeOffIcon } from "../components/common/Icons";
 
 const FEATURES = ["Fleet Tracking", "Cargo Safety", "Real-time Analytics"];
@@ -17,7 +18,9 @@ function CheckIcon() {
 export default function LoginPage() {
   const navigate = useNavigate();
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const role = useAuthStore((state) => state.role);
   const setAuth = useAuthStore((state) => state.setAuth);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,10 +31,21 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (isLoggedIn) {
+    if (!isLoggedIn) return;
+
+    if (PORTAL_ROLES.includes(role)) {
       navigate("/dashboard", { replace: true });
+      return;
     }
-  }, [isLoggedIn, navigate]);
+
+    // A driver session persisted from before this gate existed. Drop it here
+    // rather than sending them on to /dashboard: the layout guard would bounce
+    // them straight back to /login, and the two would redirect at each other
+    // forever. Clearing is also the honest outcome — the session is useless in
+    // this app, and leaving it in storage means the same loop next visit.
+    clearAuth();
+    setError(DRIVER_NOT_PERMITTED);
+  }, [isLoggedIn, role, navigate, clearAuth]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -46,6 +60,20 @@ export default function LoginPage() {
 
       if (data.mfaRequired) {
         setMfaRequired(true);
+        setLoading(false);
+        return;
+      }
+
+      // Checked after MFA resolves, so a driver isn't told "wrong portal" while
+      // a second factor is still outstanding — that would confirm the password
+      // was correct to someone who hasn't finished proving who they are.
+      //
+      // Deliberately no setAuth: the credentials were valid and the server has
+      // issued tokens, but nothing here should hold a session it won't honour.
+      // The tokens are simply dropped; they're the same ones the driver gets
+      // legitimately in the app, so discarding them costs nothing.
+      if (!PORTAL_ROLES.includes(data.role)) {
+        setError(DRIVER_NOT_PERMITTED);
         setLoading(false);
         return;
       }
