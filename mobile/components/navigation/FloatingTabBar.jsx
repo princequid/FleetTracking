@@ -38,12 +38,12 @@ function getActiveKey(pathname) {
 
 function TabButton({ tab, isActive, showDot, onPress }) {
   const bgOpacity   = useSharedValue(isActive ? 1 : 0);
-  const itemOpacity = useSharedValue(isActive ? 1 : 0.4);
+  const itemOpacity = useSharedValue(isActive ? 1 : 0.85);
   const iconScale   = useSharedValue(1);
 
   useEffect(() => {
     bgOpacity.value   = withTiming(isActive ? 1 : 0,   { duration: 200 });
-    itemOpacity.value = withTiming(isActive ? 1 : 0.4, { duration: 150 });
+    itemOpacity.value = withTiming(isActive ? 1 : 0.85, { duration: 150 });
   }, [isActive]);
 
   const bgStyle   = useAnimatedStyle(() => ({ opacity: bgOpacity.value }));
@@ -78,7 +78,7 @@ function TabButton({ tab, isActive, showDot, onPress }) {
         <Feather
           name={tab.icon}
           size={22}
-          color={isActive ? '#14B8A6' : 'rgba(255,255,255,0.40)'}
+          color={isActive ? '#14B8A6' : 'rgba(255,255,255,0.72)'}
         />
         <Text style={[ss.tabLabel, isActive && ss.tabLabelActive]}>
           {tab.label}
@@ -206,7 +206,7 @@ const ss = StyleSheet.create({
   tabLabel: {
     fontFamily: 'Inter-Regular',
     fontSize: 10,
-    color: 'rgba(255,255,255,0.40)',
+    color: 'rgba(255,255,255,0.72)',
   },
   tabLabelActive: {
     fontFamily: 'Inter-SemiBold',

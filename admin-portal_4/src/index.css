@@ -1848,6 +1848,13 @@ h1 {
   margin-bottom: 1rem;
 }
 
+/* The app handoff. Appears twice on this page: above the form, offering to finish
+   in the app instead, and on a driver's success screen, where it is the only way
+   onward — a driver has no portal account to sign in to. */
+.reset-open-app {
+  margin: var(--space-4) 0;
+}
+
 
 .error-message {
   background: #fef2f2;

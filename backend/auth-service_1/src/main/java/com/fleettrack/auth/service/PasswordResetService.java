@@ -74,8 +74,21 @@ public class PasswordResetService {
                 EmailTemplates.buildPasswordResetEmail(resetLink, user.getRole() == Role.DRIVER));
     }
 
+    /**
+     * @return the role of the account whose password was just reset.
+     *
+     * The caller needs it to decide where to send the user next, and only the
+     * server can answer: the reset link carries an opaque random token, so the
+     * page rendering the form has no idea whether it belongs to a driver or to
+     * a portal user. Without this, the web reset page sent everyone to the
+     * admin portal's sign-in — including drivers, who have no portal account
+     * and belong back in the mobile app.
+     *
+     * Safe to return: the recipient has just proved possession of a valid,
+     * unexpired, unused reset token for this account.
+     */
     @Transactional
-    public void resetPassword(String token, String newPassword) {
+    public Role resetPassword(String token, String newPassword) {
         PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token).orElse(null);
 
         if (resetToken == null
@@ -103,6 +116,8 @@ public class PasswordResetService {
 
         resetToken.setUsed(true);
         passwordResetTokenRepository.save(resetToken);
+
+        return user.getRole();
     }
 
     // A new token invalidates any previous one still sitting in the user's inbox.

@@ -13,10 +13,13 @@ function CheckIcon() {
   );
 }
 
-// Reached from the "Reset your FleetSync password" email (/reset-password?token=...),
-// sent for ADMIN/DISPATCHER/SUPER_ADMIN accounts — drivers get a mobile deep link
-// instead (see PasswordResetService.requestReset). Shares the same backend endpoint
-// (POST /auth/reset-password) as the mobile app's equivalent screen.
+// Reached from the "Reset your FleetSync password" email (/reset-password?token=...).
+//
+// EVERY role lands here, drivers included — the email can only carry an https link,
+// because mail clients don't linkify custom schemes like fleettrack:// (see
+// PasswordResetService.requestReset). So this page serves two audiences that finish
+// in different places, and it cannot tell them apart from the URL: the token is an
+// opaque random string. The role comes back from POST /auth/reset-password.
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -26,6 +29,11 @@ export default function ResetPasswordPage() {
   const appDeepLink = token
     ? `fleettrack://reset-password?token=${encodeURIComponent(token)}`
     : null;
+
+  // Where a driver goes once the password is set. The app's root route, not the
+  // login screen's file path — `/splash` reads the stored session and picks the
+  // right destination, so this keeps working if those screens are ever renamed.
+  const appHomeLink = "fleettrack://";
 
   // Only offer the app handoff where an app could plausibly be installed.
   const isTouchDevice =
@@ -38,13 +46,17 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const [isDriver, setIsDriver] = useState(false);
 
+  // Only portal users get bounced to the portal's sign-in. A driver has no portal
+  // account, so landing them on /login was a dead end — they'd enter the password
+  // they had just set and be rejected, with nothing on screen explaining why.
   useEffect(() => {
-    if (done) {
+    if (done && !isDriver) {
       const t = setTimeout(() => navigate("/login", { replace: true }), 1800);
       return () => clearTimeout(t);
     }
-  }, [done, navigate]);
+  }, [done, isDriver, navigate]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -65,7 +77,10 @@ export default function ResetPasswordPage() {
 
     setLoading(true);
     try {
-      await api.post("/auth/reset-password", { token, newPassword: password });
+      const { data } = await api.post("/auth/reset-password", { token, newPassword: password });
+      // Defaults to the portal path if the field is absent, so an older backend
+      // that doesn't return a role behaves exactly as it did before.
+      setIsDriver(data?.role === "DRIVER");
       setDone(true);
     } catch (err) {
       setError(err.response?.data?.error || "This link is invalid or has expired.");
@@ -99,7 +114,23 @@ export default function ResetPasswordPage() {
                 <CheckCircleIcon size={26} />
               </div>
               <h1 className="login-heading">Password updated</h1>
-              <p className="login-subtext">Taking you to sign in…</p>
+              {isDriver ? (
+                <>
+                  <p className="login-subtext">
+                    Open the FleetSync driver app and sign in with your new password.
+                  </p>
+                  {/* No auto-redirect here on purpose. A deep link can only be
+                      followed by a real tap — a browser will not hand off to an
+                      app from a timer — and if the app isn't installed, or this
+                      was opened on a desktop, the sentence above is still the
+                      correct instruction on its own. */}
+                  <a className="btn btn-primary btn-block reset-open-app" href={appHomeLink}>
+                    Open the FleetSync app
+                  </a>
+                </>
+              ) : (
+                <p className="login-subtext">Taking you to sign in…</p>
+              )}
             </div>
           ) : !token ? (
             <div className="auth-done">
